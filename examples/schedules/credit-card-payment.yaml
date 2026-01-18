@@ -1,0 +1,39 @@
+# Monthly credit card payment
+# Demonstrates: Variable amount payment with range matching
+id: credit-card-payment
+enabled: true
+match:
+  account: Assets:Bank:Checking
+  payee_pattern: "VISA PAYMENT|Visa Credit Card|AUTOPAY"
+  amount: null
+  amount_tolerance: null
+  amount_min: -500.00
+  amount_max: -3000.00
+  date_window_days: 3
+recurrence:
+  frequency: MONTHLY
+  start_date: 2024-01-25
+  end_date: null
+  day_of_month: 25
+  month: null
+  day_of_week: null
+  interval: 1
+  days_of_month: null
+  interval_months: null
+transaction:
+  payee: Visa Credit Card
+  narration: Credit Card Payment
+  tags: []
+  metadata:
+    schedule_id: credit-card-payment
+  postings:
+    - account: Assets:Bank:Checking
+      amount: null
+      narration: null
+    - account: Liabilities:CreditCard:Visa
+      amount: null
+      narration: null
+missing_transaction:
+  create_placeholder: true
+  flag: '!'
+  narration_prefix: '[MISSING]'

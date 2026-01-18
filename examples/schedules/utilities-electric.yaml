@@ -1,0 +1,40 @@
+# Monthly electric bill with variable amount
+# Demonstrates: MONTHLY frequency, range-based amount matching (min/max)
+id: utilities-electric
+enabled: true
+match:
+  account: Assets:Bank:Checking
+  payee_pattern: "City Power|Electric Company|ELECTRIC UTIL"
+  amount: null
+  amount_tolerance: null
+  amount_min: -50.00
+  amount_max: -200.00
+  date_window_days: 5
+recurrence:
+  frequency: MONTHLY
+  start_date: 2024-01-15
+  end_date: null
+  day_of_month: 15
+  month: null
+  day_of_week: null
+  interval: 1
+  days_of_month: null
+  interval_months: null
+transaction:
+  payee: City Power & Light
+  narration: Electric Bill
+  tags: []
+  metadata:
+    schedule_id: utilities-electric
+    utility_type: electric
+  postings:
+    - account: Assets:Bank:Checking
+      amount: null
+      narration: null
+    - account: Expenses:Utilities:Electric
+      amount: null
+      narration: null
+missing_transaction:
+  create_placeholder: true
+  flag: '!'
+  narration_prefix: '[MISSING]'

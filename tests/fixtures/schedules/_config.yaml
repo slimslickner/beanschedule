@@ -1,0 +1,4 @@
+fuzzy_match_threshold: 0.80
+default_date_window_days: 3
+default_amount_tolerance_percent: 0.02
+placeholder_flag: '!'

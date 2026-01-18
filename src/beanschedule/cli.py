@@ -1,0 +1,372 @@
+"""Command-line interface for beanschedule."""
+
+import logging
+import sys
+from datetime import date
+from decimal import Decimal
+from enum import Enum
+from pathlib import Path
+
+import click
+
+from . import __version__
+from .loader import load_schedules_file, load_schedules_from_directory
+from .recurrence import RecurrenceEngine
+
+logger = logging.getLogger(__name__)
+
+
+@click.group()
+@click.option("--verbose", "-v", is_flag=True, help="Enable verbose logging")
+@click.version_option(version=__version__)
+def main(verbose: bool):
+    """Beanschedule - Scheduled transaction framework for Beancount."""
+    level = logging.DEBUG if verbose else logging.INFO
+    logging.basicConfig(level=level, format="%(levelname)s: %(message)s")
+
+
+@main.command()
+@click.argument("path", type=click.Path(exists=True))
+def validate(path: str):
+    """Validate schedule files for syntax and schema compliance.
+
+    PATH can be either a schedules.yaml file or a schedules/ directory.
+
+    Examples:
+        beanschedule validate schedules.yaml
+        beanschedule validate schedules/
+    """
+    path_obj = Path(path)
+
+    click.echo(f"Validating schedules from: {path_obj}")
+
+    try:
+        # Try loading as file or directory
+        if path_obj.is_file():
+            schedule_file = load_schedules_file(path_obj)
+        elif path_obj.is_dir():
+            schedule_file = load_schedules_from_directory(path_obj)
+        else:
+            click.echo(f"Error: Path is neither a file nor a directory: {path_obj}", err=True)
+            sys.exit(1)
+
+        if schedule_file is None:
+            click.echo("Error: No schedules loaded", err=True)
+            sys.exit(1)
+
+        # Count schedules
+        num_schedules = len(schedule_file.schedules)
+        num_enabled = sum(1 for s in schedule_file.schedules if s.enabled)
+
+        # Report results
+        click.echo("✓ Validation successful!")
+        click.echo(f"  Total schedules: {num_schedules}")
+        click.echo(f"  Enabled: {num_enabled}")
+        click.echo(f"  Disabled: {num_schedules - num_enabled}")
+
+        # Check for duplicate IDs
+        schedule_ids = [s.id for s in schedule_file.schedules]
+        duplicates = [sid for sid in schedule_ids if schedule_ids.count(sid) > 1]
+        if duplicates:
+            click.echo(f"\n⚠ Warning: Duplicate schedule IDs found: {set(duplicates)}", err=True)
+            sys.exit(1)
+
+        click.echo("\nAll schedules are valid!")
+
+    except Exception as e:
+        click.echo(f"✗ Validation failed: {e}", err=True)
+        if logger.isEnabledFor(logging.DEBUG):
+            import traceback
+
+            traceback.print_exc()
+        sys.exit(1)
+
+
+@main.command()
+@click.argument("path", type=click.Path(exists=True))
+@click.option(
+    "--format",
+    "output_format",
+    type=click.Choice(["table", "json", "csv"]),
+    default="table",
+    help="Output format (default: table)",
+)
+@click.option("--enabled-only", is_flag=True, help="Show only enabled schedules")
+def list(path: str, output_format: str, enabled_only: bool):
+    """List all schedules with details.
+
+    PATH can be either a schedules.yaml file or a schedules/ directory.
+
+    Examples:
+        beanschedule list schedules/
+        beanschedule list schedules/ --enabled-only
+        beanschedule list schedules/ --format json
+    """
+    path_obj = Path(path)
+
+    try:
+        # Load schedules
+        if path_obj.is_file():
+            schedule_file = load_schedules_file(path_obj)
+        elif path_obj.is_dir():
+            schedule_file = load_schedules_from_directory(path_obj)
+        else:
+            click.echo(f"Error: Path is neither a file nor a directory: {path_obj}", err=True)
+            sys.exit(1)
+
+        if schedule_file is None:
+            click.echo("Error: No schedules loaded", err=True)
+            sys.exit(1)
+
+        # Filter schedules
+        schedules = schedule_file.schedules
+        if enabled_only:
+            schedules = [s for s in schedules if s.enabled]
+
+        if not schedules:
+            click.echo("No schedules found")
+            return
+
+        # Output in requested format
+        if output_format == "table":
+            _print_schedule_table(schedules)
+        elif output_format == "json":
+            import json
+
+            schedules_data = [s.model_dump(mode="python") for s in schedules]
+            click.echo(json.dumps(schedules_data, indent=2, default=str))
+        elif output_format == "csv":
+            _print_schedule_csv(schedules)
+
+    except Exception as e:
+        click.echo(f"Error: {e}", err=True)
+        if logger.isEnabledFor(logging.DEBUG):
+            import traceback
+
+            traceback.print_exc()
+        sys.exit(1)
+
+
+def _print_schedule_table(schedules):
+    """Print schedules as a formatted table."""
+    # Calculate column widths
+    id_width = max(len(s.id) for s in schedules)
+    id_width = max(id_width, len("ID"))
+
+    payee_width = max(len(s.transaction.payee or "") for s in schedules)
+    payee_width = max(payee_width, len("Payee"))
+    payee_width = min(payee_width, 30)  # Cap at 30
+
+    # Print header
+    click.echo(f"{'ID':<{id_width}}  {'Status':<8}  {'Frequency':<12}  {'Payee':<{payee_width}}")
+    click.echo("-" * (id_width + 8 + 12 + payee_width + 6))
+
+    # Print schedules
+    for s in schedules:
+        status = "✓ enabled" if s.enabled else "  disabled"
+        frequency = s.recurrence.frequency.value
+        payee = (s.transaction.payee or "")[:payee_width]
+
+        click.echo(f"{s.id:<{id_width}}  {status:<8}  {frequency:<12}  {payee:<{payee_width}}")
+
+    click.echo(f"\nTotal: {len(schedules)} schedules")
+
+
+def _print_schedule_csv(schedules):
+    """Print schedules as CSV."""
+    import csv
+    import sys
+
+    writer = csv.writer(sys.stdout)
+    writer.writerow(["ID", "Enabled", "Frequency", "Payee", "Account", "Amount"])
+
+    for s in schedules:
+        writer.writerow(
+            [
+                s.id,
+                "true" if s.enabled else "false",
+                s.recurrence.frequency.value,
+                s.transaction.payee or "",
+                s.match.account,
+                s.match.amount or "",
+            ],
+        )
+
+
+@main.command()
+@click.argument("schedule_id")
+@click.argument("start_date", type=click.DateTime(formats=["%Y-%m-%d"]))
+@click.argument("end_date", type=click.DateTime(formats=["%Y-%m-%d"]))
+@click.option(
+    "--schedules-path",
+    type=click.Path(exists=True),
+    default="schedules",
+    help="Path to schedules file or directory (default: schedules)",
+)
+def generate(schedule_id: str, start_date, end_date, schedules_path: str):
+    """Generate expected occurrence dates for a schedule.
+
+    SCHEDULE_ID: The ID of the schedule to generate dates for
+    START_DATE: Start date in YYYY-MM-DD format
+    END_DATE: End date in YYYY-MM-DD format
+
+    Examples:
+        beanschedule generate mortgage-payment 2024-01-01 2024-12-31
+        beanschedule generate paycheck 2024-01-01 2024-06-30 --schedules-path my-schedules/
+    """
+    path_obj = Path(schedules_path)
+    start = start_date.date()
+    end = end_date.date()
+
+    try:
+        # Load schedules
+        if path_obj.is_file():
+            schedule_file = load_schedules_file(path_obj)
+        elif path_obj.is_dir():
+            schedule_file = load_schedules_from_directory(path_obj)
+        else:
+            click.echo(f"Error: Path not found: {path_obj}", err=True)
+            sys.exit(1)
+
+        if schedule_file is None:
+            click.echo("Error: No schedules loaded", err=True)
+            sys.exit(1)
+
+        # Find schedule by ID
+        schedule = next((s for s in schedule_file.schedules if s.id == schedule_id), None)
+        if schedule is None:
+            click.echo(f"Error: Schedule '{schedule_id}' not found", err=True)
+            sys.exit(1)
+
+        # Generate occurrences
+        engine = RecurrenceEngine()
+        occurrences = engine.generate(schedule, start, end)
+
+        # Print results
+        click.echo(f"Schedule: {schedule.id}")
+        click.echo(f"Frequency: {schedule.recurrence.frequency.value}")
+        click.echo(f"Period: {start} to {end}")
+        click.echo(f"\nExpected occurrences ({len(occurrences)}):")
+
+        for occurrence_date in sorted(occurrences):
+            click.echo(f"  {occurrence_date}")
+
+    except Exception as e:
+        click.echo(f"Error: {e}", err=True)
+        if logger.isEnabledFor(logging.DEBUG):
+            import traceback
+
+            traceback.print_exc()
+        sys.exit(1)
+
+
+def _serialize_value(value):
+    """Convert Pydantic values to YAML-serializable types."""
+    try:
+        if value is None:
+            return None
+        if isinstance(
+            value,
+            (bool, int, float),
+        ):  # Check bool before int since bool is subclass of int
+            return value
+        if isinstance(value, Decimal):
+            return float(value)
+        if isinstance(value, Enum):
+            return value.value
+        if isinstance(value, (date, str)):
+            return value
+        if hasattr(value, "items"):  # Duck typing for dict-like objects
+            return {k: _serialize_value(v) for k, v in value.items()}
+        if hasattr(value, "__iter__"):  # Duck typing for iterables (but not str/dict)
+            return [_serialize_value(item) for item in value]
+        return value
+    except Exception:
+        # If serialization fails, just return the value as-is
+        return str(value)
+
+
+@main.command()
+@click.argument("path", type=click.Path(), required=False, default="schedules")
+def init(path: str):
+    """Initialize a new schedules directory with example files.
+
+    Creates a schedules/ directory with example schedule files that
+    demonstrate different recurrence patterns and matching strategies.
+
+    PATH: Directory to create (default: schedules)
+
+    Examples:
+        beanschedule init
+        beanschedule init my-schedules/
+    """
+    output_path = Path(path)
+
+    # Check if directory exists
+    if output_path.exists():
+        click.confirm(
+            f"Directory already exists: {output_path}\nContinue and overwrite files?",
+            abort=True,
+        )
+    else:
+        output_path.mkdir(parents=True, exist_ok=True)
+
+    # Create config file
+    config_path = output_path / "_config.yaml"
+    config_content = """# Global configuration for beanschedule
+fuzzy_match_threshold: 0.80
+default_date_window_days: 3
+default_amount_tolerance_percent: 0.02
+placeholder_flag: '!'
+"""
+
+    with open(config_path, "w") as f:
+        f.write(config_content)
+
+    click.echo(f"Created: {config_path}")
+
+    # Create example schedule
+    example_path = output_path / "example-rent.yaml"
+    example_content = """# Example monthly rent payment
+id: example-rent
+enabled: true
+match:
+  account: Assets:Bank:Checking
+  payee_pattern: "Property Manager|Landlord"
+  amount: -1500.00
+  amount_tolerance: 0.00
+  date_window_days: 2
+recurrence:
+  frequency: MONTHLY
+  day_of_month: 1
+  start_date: 2024-01-01
+transaction:
+  payee: Property Manager
+  narration: Monthly Rent
+  tags: []
+  metadata:
+    schedule_id: example-rent
+  postings:
+    - account: Assets:Bank:Checking
+      amount: null
+    - account: Expenses:Housing:Rent
+      amount: null
+missing_transaction:
+  create_placeholder: true
+  flag: '!'
+  narration_prefix: '[MISSING]'
+"""
+
+    with open(example_path, "w") as f:
+        f.write(example_content)
+
+    click.echo(f"Created: {example_path}")
+    click.echo(f"\n✓ Initialized schedule directory: {output_path}")
+    click.echo("\nNext steps:")
+    click.echo("  1. Edit the example schedule file or create your own")
+    click.echo("  2. Validate your schedules: beanschedule validate " + str(output_path))
+    click.echo("  3. Integrate with beangulp: import beanschedule in your config.py")
+
+
+if __name__ == "__main__":
+    main()

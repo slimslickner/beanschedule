@@ -1,0 +1,50 @@
+# Monthly mortgage payment with interest, escrow, and principal split
+# Demonstrates: MONTHLY frequency, fixed posting split with interest/principal/escrow
+id: mortgage-payment
+enabled: true
+match:
+  account: Assets:Bank:Checking
+  payee_pattern: "First National Mortgage|FNM|MORTGAGE PAYMENT"
+  amount: -1850.00
+  amount_tolerance: 10.00
+  amount_min: null
+  amount_max: null
+  date_window_days: 3
+recurrence:
+  frequency: MONTHLY
+  start_date: 2024-01-01
+  end_date: null
+  day_of_month: 1
+  month: null
+  day_of_week: null
+  interval: 1
+  days_of_month: null
+  interval_months: null
+transaction:
+  payee: First National Mortgage
+  narration: Monthly Mortgage Payment
+  tags:
+    - property-main-home
+  metadata:
+    schedule_id: mortgage-payment
+    property: main-residence
+  postings:
+    - account: Assets:Bank:Checking
+      amount: null
+      narration: null
+    - account: Expenses:Housing:Mortgage-Interest
+      amount: 1250.00
+      narration: Mortgage Interest
+    - account: Expenses:Housing:Property-Tax-Escrow
+      amount: 300.00
+      narration: Property Tax Escrow
+    - account: Expenses:Housing:Insurance-Escrow
+      amount: 100.00
+      narration: Home Insurance Escrow
+    - account: Liabilities:Mortgage:Principal
+      amount: 200.00
+      narration: Principal Payment
+missing_transaction:
+  create_placeholder: true
+  flag: '!'
+  narration_prefix: '[MISSING]'

@@ -1,0 +1,40 @@
+# Annual membership fee
+# Demonstrates: YEARLY frequency with specific month and day
+id: subscription-annual
+enabled: true
+match:
+  account: Liabilities:CreditCard:Visa
+  payee_pattern: "CLOUD STORAGE|Cloud Storage Co"
+  amount: -99.00
+  amount_tolerance: 5.00
+  amount_min: null
+  amount_max: null
+  date_window_days: 5
+recurrence:
+  frequency: YEARLY
+  start_date: 2024-09-15
+  end_date: null
+  day_of_month: 15
+  month: 9
+  day_of_week: null
+  interval: 1
+  days_of_month: null
+  interval_months: null
+transaction:
+  payee: Cloud Storage Co
+  narration: Annual Storage Subscription
+  tags: []
+  metadata:
+    schedule_id: subscription-annual
+    subscription_type: cloud-storage
+  postings:
+    - account: Liabilities:CreditCard:Visa
+      amount: null
+      narration: null
+    - account: Expenses:Technology:Software
+      amount: null
+      narration: null
+missing_transaction:
+  create_placeholder: true
+  flag: '!'
+  narration_prefix: '[MISSING]'

@@ -1,0 +1,31 @@
+id: yearly-subscription
+enabled: true
+match:
+  account: Assets:Bank:Checking
+  payee_pattern: "Adobe|Software"
+  amount: -99.00
+  amount_tolerance: 5.00
+  amount_min: null
+  amount_max: null
+  date_window_days: 5
+recurrence:
+  frequency: YEARLY
+  start_date: 2024-01-15
+  end_date: null
+  day_of_month: 15
+  month: 1
+  day_of_week: null
+  interval: 1
+  days_of_month: null
+  interval_months: null
+transaction:
+  payee: Adobe
+  narration: Annual Subscription
+  tags: []
+  metadata:
+    schedule_id: yearly-subscription
+  postings: null
+missing_transaction:
+  create_placeholder: true
+  flag: '!'
+  narration_prefix: '[MISSING]'

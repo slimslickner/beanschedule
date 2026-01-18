@@ -1,0 +1,40 @@
+# Quarterly water bill
+# Demonstrates: INTERVAL frequency (every 3 months)
+id: utilities-water
+enabled: true
+match:
+  account: Assets:Bank:Checking
+  payee_pattern: "Water Authority|Municipal Water|WATER DEPT"
+  amount: null
+  amount_tolerance: null
+  amount_min: -40.00
+  amount_max: -120.00
+  date_window_days: 5
+recurrence:
+  frequency: INTERVAL
+  start_date: 2024-01-10
+  end_date: null
+  day_of_month: 10
+  month: null
+  day_of_week: null
+  interval: 1
+  days_of_month: null
+  interval_months: 3
+transaction:
+  payee: City Water Authority
+  narration: Water & Sewer Bill
+  tags: []
+  metadata:
+    schedule_id: utilities-water
+    utility_type: water
+  postings:
+    - account: Assets:Bank:Checking
+      amount: null
+      narration: null
+    - account: Expenses:Utilities:Water
+      amount: null
+      narration: null
+missing_transaction:
+  create_placeholder: true
+  flag: '!'
+  narration_prefix: '[MISSING]'

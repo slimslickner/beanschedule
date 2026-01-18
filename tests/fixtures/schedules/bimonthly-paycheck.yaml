@@ -1,0 +1,33 @@
+id: bimonthly-paycheck
+enabled: true
+match:
+  account: Assets:Bank:Checking
+  payee_pattern: "ACME CORP|Payroll"
+  amount: 2500.00
+  amount_tolerance: 100.00
+  amount_min: null
+  amount_max: null
+  date_window_days: 3
+recurrence:
+  frequency: BIMONTHLY
+  start_date: 2024-01-05
+  end_date: null
+  day_of_month: null
+  month: null
+  day_of_week: null
+  interval: 1
+  days_of_month:
+    - 5
+    - 20
+  interval_months: null
+transaction:
+  payee: ACME Corp
+  narration: Salary Payment
+  tags: []
+  metadata:
+    schedule_id: bimonthly-paycheck
+  postings: null
+missing_transaction:
+  create_placeholder: true
+  flag: '!'
+  narration_prefix: '[MISSING]'

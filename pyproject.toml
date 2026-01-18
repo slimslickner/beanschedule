@@ -1,0 +1,103 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "beanschedule"
+version = "1.0.0"
+description = "Scheduled transaction framework for Beancount - automatic matching, enrichment, and placeholder creation"
+readme = "README.md"
+requires-python = ">=3.9"
+license = {text = "MIT"}
+keywords = ["beancount", "accounting", "finance", "beangulp", "scheduled-transactions", "recurring-transactions"]
+authors = [
+    {name = "slimslickner"}
+]
+maintainers = [
+    {name = "slimslickner"}
+]
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Intended Audience :: End Users/Desktop",
+    "Intended Audience :: Financial and Insurance Industry",
+    "Topic :: Office/Business :: Financial :: Accounting",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Operating System :: OS Independent",
+]
+
+dependencies = [
+    "beancount>=3.2.0",
+    "beangulp>=0.2.0",
+    "pyyaml>=6.0",
+    "python-dateutil>=2.8.0",
+    "pydantic>=2.0.0",
+    "click>=8.0.0",
+    "ruff>=0.14.13",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0",
+    "pytest-cov>=4.0.0",
+    "pytest-mock>=3.10.0",
+    "black>=23.0.0",
+    "ruff>=0.1.0",
+    "mypy>=1.0.0",
+    "types-PyYAML>=6.0.0",
+    "types-python-dateutil>=2.8.0",
+]
+docs = [
+    "mkdocs>=1.5.0",
+    "mkdocs-material>=9.0.0",
+    "mkdocstrings[python]>=0.24.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/slimslickner/beanschedule"
+Documentation = "https://github.com/slimslickner/beanschedule#readme"
+Repository = "https://github.com/slimslickner/beanschedule"
+"Bug Tracker" = "https://github.com/slimslickner/beanschedule/issues"
+Changelog = "https://github.com/slimslickner/beanschedule/blob/main/CHANGELOG.md"
+
+[project.scripts]
+beanschedule = "beanschedule.cli:main"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["beanschedule*"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = "-v --cov=beanschedule --cov-report=term-missing --cov-report=html"
+
+[tool.black]
+line-length = 100
+target-version = ['py39']
+include = '\.pyi?$'
+
+[tool.ruff]
+line-length = 100
+target-version = "py39"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "UP", "B", "A", "COM", "C4", "DTZ", "ISC", "ICN", "G", "PIE", "T20", "Q", "RSE", "RET", "SLF", "SIM", "TID", "ARG", "PTH", "ERA", "PL", "RUF"]
+
+[tool.mypy]
+python_version = "3.9"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = false
+check_untyped_defs = true
