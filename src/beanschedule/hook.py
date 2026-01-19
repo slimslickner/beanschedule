@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 
 def schedule_hook(
     extracted_entries_list,
-    ledger_entries: Optional[List[data.Directive]] = None,
+    existing_entries: Optional[List[data.Directive]] = None,
 ):
     """
     Beangulp hook for scheduled transaction matching and enrichment.
@@ -34,12 +34,18 @@ def schedule_hook(
 
     Args:
         extracted_entries_list: Entries from importers (beangulp format)
-        ledger_entries: Existing ledger entries (optional, for duplicate detection)
+        existing_entries: Existing ledger entries from beangulp
 
     Returns:
         Modified entries list with enriched transactions
     """
     logger.info("Running schedule_hook")
+
+    ledger_entries = existing_entries
+    logger.info(f"Imported entries: {len(extracted_entries_list)} file(s)")
+    logger.info(f"Existing ledger entries: {len(ledger_entries or [])} entries")
+    if ledger_entries:
+        logger.debug(f"Using {len(ledger_entries)} existing ledger entries")
 
     # Step 1: Load schedules
     try:
@@ -57,11 +63,16 @@ def schedule_hook(
         logger.info("No enabled schedules, returning entries unchanged")
         return extracted_entries_list
 
-    # Step 2: Extract date range from all transactions
-    date_range = _extract_date_range(extracted_entries_list)
+    # Step 2: Extract date range from all transactions (imported + ledger)
+    date_range = _extract_date_range(extracted_entries_list, ledger_entries)
     if date_range is None:
-        logger.info("No transactions found, returning entries unchanged")
+        logger.info("No transactions found in imports or ledger, returning entries unchanged")
         return extracted_entries_list
+
+    # If we have no imported entries but have ledger entries, still process schedules
+    # to check for missing transactions
+    if not extracted_entries_list and ledger_entries:
+        logger.info(f"No new imports, but checking schedules against {len(ledger_entries)} existing ledger entries")
 
     start_date, end_date = date_range
     logger.info(f"Processing date range: {start_date} to {end_date}")
@@ -80,6 +91,16 @@ def schedule_hook(
     modified_entries_list = []
     matched_occurrences = set()
     matched_details = []  # Track matched transactions for summary
+
+    # First, match any transactions already in the ledger (to avoid false missing warnings)
+    if ledger_entries:
+        ledger_matched = _match_ledger_transactions(
+            ledger_entries,
+            expected_occurrences,
+            enabled_schedules,
+        )
+        matched_occurrences.update(ledger_matched)
+        logger.debug(f"Matched {len(ledger_matched)} transactions from existing ledger")
 
     for item in extracted_entries_list:
         # Beangulp format: (filepath, entries, account, importer_wrapper)
@@ -134,11 +155,8 @@ def schedule_hook(
 
     if placeholders:
         # Add placeholders to a synthetic "schedules" file entry
-        # Use 4-element format if original list uses it
-        if extracted_entries_list and len(extracted_entries_list[0]) == 4:
-            modified_entries_list.append(("<schedules>", placeholders, None, None))
-        else:
-            modified_entries_list.append(("<schedules>", placeholders))
+        # Always use 4-element format (beangulp standard)
+        modified_entries_list.append(("<schedules>", placeholders, None, None))
 
         # Log prominent warning about missing scheduled transactions
         logger.warning("=" * 70)
@@ -152,22 +170,30 @@ def schedule_hook(
             logger.warning(f"  • {expected_date} - {placeholder.payee} ({schedule_id})")
         logger.warning("=" * 70)
 
+    # Log final summary
+    _log_summary(enabled_schedules, matched_occurrences, placeholders, start_date, end_date)
+
     logger.info("schedule_hook completed")
     return modified_entries_list
 
 
-def _extract_date_range(extracted_entries_list) -> Optional[Tuple[date, date]]:
+def _extract_date_range(
+    extracted_entries_list,
+    ledger_entries: Optional[List[data.Directive]] = None,
+) -> Optional[Tuple[date, date]]:
     """
-    Extract min/max date range from all transactions.
+    Extract min/max date range from all transactions (imported + ledger).
 
     Args:
         extracted_entries_list: List from beangulp (format varies)
+        ledger_entries: Existing ledger entries (optional)
 
     Returns:
         Tuple of (start_date, end_date) with ±7 day buffer, or None if no transactions
     """
     dates = []
 
+    # Extract dates from imported transactions
     for item in extracted_entries_list:
         # Handle both formats: (filepath, entries, account, importer) or (filepath, entries)
         if len(item) >= 2:
@@ -175,6 +201,12 @@ def _extract_date_range(extracted_entries_list) -> Optional[Tuple[date, date]]:
             for entry in entries:
                 if isinstance(entry, data.Transaction):
                     dates.append(entry.date)
+
+    # Extract dates from ledger transactions
+    if ledger_entries:
+        for entry in ledger_entries:
+            if isinstance(entry, data.Transaction):
+                dates.append(entry.date)
 
     if not dates:
         return None
@@ -227,6 +259,8 @@ def _match_transaction(
     """
     Match transaction to best matching schedule.
 
+    Prioritizes pre-existing schedule_id metadata if present, otherwise uses fuzzy matching.
+
     Args:
         transaction: Transaction to match
         expected_occurrences: Dict of account -> [(schedule, expected_date)]
@@ -246,8 +280,108 @@ def _match_transaction(
     if not candidates:
         return None
 
-    # Find best match
+    # Check for pre-existing schedule_id metadata
+    existing_schedule_id = transaction.meta.get("schedule_id")
+    if existing_schedule_id:
+        # Try to find matching schedule in candidates
+        matching_candidates = [
+            (sched, exp_date) for sched, exp_date in candidates if sched.id == existing_schedule_id
+        ]
+
+        if matching_candidates:
+            # Find the candidate with closest date to transaction date
+            # This handles cases where a schedule occurs multiple times
+            closest_match = min(
+                matching_candidates,
+                key=lambda x: abs((x[1] - transaction.date).days),
+            )
+            schedule, expected_date = closest_match
+            logger.info(
+                f"✓ Using pre-existing schedule_id metadata: '{existing_schedule_id}'",
+            )
+            # Return with perfect confidence score since it's explicitly set
+            return (schedule, expected_date, 1.0)
+        else:
+            # Pre-existing schedule_id not found in candidates for this account
+            logger.debug(
+                f"Pre-existing schedule_id '{existing_schedule_id}' not found in candidates for account {main_account}",
+            )
+
+    # Fall back to fuzzy matching
     return matcher.find_best_match(transaction, candidates)
+
+
+def _match_ledger_transactions(
+    ledger_entries: List[data.Directive],
+    expected_occurrences: Dict[str, List[Tuple[Schedule, date]]],
+    enabled_schedules: List[Schedule],
+) -> Set[Tuple[str, date]]:
+    """
+    Match transactions already in the ledger to expected schedule occurrences.
+
+    Uses schedule_id metadata if present, otherwise doesn't match (those transactions
+    were already imported and shouldn't be re-matched).
+
+    Args:
+        ledger_entries: Existing ledger entries
+        expected_occurrences: Dict of account -> [(schedule, expected_date)]
+        enabled_schedules: List of enabled schedules for lookup
+
+    Returns:
+        Set of (schedule_id, expected_date) tuples for transactions already in ledger
+    """
+    matched = set()
+    schedule_id_map = {sched.id: sched for sched in enabled_schedules}
+
+    for entry in ledger_entries:
+        if not isinstance(entry, data.Transaction):
+            continue
+
+        # Only match if transaction has explicit schedule_id metadata
+        schedule_id = entry.meta.get("schedule_id")
+        if not schedule_id:
+            continue
+
+        # Check if this schedule_id exists
+        schedule = schedule_id_map.get(schedule_id)
+        if not schedule:
+            logger.debug(f"Ledger transaction has unknown schedule_id: {schedule_id}")
+            continue
+
+        # Check if transaction's account matches the schedule's account
+        if not entry.postings:
+            continue
+
+        main_account = entry.postings[0].account
+        if main_account != schedule.match.account:
+            logger.debug(
+                f"Ledger transaction account {main_account} doesn't match schedule account {schedule.match.account}",
+            )
+            continue
+
+        # Find expected occurrence for this schedule_id and date
+        # Allow some date flexibility (within the date window) for ledger transactions
+        date_window = schedule.match.date_window_days or 0
+        found = False
+
+        for sched, expected_date in expected_occurrences.get(main_account, []):
+            if sched.id == schedule_id:
+                # Check if dates match (with window tolerance)
+                days_diff = abs((entry.date - expected_date).days)
+                if days_diff <= date_window:
+                    matched.add((schedule_id, expected_date))
+                    logger.debug(
+                        f"Matched ledger transaction {entry.date} to schedule {schedule_id} (expected {expected_date})",
+                    )
+                    found = True
+                    break
+
+        if not found:
+            logger.debug(
+                f"Ledger transaction {entry.date} with schedule_id {schedule_id} doesn't match any expected occurrence",
+            )
+
+    return matched
 
 
 def _enrich_transaction(
@@ -392,6 +526,71 @@ def _create_placeholders(
             placeholders.append(placeholder)
 
     return placeholders
+
+
+def _log_summary(
+    schedules: List[Schedule],
+    matched_occurrences: Set[Tuple[str, date]],
+    missing_placeholders: List[data.Transaction],
+    start_date: date,
+    end_date: date,
+) -> None:
+    """
+    Log a summary of schedule processing results.
+
+    Args:
+        schedules: All enabled schedules
+        matched_occurrences: Set of (schedule_id, expected_date) that were matched
+        missing_placeholders: List of placeholder transactions created for missing
+        start_date: Start of processing date range
+        end_date: End of processing date range
+    """
+    logger.info("=" * 70)
+    logger.info("SCHEDULE PROCESSING SUMMARY")
+    logger.info("=" * 70)
+    logger.info(f"Date range: {start_date} to {end_date}")
+    logger.info("")
+
+    # Count expected vs matched by schedule
+    total_expected = 0
+    total_matched = 0
+    missing_by_schedule = defaultdict(int)
+
+    for schedule in schedules:
+        # Count expected occurrences
+        expected_count = sum(
+            1 for schedule_id, _ in matched_occurrences
+            if schedule_id == schedule.id
+        )
+        # Add missing count
+        missing_count = sum(
+            1 for placeholder in missing_placeholders
+            if placeholder.meta.get("schedule_id") == schedule.id
+        )
+        total_expected_for_schedule = expected_count + missing_count
+
+        total_expected += total_expected_for_schedule
+        total_matched += expected_count
+
+        if missing_count > 0:
+            missing_by_schedule[schedule.id] = missing_count
+
+        status = "✓" if missing_count == 0 else "⚠"
+        logger.info(
+            f"{status} {schedule.id:40} {expected_count:2}/{total_expected_for_schedule:2} matched"
+        )
+
+    logger.info("=" * 70)
+    logger.info(
+        f"TOTAL: {total_matched}/{total_expected} scheduled transaction(s) matched"
+    )
+
+    if missing_by_schedule:
+        logger.warning(f"Missing in {len(missing_by_schedule)} schedule(s):")
+        for schedule_id, count in sorted(missing_by_schedule.items()):
+            logger.warning(f"  • {schedule_id}: {count} missing")
+
+    logger.info("=" * 70)
 
 
 def _create_placeholder_transaction(

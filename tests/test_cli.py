@@ -1,14 +1,12 @@
 """Tests for CLI commands."""
 
 import json
-from datetime import date
-from pathlib import Path
 
 import pytest
 import yaml
 from click.testing import CliRunner
 
-from beanschedule.cli import main, init, list as list_cmd, validate, generate, migrate
+from beanschedule.cli import main
 
 
 @pytest.fixture
@@ -453,136 +451,6 @@ class TestGenerateCommand:
         # But we can test with explicit path instead
 
 
-class TestMigrateCommand:
-    """Tests for the migrate command."""
-
-    def test_migrate_dry_run(self, cli_runner, schedules_yaml_file, tmp_path):
-        """Test migrate command with --dry-run flag."""
-        output_dir = tmp_path / "schedules_new"
-
-        result = cli_runner.invoke(
-            main,
-            [
-                "migrate",
-                str(schedules_yaml_file),
-                str(output_dir),
-                "--dry-run",
-            ],
-        )
-        if result.exit_code != 0:
-            print(f"Output: {result.output}")
-            if result.exception:
-                import traceback
-
-                traceback.print_exception(
-                    type(result.exception), result.exception, result.exception.__traceback__
-                )
-        assert result.exit_code == 0
-        assert "[DRY RUN]" in result.output
-        assert "Would create directory" in result.output
-        # Output directory should not be created in dry-run mode
-        assert not output_dir.exists()
-
-    def test_migrate_creates_files(self, cli_runner, schedules_yaml_file, tmp_path):
-        """Test that migrate creates individual schedule files."""
-        output_dir = tmp_path / "schedules_migrated"
-
-        result = cli_runner.invoke(
-            main,
-            [
-                "migrate",
-                str(schedules_yaml_file),
-                str(output_dir),
-                "--force",
-            ],
-        )
-        assert result.exit_code == 0
-        assert "Migration complete" in result.output
-
-        # Check that files were created
-        assert (output_dir / "_config.yaml").exists()
-        assert (output_dir / "monthly-rent.yaml").exists()
-        assert (output_dir / "biweekly-paycheck.yaml").exists()
-        assert (output_dir / "disabled-schedule.yaml").exists()
-
-    def test_migrate_creates_backup(self, cli_runner, schedules_yaml_file, tmp_path):
-        """Test that migrate creates a backup of the original file."""
-        output_dir = tmp_path / "schedules_migrated"
-        backup_path = schedules_yaml_file.parent / f"{schedules_yaml_file.name}.backup"
-
-        result = cli_runner.invoke(
-            main,
-            [
-                "migrate",
-                str(schedules_yaml_file),
-                str(output_dir),
-                "--force",
-            ],
-        )
-        assert result.exit_code == 0
-
-        # Original file should be renamed to .backup
-        assert backup_path.exists()
-
-    def test_migrate_skip_validation(self, cli_runner, schedules_yaml_file, tmp_path):
-        """Test migrate with --skip-validation flag."""
-        output_dir = tmp_path / "schedules_migrated"
-
-        result = cli_runner.invoke(
-            main,
-            [
-                "migrate",
-                str(schedules_yaml_file),
-                str(output_dir),
-                "--force",
-                "--skip-validation",
-            ],
-        )
-        assert result.exit_code == 0
-        assert "Validating migration" not in result.output
-
-    def test_migrate_existing_directory_abort(self, cli_runner, schedules_yaml_file, tmp_path):
-        """Test migrate aborts when output directory exists without --force."""
-        output_dir = tmp_path / "schedules_existing"
-        output_dir.mkdir()
-
-        result = cli_runner.invoke(
-            main,
-            [
-                "migrate",
-                str(schedules_yaml_file),
-                str(output_dir),
-            ],
-            input="n",  # Abort the confirmation
-        )
-        assert result.exit_code != 0
-
-    def test_migrate_creates_config_file(self, cli_runner, schedules_yaml_file, tmp_path):
-        """Test that migrate creates the global config file."""
-        output_dir = tmp_path / "schedules_migrated"
-
-        result = cli_runner.invoke(
-            main,
-            [
-                "migrate",
-                str(schedules_yaml_file),
-                str(output_dir),
-                "--force",
-            ],
-        )
-        assert result.exit_code == 0
-
-        config_file = output_dir / "_config.yaml"
-        assert config_file.exists()
-
-        # Check config content
-        with open(config_file) as f:
-            config_data = yaml.safe_load(f)
-
-        assert "fuzzy_match_threshold" in config_data
-        assert "default_date_window_days" in config_data
-
-
 class TestInitCommand:
     """Tests for the init command."""
 
@@ -705,7 +573,6 @@ class TestHelpCommands:
         assert "validate" in result.output
         assert "list" in result.output
         assert "generate" in result.output
-        assert "migrate" in result.output
         assert "init" in result.output
 
     def test_validate_help(self, cli_runner):
