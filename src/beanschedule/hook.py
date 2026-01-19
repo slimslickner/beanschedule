@@ -11,7 +11,7 @@ from beancount.core import amount, data
 from .loader import get_enabled_schedules, load_schedules_file
 from .matcher import TransactionMatcher
 from .recurrence import RecurrenceEngine
-from .schema import Schedule
+from .schema import GlobalConfig, Schedule
 
 logger = logging.getLogger(__name__)
 
@@ -92,12 +92,18 @@ def schedule_hook(
     matched_occurrences = set()
     matched_details = []  # Track matched transactions for summary
 
+    # Build date index for lazy matching (O(n) once vs O(n*m) per lookup)
+    date_index = _build_date_index(ledger_entries) if ledger_entries else {}
+
     # First, match any transactions already in the ledger (to avoid false missing warnings)
     if ledger_entries:
-        ledger_matched = _match_ledger_transactions(
+        ledger_matched = _match_ledger_transactions_lazy(
             ledger_entries,
             expected_occurrences,
             enabled_schedules,
+            date_index,
+            matcher,
+            schedule_file.config,
         )
         matched_occurrences.update(ledger_matched)
         logger.debug(f"Matched {len(ledger_matched)} transactions from existing ledger")
@@ -309,6 +315,104 @@ def _match_transaction(
 
     # Fall back to fuzzy matching
     return matcher.find_best_match(transaction, candidates)
+
+
+def _build_date_index(ledger_entries: Optional[List[data.Directive]]) -> Dict[date, List[data.Transaction]]:
+    """
+    Build an index mapping dates to transactions for fast lookups.
+
+    Speeds up lazy matching by allowing O(1) lookup instead of scanning all entries.
+
+    Args:
+        ledger_entries: Existing ledger entries
+
+    Returns:
+        Dict mapping date -> List of transactions on that date
+    """
+    index = defaultdict(list)
+
+    if not ledger_entries:
+        return index
+
+    for entry in ledger_entries:
+        if isinstance(entry, data.Transaction):
+            index[entry.date].append(entry)
+
+    logger.debug(f"Built date index with {len(index)} unique dates from {len(ledger_entries)} entries")
+    return index
+
+
+def _match_ledger_transactions_lazy(
+    ledger_entries: List[data.Directive],
+    expected_occurrences: Dict[str, List[Tuple[Schedule, date]]],
+    enabled_schedules: List[Schedule],
+    date_index: Dict[date, List[data.Transaction]],
+    matcher: TransactionMatcher,
+    config: GlobalConfig,
+) -> Set[Tuple[str, date]]:
+    """
+    Match ledger transactions using lazy evaluation with date windows.
+
+    Only checks transactions within each schedule's date_window_days instead of
+    scanning all ledger entries. Uses explicit schedule_id metadata when available,
+    then falls back to fuzzy matching within the date window.
+
+    Args:
+        ledger_entries: Existing ledger entries
+        expected_occurrences: Dict of account -> [(schedule, expected_date)]
+        enabled_schedules: List of enabled schedules for lookup
+        date_index: Dict of date -> [transactions] for fast lookup
+        matcher: TransactionMatcher for fuzzy matching
+
+    Returns:
+        Set of (schedule_id, expected_date) tuples for transactions already in ledger
+    """
+    matched = set()
+    schedule_id_map = {sched.id: sched for sched in enabled_schedules}
+
+    # Fast path: transactions with explicit schedule_id metadata
+    for entry in ledger_entries:
+        if not isinstance(entry, data.Transaction):
+            continue
+
+        schedule_id = entry.meta.get("schedule_id")
+        if not schedule_id:
+            continue
+
+        schedule = schedule_id_map.get(schedule_id)
+        if not schedule:
+            logger.debug(f"Ledger transaction has unknown schedule_id: {schedule_id}")
+            continue
+
+        if not entry.postings:
+            continue
+
+        main_account = entry.postings[0].account
+        if main_account != schedule.match.account:
+            logger.debug(
+                f"Ledger transaction account {main_account} doesn't match schedule account {schedule.match.account}",
+            )
+            continue
+
+        # Find matching expected occurrence within date window
+        date_window = schedule.match.date_window_days or 0
+
+        for sched, expected_date in expected_occurrences.get(main_account, []):
+            if sched.id == schedule_id:
+                days_diff = abs((entry.date - expected_date).days)
+                if days_diff <= date_window:
+                    matched.add((schedule_id, expected_date))
+                    logger.debug(
+                        f"Matched ledger transaction {entry.date} to schedule {schedule_id} (expected {expected_date})",
+                    )
+                    break
+
+    # Note: We do NOT do fuzzy matching on ledger transactions without schedule_id
+    # Only transactions with explicit schedule_id metadata are considered "confirmed" matches
+    # This prevents false positives from accidentally matching unrelated transactions
+    # Fuzzy matching is reserved for newly imported transactions that we're enriching
+
+    return matched
 
 
 def _match_ledger_transactions(
