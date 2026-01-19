@@ -9,12 +9,14 @@ Pre-release checklist and performance optimization opportunities before open sou
 ## Core Fixes & Stability
 
 ### ✅ Fixed
+
 - [x] Hook signature alignment with beangulp (accepting `existing_entries` directly)
 - [x] Support for checking schedules against existing ledger entries
 - [x] Placeholder generation format (always 4-tuple for beangulp compatibility)
 - [x] Lazy matching optimization (80%+ performance improvement verified)
 
 ### 🔄 In Progress / Todo
+
 - [ ] Error handling improvements
   - [ ] Graceful handling of invalid schedule YAML syntax
   - [ ] Better error messages for misconfigured matching criteria
@@ -35,7 +37,9 @@ Pre-release checklist and performance optimization opportunities before open sou
 ### ✅ Completed
 
 #### 1. **Lazy Matching Strategy** ⭐⭐⭐⭐⭐
+
 Only match transactions that fall within expected date windows, not all historical transactions.
+
 - **Impact**: 90%+ speedup when ledger has years of data ✅ VERIFIED
 - **Effort**: Medium ✅ DONE
 - **Implementation**:
@@ -47,10 +51,13 @@ Only match transactions that fall within expected date windows, not all historic
 ### High Priority (Critical - Next)
 
 #### 2. **Payee Pattern Compilation** ⭐⭐⭐⭐
+
 Pre-compile regex patterns and cache fuzzy match results.
+
 - **Impact**: 40-50% speedup
 - **Effort**: Low
 - **Implementation**:
+
   ```python
   # In TransactionMatcher.__init__:
   self.compiled_patterns = {}
@@ -63,6 +70,7 @@ Pre-compile regex patterns and cache fuzzy match results.
   ```
 
 #### 3. **Skip Ledger Matching When No Schedule Has schedule_id** ⭐⭐⭐
+
 - **Impact**: 5-10% speedup
 - **Effort**: Trivial
 - **Logic**: If no transactions in ledger have `schedule_id` metadata, skip ledger matching entirely
@@ -70,7 +78,9 @@ Pre-compile regex patterns and cache fuzzy match results.
 ### Medium Priority
 
 #### 4. **Bulk Transaction Filtering**
+
 Only extract and match transactions for accounts that have active schedules.
+
 - **Impact**: 20-30% speedup
 - **Effort**: Medium
 - **Implementation**:
@@ -79,13 +89,17 @@ Only extract and match transactions for accounts that have active schedules.
   - Skip accounts with no active schedules
 
 #### 5. **Recurrence Caching**
+
 Cache generated occurrences across multiple hook runs (useful in repl/testing).
+
 - **Impact**: 10-15% speedup on repeated runs
 - **Effort**: Low
 - **Note**: Need to consider cache invalidation on schedule file changes
 
 #### 6. **Batch Scoring**
+
 Use vectorized operations (numpy) for score calculations instead of per-transaction loops.
+
 - **Impact**: 15-25% speedup
 - **Effort**: Medium-High
 - **Tradeoff**: Adds numpy dependency
@@ -93,13 +107,16 @@ Use vectorized operations (numpy) for score calculations instead of per-transact
 ### Low Priority (Nice-to-Have)
 
 #### 7. **Parallel Processing**
+
 - Use multiprocessing for matching independent schedules
 - **Impact**: 2-3x speedup on multi-core systems
 - **Effort**: High
 - **Tradeoff**: Complexity, thread-safety concerns with logging
 
 #### 8. **Incremental Mode**
+
 Track which transactions were already matched, only process new imports.
+
 - **Impact**: Minimal for normal use (most value in development/testing)
 - **Effort**: Medium
 
@@ -152,9 +169,11 @@ Track which transactions were already matched, only process new imports.
 ## CLI Commands
 
 ### Current (v1.0.0)
+
 - `beanschedule` (no args) - shows help/version
 
 ### Planned (v1.1.0+)
+
 - [ ] `beanschedule generate` - Create schedule template from a transaction
 - [ ] `beanschedule detect` - Auto-detect recurring transactions in ledger
 - [ ] `beanschedule init` - Interactive setup wizard
@@ -193,6 +212,7 @@ Track which transactions were already matched, only process new imports.
 ## Before Open Source Release
 
 ### Required
+
 - [ ] MIT License badge in README
 - [ ] CONTRIBUTING.md with development setup
 - [ ] CODE_OF_CONDUCT.md
@@ -202,6 +222,7 @@ Track which transactions were already matched, only process new imports.
 - [ ] Pull request template
 
 ### Highly Recommended
+
 - [ ] PyPI package registration (currently local-only)
 - [ ] GitHub Actions for automated testing
 - [ ] Code coverage reporting (codecov)
@@ -209,6 +230,7 @@ Track which transactions were already matched, only process new imports.
 - [ ] Example configurations for common use cases
 
 ### Nice-to-Have
+
 - [ ] Discord/community discussion space
 - [ ] Blog post explaining the tool
 - [ ] Video demo
@@ -218,6 +240,7 @@ Track which transactions were already matched, only process new imports.
 ## Known Limitations
 
 ### Current
+
 1. **Ledger must fit in memory** - Not suitable for extremely large ledgers (100k+ entries)
 2. **No multi-currency support** - Assumes all amounts in schedule currency
 3. **Regex patterns only** - No glob patterns for payees
@@ -225,6 +248,7 @@ Track which transactions were already matched, only process new imports.
 5. **No transaction dependencies** - Can't express "this payment depends on that income"
 
 ### By Design
+
 1. No automatic posting generation beyond templates
 2. No integration with beancount plugins directly (hook-based only)
 3. Schedules are YAML (not Python) for simplicity and distribution
@@ -234,12 +258,14 @@ Track which transactions were already matched, only process new imports.
 ## Version Roadmap
 
 ### v1.0.0 (Current - Beta) ✅
+
 - [x] Core matching and enrichment
 - [x] Placeholder generation
 - [x] Basic ledger integration
 - [x] Lazy matching optimization (80%+ speedup)
 
 ### v1.1.0 (Next - Performance & Setup)
+
 - [ ] Pattern compilation & caching (40% speedup)
 - [ ] Skip unnecessary ledger matching (5-10% speedup)
 - [ ] Bulk transaction filtering (20-30% speedup)
@@ -247,6 +273,7 @@ Track which transactions were already matched, only process new imports.
 - [ ] Performance benchmarking
 
 ### v1.2.0 (Soon After - Features & Polish)
+
 - [ ] **CLI: `beanschedule detect`** - Auto-detect recurring transactions in ledger
 - [ ] **CLI: `beanschedule init`** - Interactive setup wizard
 - [ ] **CLI: `beanschedule validate`** - Validate schedule YAML files
@@ -255,11 +282,13 @@ Track which transactions were already matched, only process new imports.
 - [ ] CSV export for matched transactions
 
 ### v1.3.0 (Polish)
+
 - [ ] Interactive mode for confirming fuzzy matches above threshold
 - [ ] Better error messages and validation
 - [ ] Recurrence caching for performance
 
 ### v2.0.0 (Longer term - Advanced Features)
+
 - [ ] Multi-currency support
 - [ ] Advanced recurrence rules (nth weekday, complex patterns)
 - [ ] Parallel processing

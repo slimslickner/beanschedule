@@ -158,7 +158,7 @@ Date range clipping and edge cases
 
 ## Test File Structure
 
-```
+``` bash
 tests/
 ├── __init__.py
 ├── conftest.py                      # Shared fixtures
@@ -186,7 +186,7 @@ tests/
 ### Current Coverage (77 tests)
 
 | Module | Coverage | Tests | Status |
-|--------|----------|-------|--------|
+| - | - | - | - |
 | schema.py | 100% | 34 | ✅ Complete |
 | matcher.py | 88% | 28 | ✅ Complete |
 | hook.py | 88% | 15 | ✅ Complete |
