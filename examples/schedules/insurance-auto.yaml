@@ -5,7 +5,7 @@ enabled: true
 match:
   account: Assets:Bank:Checking
   payee_pattern: "Safe Driver Insurance|SDI|AUTO INSURANCE"
-  amount: -125.00
+  amount: -125
   amount_tolerance: 5.00
   amount_min: null
   amount_max: null
@@ -29,12 +29,12 @@ transaction:
     insurance_type: auto
     policy_number: POL-123456
   postings:
-    - account: Assets:Bank:Checking
-      amount: null
-      narration: null
-    - account: Expenses:Insurance:Auto
-      amount: null
-      narration: null
+  - account: Assets:Bank:Checking
+    amount: null
+    narration: null
+  - account: Expenses:Insurance:Auto
+    amount: null
+    narration: null
 missing_transaction:
   create_placeholder: true
   flag: '!'

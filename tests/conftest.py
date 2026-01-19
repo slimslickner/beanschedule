@@ -296,18 +296,6 @@ def global_config():
 
 
 @pytest.fixture
-def custom_global_config():
-    """Fixture providing a custom global config builder."""
-    return make_global_config
-
-
-@pytest.fixture
-def sample_posting():
-    """Fixture providing a posting builder function."""
-    return make_posting
-
-
-@pytest.fixture
 def temp_schedule_dir(tmp_path):
     """Fixture providing a temporary directory with test schedule files."""
     schedules_dir = tmp_path / "schedules"

@@ -7,8 +7,8 @@ match:
   payee_pattern: "VISA PAYMENT|Visa Credit Card|AUTOPAY"
   amount: null
   amount_tolerance: null
-  amount_min: -500.00
-  amount_max: -3000.00
+  amount_min: -500
+  amount_max: -3000
   date_window_days: 3
 recurrence:
   frequency: MONTHLY
@@ -27,12 +27,12 @@ transaction:
   metadata:
     schedule_id: credit-card-payment
   postings:
-    - account: Assets:Bank:Checking
-      amount: null
-      narration: null
-    - account: Liabilities:CreditCard:Visa
-      amount: null
-      narration: null
+  - account: Assets:Bank:Checking
+    amount: null
+    narration: null
+  - account: Liabilities:CreditCard:Visa
+    amount: null
+    narration: null
 missing_transaction:
   create_placeholder: true
   flag: '!'

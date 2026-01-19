@@ -237,7 +237,7 @@ class TestSchedule:
         assert schedule.id == "test-schedule"
         assert schedule.enabled is True
 
-    def test_empty_id_rejected(self, custom_global_config):
+    def test_empty_id_rejected(self, global_config):
         """Test that empty id is rejected."""
         with pytest.raises(ValueError, match="id cannot be empty"):
             Schedule(

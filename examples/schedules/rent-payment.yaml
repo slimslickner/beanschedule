@@ -5,7 +5,7 @@ enabled: true
 match:
   account: Assets:Bank:Checking
   payee_pattern: "ABC Properties|Property Manager|Landlord"
-  amount: -1500.00
+  amount: -1500
   amount_tolerance: 0.00
   amount_min: null
   amount_max: null
@@ -27,12 +27,12 @@ transaction:
   metadata:
     schedule_id: rent-payment
   postings:
-    - account: Assets:Bank:Checking
-      amount: null
-      narration: null
-    - account: Expenses:Housing:Rent
-      amount: null
-      narration: null
+  - account: Assets:Bank:Checking
+    amount: null
+    narration: null
+  - account: Expenses:Housing:Rent
+    amount: null
+    narration: null
 missing_transaction:
   create_placeholder: true
   flag: '!'

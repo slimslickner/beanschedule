@@ -5,7 +5,7 @@ enabled: true
 match:
   account: Assets:Bank:Checking
   payee_pattern: "Student Loan Services|SLS|LOAN PAYMENT"
-  amount: -285.00
+  amount: -285
   amount_tolerance: 10.00
   amount_min: null
   amount_max: null
@@ -28,15 +28,15 @@ transaction:
     schedule_id: loan-payment-biweekly
     loan_type: student
   postings:
-    - account: Assets:Bank:Checking
-      amount: null
-      narration: null
-    - account: Expenses:Loans:Interest
-      amount: 85.00
-      narration: Loan Interest
-    - account: Liabilities:StudentLoan:Principal
-      amount: 200.00
-      narration: Principal Payment
+  - account: Assets:Bank:Checking
+    amount: null
+    narration: null
+  - account: Expenses:Loans:Interest
+    amount: 85.00
+    narration: Loan Interest
+  - account: Liabilities:StudentLoan:Principal
+    amount: 200.00
+    narration: Principal Payment
 missing_transaction:
   create_placeholder: true
   flag: '!'
