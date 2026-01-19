@@ -1,7 +1,7 @@
 # Annual membership fee
 # Demonstrates: YEARLY frequency with specific month and day
 id: subscription-annual
-enabled: true
+enabled: false
 match:
   account: Liabilities:CreditCard:Visa
   payee_pattern: "CLOUD STORAGE|Cloud Storage Co"

@@ -4,12 +4,15 @@ This directory contains example schedule files and a sample Beancount ledger dem
 
 ## Example Schedules
 
-The `schedules/` directory contains 10 example schedule files showing different recurrence patterns and matching strategies:
+The `schedules/` directory contains 10 example schedule files showing different recurrence patterns and matching strategies.
 
-1. **paycheck-bimonthly.yaml** - Bi-monthly paycheck (5th and 20th) with detailed tax/benefit postings
-2. **mortgage-payment.yaml** - Monthly mortgage with interest, escrow, and principal split
-3. **rent-payment.yaml** - Simple monthly rent payment
-4. **utilities-electric.yaml** - Monthly electric bill with variable amount (range matching)
+**Schedules that match the example.beancount ledger** (enabled):
+1. **paycheck-biweekly.yaml** - Bi-weekly Hoogle payroll with tax deductions (matches real transactions)
+2. **rent-payment.yaml** - Monthly rent payment to RiverBank Properties (matches real transactions)
+3. **utilities-electric.yaml** - Monthly electric bill from EDISON POWER (matches real transactions)
+
+**Schedules for reference/customization** (disabled - no matching data in example ledger):
+4. **mortgage-payment.yaml** - Monthly mortgage with interest, escrow, and principal split
 5. **utilities-water.yaml** - Quarterly water bill (interval-based)
 6. **subscription-streaming.yaml** - Monthly streaming subscription ($14.99)
 7. **subscription-annual.yaml** - Annual cloud storage subscription

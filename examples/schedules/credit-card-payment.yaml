@@ -1,7 +1,7 @@
 # Monthly credit card payment
 # Demonstrates: Variable amount payment with range matching
 id: credit-card-payment
-enabled: true
+enabled: false
 match:
   account: Assets:Bank:Checking
   payee_pattern: "VISA PAYMENT|Visa Credit Card|AUTOPAY"

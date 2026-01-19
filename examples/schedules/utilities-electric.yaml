@@ -1,38 +1,38 @@
-# Monthly electric bill with variable amount
+# Monthly electric bill (matches EDISON POWER in example ledger)
 # Demonstrates: MONTHLY frequency, range-based amount matching (min/max)
 id: utilities-electric
 enabled: true
 match:
-  account: Assets:Bank:Checking
-  payee_pattern: "City Power|Electric Company|ELECTRIC UTIL"
+  account: Assets:US:BofA:Checking
+  payee_pattern: "EDISON POWER"
   amount: null
   amount_tolerance: null
   amount_min: -50
   amount_max: -200
-  date_window_days: 5
+  date_window_days: 2
 recurrence:
   frequency: MONTHLY
-  start_date: 2024-01-15
+  start_date: 2013-01-09
   end_date: null
-  day_of_month: 15
+  day_of_month: 9
   month: null
   day_of_week: null
   interval: 1
   days_of_month: null
   interval_months: null
 transaction:
-  payee: City Power & Light
-  narration: Electric Bill
+  payee: EDISON POWER
+  narration: ''
   tags: []
   metadata:
     schedule_id: utilities-electric
     utility_type: electric
   postings:
-  - account: Assets:Bank:Checking
-    amount: null
+  - account: Assets:US:BofA:Checking
+    amount: -65.00
     narration: null
-  - account: Expenses:Utilities:Electric
-    amount: null
+  - account: Expenses:Home:Electricity
+    amount: 65.00
     narration: null
 missing_transaction:
   create_placeholder: true

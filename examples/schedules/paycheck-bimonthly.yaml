@@ -1,59 +1,54 @@
-# Bi-monthly paycheck (5th and 20th of each month)
-# Demonstrates: BIMONTHLY frequency, detailed tax/benefit postings
-id: paycheck-bimonthly
+# Bi-weekly paycheck (matches actual Hoogle payroll in example ledger)
+# Demonstrates: WEEKLY frequency, multiple payee patterns, complex multi-posting transaction
+id: paycheck-biweekly
 enabled: true
 match:
-  account: Assets:Bank:Checking
-  payee_pattern: "ACME CORP|Payroll Dept"
-  amount: 2500.00
-  amount_tolerance: 100.00
+  account: Assets:US:BofA:Checking
+  payee_pattern: "Hoogle"
+  amount: 1350.60
+  amount_tolerance: 50.00
   amount_min: null
   amount_max: null
-  date_window_days: 3
+  date_window_days: 2
 recurrence:
-  frequency: BIMONTHLY
-  start_date: 2024-01-05
+  frequency: WEEKLY
+  start_date: 2013-01-03
   end_date: null
   day_of_month: null
   month: null
-  day_of_week: null
-  interval: 1
-  days_of_month:
-  - 5
-  - 20
+  day_of_week: Thursday
+  interval: 2
+  days_of_month: null
   interval_months: null
 transaction:
-  payee: ACME Corp
-  narration: Salary Payment
+  payee: Hoogle
+  narration: Payroll
   tags: []
   metadata:
-    schedule_id: paycheck-bimonthly
+    schedule_id: paycheck-biweekly
     category: income
   postings:
-  - account: Assets:Bank:Checking
-    amount: null
-    narration: null
-  - account: Income:Salary:Gross
-    amount: -3200
-    narration: Gross Salary
-  - account: Expenses:Taxes:Federal
-    amount: 450.00
-    narration: Federal Tax Withholding
-  - account: Expenses:Taxes:State
-    amount: 180.00
-    narration: State Tax - CA
-  - account: Expenses:Taxes:Social-Security
-    amount: 198.40
-    narration: Social Security Tax
-  - account: Expenses:Taxes:Medicare
-    amount: 46.40
-    narration: Medicare Tax
-  - account: Assets:Retirement:401k
-    amount: 320.00
+  - account: Assets:US:BofA:Checking
+    amount: 1350.60
+    narration: Net Deposit
+  - account: Assets:US:Vanguard:Cash
+    amount: 1200.00
     narration: 401k Contribution
-  - account: Expenses:Benefits:Health-Insurance
-    amount: 5.20
-    narration: Health Insurance Premium
+  - account: Income:US:Hoogle:Salary
+    amount: -4615.38
+    narration: Gross Salary
+  - account: Expenses:Taxes:Y2013:US:Federal
+    amount: 1062.92
+    narration: Federal Tax
+  - account: Expenses:Taxes:Y2013:US:State
+    amount: 365.08
+    narration: State Tax
+  - account: Expenses:Taxes:Y2013:US:SocSec
+    amount: 281.54
+    narration: Social Security Tax
+  - account: Expenses:Taxes:Y2013:US:Medicare
+    amount: 106.62
+    narration: Medicare Tax
 missing_transaction:
   create_placeholder: true
   flag: '!'

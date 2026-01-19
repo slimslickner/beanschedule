@@ -1,7 +1,7 @@
 # Monthly auto insurance premium
 # Demonstrates: Insurance payment with metadata for policy tracking
 id: insurance-auto
-enabled: true
+enabled: false
 match:
   account: Assets:Bank:Checking
   payee_pattern: "Safe Driver Insurance|SDI|AUTO INSURANCE"
