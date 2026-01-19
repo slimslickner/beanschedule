@@ -72,7 +72,9 @@ def schedule_hook(
     # If we have no imported entries but have ledger entries, still process schedules
     # to check for missing transactions
     if not extracted_entries_list and ledger_entries:
-        logger.info(f"No new imports, but checking schedules against {len(ledger_entries)} existing ledger entries")
+        logger.info(
+            f"No new imports, but checking schedules against {len(ledger_entries)} existing ledger entries"
+        )
 
     start_date, end_date = date_range
     logger.info(f"Processing date range: {start_date} to {end_date}")
@@ -317,7 +319,9 @@ def _match_transaction(
     return matcher.find_best_match(transaction, candidates)
 
 
-def _build_date_index(ledger_entries: Optional[List[data.Directive]]) -> Dict[date, List[data.Transaction]]:
+def _build_date_index(
+    ledger_entries: Optional[List[data.Directive]],
+) -> Dict[date, List[data.Transaction]]:
     """
     Build an index mapping dates to transactions for fast lookups.
 
@@ -338,7 +342,9 @@ def _build_date_index(ledger_entries: Optional[List[data.Directive]]) -> Dict[da
         if isinstance(entry, data.Transaction):
             index[entry.date].append(entry)
 
-    logger.debug(f"Built date index with {len(index)} unique dates from {len(ledger_entries)} entries")
+    logger.debug(
+        f"Built date index with {len(index)} unique dates from {len(ledger_entries)} entries"
+    )
     return index
 
 
@@ -663,12 +669,12 @@ def _log_summary(
     for schedule in schedules:
         # Count expected occurrences
         expected_count = sum(
-            1 for schedule_id, _ in matched_occurrences
-            if schedule_id == schedule.id
+            1 for schedule_id, _ in matched_occurrences if schedule_id == schedule.id
         )
         # Add missing count
         missing_count = sum(
-            1 for placeholder in missing_placeholders
+            1
+            for placeholder in missing_placeholders
             if placeholder.meta.get("schedule_id") == schedule.id
         )
         total_expected_for_schedule = expected_count + missing_count
@@ -685,9 +691,7 @@ def _log_summary(
         )
 
     logger.info("=" * 70)
-    logger.info(
-        f"TOTAL: {total_matched}/{total_expected} scheduled transaction(s) matched"
-    )
+    logger.info(f"TOTAL: {total_matched}/{total_expected} scheduled transaction(s) matched")
 
     if missing_by_schedule:
         logger.warning(f"Missing in {len(missing_by_schedule)} schedule(s):")
