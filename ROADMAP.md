@@ -44,6 +44,8 @@ Only match transactions that fall within expected date windows, not all historic
   - ✅ Reduced comparisons from 14k*43 to ~300-500*43
   - ✅ Only ledger transactions with explicit `schedule_id` metadata block placeholders (prevents false matches)
 
+### High Priority (Critical - Next)
+
 #### 2. **Payee Pattern Compilation** ⭐⭐⭐⭐
 Pre-compile regex patterns and cache fuzzy match results.
 - **Impact**: 40-50% speedup
@@ -105,11 +107,60 @@ Track which transactions were already matched, only process new imports.
 
 ## Feature Completeness
 
+### High Priority (UX - Getting Started)
+
+- [ ] **CLI: Generate schedule template from transaction** ⭐⭐⭐⭐⭐
+  - `beanschedule generate --date 2024-01-15 --ledger path/to/ledger.bean`
+  - Prompts user to select a transaction from that date
+  - Creates a schedule YAML template with that transaction's details (payee, amount, account)
+  - User fills in recurrence pattern
+  - **Impact**: Drastically reduces friction for new users bootstrapping schedules
+  - **Effort**: Medium
+
+- [ ] **CLI: Auto-detect recurring transactions** ⭐⭐⭐⭐
+  - `beanschedule detect --ledger path/to/ledger.bean [--confidence 0.8]`
+  - Analyzes ledger to find likely recurring transactions
+  - Shows user suggestions: "Found monthly mortgage (confidence: 95%)", "Found quarterly utilities (confidence: 78%)"
+  - Option to auto-create schedule templates for detected patterns
+  - **Impact**: Users can auto-generate 50-80% of schedules instead of manual entry
+  - **Effort**: High (requires recurring pattern detection algorithm)
+  - **Algorithm Details**:
+    - Group transactions by similar payee/amount (fuzzy matching, configurable tolerance)
+    - Analyze date gaps between matching transactions in sorted order
+    - Detect patterns: monthly (28-31 days), quarterly (~90 days), annual (~365 days), weekly (7 days), bi-weekly (14 days)
+    - Handle edge cases: transactions on different days of month (1st vs 15th), leap years
+    - Calculate confidence score based on regularity (e.g., 95% if 19/20 months present)
+    - Filter out noise: require minimum 3 occurrences before suggesting
+    - Output candidates sorted by confidence with user preview
+
+- [ ] **Interactive setup wizard** ⭐⭐⭐⭐
+  - `beanschedule init` - guided setup for new users
+  - Walk through: where to store schedules, which accounts to monitor, basic schedule creation
+  - **Impact**: Excellent first-time user experience
+  - **Effort**: Medium
+
+### Medium Priority
+
 - [ ] Dry-run mode (`--dry-run` flag for testing without committing)
 - [ ] Export matched transactions to CSV for review
 - [ ] Interactive mode for confirming fuzzy matches above threshold
 - [ ] Schedule statistics command (coverage report, match rates over time)
 - [ ] Support for split schedules (one schedule can generate multiple postings based on rules)
+
+---
+
+## CLI Commands
+
+### Current (v1.0.0)
+- `beanschedule` (no args) - shows help/version
+
+### Planned (v1.1.0+)
+- [ ] `beanschedule generate` - Create schedule template from a transaction
+- [ ] `beanschedule detect` - Auto-detect recurring transactions in ledger
+- [ ] `beanschedule init` - Interactive setup wizard
+- [ ] `beanschedule validate` - Validate schedule YAML files for syntax/logic errors
+- [ ] `beanschedule stats` - Show schedule coverage and match statistics
+- [ ] `beanschedule export` - Export matched transactions to CSV
 
 ---
 
@@ -120,6 +171,7 @@ Track which transactions were already matched, only process new imports.
 - [ ] Integration tests with real beancount ledgers
 - [ ] Performance benchmarks (with/without optimizations)
 - [ ] Regression testing for schedule formats
+- [ ] Tests for recurring pattern detection algorithm
 - [ ] CI/CD pipeline (GitHub Actions)
 - [ ] Code coverage target: 85%+ (currently 52% - slight decrease due to new optimization code paths, will improve with more tests)
 
@@ -130,6 +182,8 @@ Track which transactions were already matched, only process new imports.
 - [x] README with basic usage
 - [ ] API documentation (Sphinx/mkdocs)
 - [ ] Schedule YAML schema documentation with examples
+- [ ] CLI command reference
+- [ ] Getting started guide (with `beanschedule generate` workflow)
 - [ ] Troubleshooting guide (common matching failures)
 - [ ] Migration guide (upgrading between versions)
 - [ ] Architecture decision records (ADRs)
@@ -185,22 +239,32 @@ Track which transactions were already matched, only process new imports.
 - [x] Basic ledger integration
 - [x] Lazy matching optimization (80%+ speedup)
 
-### v1.1.0 (Next - Pattern Caching & Polish)
+### v1.1.0 (Next - Performance & Setup)
 - [ ] Pattern compilation & caching (40% speedup)
 - [ ] Skip unnecessary ledger matching (5-10% speedup)
 - [ ] Bulk transaction filtering (20-30% speedup)
+- [ ] **CLI: `beanschedule generate`** - Create schedule template from a transaction
 - [ ] Performance benchmarking
 
-### v1.2.0 (Future - Features)
-- [ ] Dry-run mode
-- [ ] Schedule statistics
-- [ ] CSV export
+### v1.2.0 (Soon After - Features & Polish)
+- [ ] **CLI: `beanschedule detect`** - Auto-detect recurring transactions in ledger
+- [ ] **CLI: `beanschedule init`** - Interactive setup wizard
+- [ ] **CLI: `beanschedule validate`** - Validate schedule YAML files
+- [ ] **CLI: `beanschedule stats`** - Schedule coverage and match statistics
+- [ ] Dry-run mode for hook
+- [ ] CSV export for matched transactions
 
-### v2.0.0 (Longer term)
+### v1.3.0 (Polish)
+- [ ] Interactive mode for confirming fuzzy matches above threshold
+- [ ] Better error messages and validation
+- [ ] Recurrence caching for performance
+
+### v2.0.0 (Longer term - Advanced Features)
 - [ ] Multi-currency support
-- [ ] Advanced recurrence rules
+- [ ] Advanced recurrence rules (nth weekday, complex patterns)
 - [ ] Parallel processing
-- [ ] Incremental mode
+- [ ] Incremental/watch mode
+- [ ] Split schedules (one schedule → multiple postings based on rules)
 
 ---
 
@@ -231,3 +295,4 @@ Track which transactions were already matched, only process new imports.
 3. Would you use bulk export/review features?
 4. Interest in dry-run / preview before commit?
 5. Multi-currency ledgers? (common request?)
+6. How do you currently bootstrap schedules? (manual YAML or would you use `generate`/`detect`?)
