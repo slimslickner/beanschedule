@@ -162,6 +162,33 @@ Track which transactions were already matched, only process new imports.
 - [ ] Export matched transactions to CSV for review
 - [ ] Interactive mode for confirming fuzzy matches above threshold
 - [ ] Schedule statistics command (coverage report, match rates over time)
+- [ ] Schedule summary and next transaction command ⭐⭐⭐
+  - `beanschedule show <schedule_id> [--count N]`
+  - Shows schedule details: payee, recurrence pattern, match account
+  - Displays next N scheduled transaction dates (default: 5)
+  - Shows last matched transaction date (if any)
+  - **Impact**: Quick way to see when a schedule is due and verify configuration
+  - **Effort**: Low
+- [ ] Remove account matching limitation ⭐⭐⭐
+  - Allow schedules to match from any account (not just the configured one)
+  - Add optional `match.account` field (if present, enforce; if absent, match any account)
+  - Useful for flexibility when paying bills from different accounts
+  - **Impact**: More flexible matching for real-world scenarios where payment source varies
+  - **Effort**: Low
+- [ ] Zerosum account support for transfers ⭐⭐⭐⭐
+  - Single schedule definition for credit card transfers using zerosum plugin
+  - Currently requires two separate schedules (one for each half of the transfer)
+  - Add support for defining both postings (source account and zerosum account) in one schedule
+  - Example: one schedule for "CC payment" generates both the expense side and the transfer
+  - **Impact**: Dramatically reduces schedule complexity for transfer-heavy workflows
+  - **Effort**: Medium (requires understanding zerosum plugin behavior, multi-posting generation)
+  - **Priority**: High - improves user experience for common use case
+- [ ] Conditional schedule instances (skip if conditions not met) ⭐⭐
+  - Skip generating a scheduled instance if conditions are not met
+  - Use cases: skip transfer if credit card balance is zero, skip payment if no budget remaining
+  - Could be implemented as: `condition: skip_if_zero_balance`, or more general conditional logic
+  - **Impact**: Prevents unnecessary placeholder transactions for optional/conditional payments
+  - **Effort**: Medium (requires balance/account state querying)
 - [ ] Support for split schedules (one schedule can generate multiple postings based on rules)
 
 ---
@@ -288,6 +315,7 @@ Track which transactions were already matched, only process new imports.
 - [ ] **CLI: `beanschedule detect`** - Auto-detect recurring transactions in ledger
 - [ ] **CLI: `beanschedule init`** - Interactive setup wizard
 - [ ] **CLI: `beanschedule validate`** - Validate schedule YAML files
+- [ ] **CLI: `beanschedule show`** - Display schedule summary and next scheduled transactions
 - [ ] **CLI: `beanschedule stats`** - Schedule coverage and match statistics
 - [ ] Dry-run mode for hook
 - [ ] CSV export for matched transactions
