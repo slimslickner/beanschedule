@@ -249,6 +249,41 @@ When an expected transaction doesn't occur, beanschedule creates a placeholder:
   Expenses:Insurance:Auto                  125.00 USD
 ```
 
+### Zerosum Transfers (Credit Card Payments)
+
+When using the [zerosum plugin](https://github.com/beancount/beangulp#zerosum) for balancing transfers, **schedule only the source transaction** (typically the checking account withdrawal). The zerosum plugin automatically creates the paired transaction, so you don't need separate schedules for each side.
+
+**Example: Monthly credit card payment**
+
+Create a single schedule for the checking account outflow:
+
+```yaml
+id: cc-payment-visa
+enabled: true
+match:
+  account: Assets:Bank:Checking
+  payee_pattern: "VISA|AUTOPAY"
+  amount_min: -3000.00
+  amount_max: -100.00
+  date_window_days: 3
+recurrence:
+  frequency: MONTHLY
+  day_of_month: 25
+  start_date: 2024-01-25
+transaction:
+  payee: Visa Credit Card
+  narration: Credit Card Payment
+  metadata:
+    schedule_id: cc-payment-visa
+  postings:
+    - account: Assets:Bank:Checking
+      amount: null
+    - account: Liabilities:CreditCard:Visa
+      amount: null
+```
+
+The zerosum plugin will create both postings automatically (Assets:Checking → Equity:ZeroSum:Transfers and Liabilities:CreditCard → Equity:ZeroSum:Transfers). You get the benefits of scheduled transaction tracking without maintaining duplicate schedule definitions.
+
 ## Examples
 
 See the [examples/](examples/) directory for:
