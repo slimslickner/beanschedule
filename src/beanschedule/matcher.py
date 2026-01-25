@@ -25,6 +25,10 @@ class TransactionMatcher:
             config: Global configuration with matching thresholds
         """
         self.config = config
+        # Cache for compiled regex patterns (pattern -> compiled regex)
+        self.compiled_patterns: dict[str, re.Pattern] = {}
+        # Cache for fuzzy match results ((payee, pattern) -> score)
+        self.fuzzy_cache: dict[tuple[str, str], float] = {}
 
     def calculate_match_score(
         self,
@@ -110,7 +114,7 @@ class TransactionMatcher:
 
     def _regex_match(self, payee: str, pattern: str) -> float:
         """
-        Match payee against regex pattern.
+        Match payee against regex pattern using cached compiled patterns.
 
         Returns:
             1.0 if matches, 0.0 if not
@@ -119,7 +123,15 @@ class TransactionMatcher:
             normalized_payee = payee.upper().strip()
             normalized_pattern = pattern.upper().strip()
 
-            if re.search(normalized_pattern, normalized_payee):
+            # Get or compile and cache the pattern
+            if normalized_pattern not in self.compiled_patterns:
+                self.compiled_patterns[normalized_pattern] = re.compile(
+                    normalized_pattern,
+                    re.IGNORECASE,
+                )
+
+            compiled = self.compiled_patterns[normalized_pattern]
+            if compiled.search(normalized_payee):
                 return 1.0
             return 0.0
         except re.error as e:
@@ -128,7 +140,7 @@ class TransactionMatcher:
 
     def _fuzzy_match(self, payee: str, pattern: str) -> float:
         """
-        Fuzzy match payee against pattern using sequence similarity.
+        Fuzzy match payee against pattern using sequence similarity with caching.
 
         Returns:
             Similarity ratio from 0.0 to 1.0
@@ -136,7 +148,15 @@ class TransactionMatcher:
         normalized_payee = payee.upper().strip()
         normalized_pattern = pattern.upper().strip()
 
-        return SequenceMatcher(None, normalized_payee, normalized_pattern).ratio()
+        # Check cache first
+        cache_key = (normalized_payee, normalized_pattern)
+        if cache_key in self.fuzzy_cache:
+            return self.fuzzy_cache[cache_key]
+
+        # Calculate and cache the result
+        score = SequenceMatcher(None, normalized_payee, normalized_pattern).ratio()
+        self.fuzzy_cache[cache_key] = score
+        return score
 
     def _amount_score(self, transaction: data.Transaction, schedule: Schedule) -> float:
         """

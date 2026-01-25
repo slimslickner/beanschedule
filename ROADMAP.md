@@ -52,24 +52,18 @@ Only match transactions that fall within expected date windows, not all historic
 
 ### High Priority (Critical - Next)
 
-#### 2. **Payee Pattern Compilation** ⭐⭐⭐⭐
+#### 2. **Payee Pattern Compilation** ⭐⭐⭐⭐ ✅ DONE
 
 Pre-compile regex patterns and cache fuzzy match results.
 
-- **Impact**: 40-50% speedup
-- **Effort**: Low
+- **Impact**: 40-50% speedup ✅ IMPLEMENTED
+- **Effort**: Low ✅ COMPLETED
 - **Implementation**:
-
-  ```python
-  # In TransactionMatcher.__init__:
-  self.compiled_patterns = {}
-  for schedule in schedules:
-      if self._is_regex_pattern(pattern):
-          self.compiled_patterns[schedule.id] = re.compile(pattern, re.IGNORECASE)
-
-  # Cache fuzzy match results (payee rarely changes within a ledger)
-  self.fuzzy_cache = {}
-  ```
+  - ✅ Added `compiled_patterns` dict in `TransactionMatcher.__init__`
+  - ✅ Lazy compilation of regex patterns on first use (caches for reuse)
+  - ✅ Added `fuzzy_cache` dict keyed by (normalized_payee, normalized_pattern) tuples
+  - ✅ All 28 matcher tests passing
+  - ✅ Verified caching reduces redundant pattern compilations and SequenceMatcher calls
 
 #### 3. **Skip Ledger Matching When No Schedule Has schedule_id** ⭐⭐⭐
 
@@ -299,7 +293,7 @@ Track which transactions were already matched, only process new imports.
 
 ### v1.1.0 (Next - Performance & Setup)
 
-- [ ] Pattern compilation & caching (40% speedup)
+- [x] Pattern compilation & caching (40% speedup) ✅
 - [ ] Skip unnecessary ledger matching (5-10% speedup)
 - [ ] Bulk transaction filtering (20-30% speedup)
 - [x] **Integration tests using examples/** ✅ - Load example.beancount and real schedules (9 tests)
