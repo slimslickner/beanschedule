@@ -128,6 +128,17 @@ Track which transactions were already matched, only process new imports.
 
 ## Feature Completeness
 
+### ✅ Completed (UX)
+
+- [x] **CLI: Create schedule template from transaction** ⭐⭐⭐⭐⭐ ✅
+  - `beanschedule create --ledger path/to/ledger.bean --date 2024-01-15`
+  - Interactive transaction selection from ledger by date
+  - Support for all 5 recurrence frequency types (MONTHLY, WEEKLY, YEARLY, INTERVAL, BIMONTHLY)
+  - Match criteria customization (amount tolerance, date window, payee pattern)
+  - YAML preview and confirmation workflow
+  - **Impact**: Drastically reduces friction for new users bootstrapping schedules ✅
+  - **Effort**: Medium ✅ COMPLETED
+
 ### High Priority (UX - Getting Started)
 
 - [ ] **CLI: Generate schedule template from transaction** ⭐⭐⭐⭐⭐
@@ -194,13 +205,17 @@ Track which transactions were already matched, only process new imports.
 ### Current (v1.0.0)
 
 - `beanschedule` (no args) - shows help/version
+- [x] `beanschedule create` ✅ - Create schedule template from a transaction (interactive)
+- [x] `beanschedule show` ✅ - Display schedule summary and next scheduled transactions
+- [x] `beanschedule validate` ✅ - Validate schedule YAML files for syntax/logic errors
+- [x] `beanschedule list` ✅ - List all schedules with details
+- [x] `beanschedule generate` ✅ - Generate expected occurrence dates for a schedule
+- [x] `beanschedule init` ✅ - Initialize a new schedules directory with examples
 
 ### Planned (v1.1.0+)
 
-- [ ] `beanschedule generate` - Create schedule template from a transaction
+- [ ] `beanschedule generate` (enhanced) - Create schedule template with auto-suggestions (payee patterns, amount tolerance, date windows)
 - [ ] `beanschedule detect` - Auto-detect recurring transactions in ledger
-- [ ] `beanschedule init` - Interactive setup wizard
-- [ ] `beanschedule validate` - Validate schedule YAML files for syntax/logic errors
 - [ ] `beanschedule stats` - Show schedule coverage and match statistics
 - [ ] `beanschedule export` - Export matched transactions to CSV
 
@@ -301,22 +316,28 @@ Track which transactions were already matched, only process new imports.
 - [x] Type hints completion (100% coverage)
 - [x] Comprehensive docstrings for all modules
 
-### v1.1.0 (Next - Performance & Setup)
+### v1.1.0 (Current - Performance & Setup)
 
 - [x] Pattern compilation & caching (40% speedup) ✅
+- [x] **CLI: `beanschedule create`** - Create schedule template from a transaction ✅
+  - Interactive transaction selection from ledger by date
+  - Support for all 5 recurrence frequency types (MONTHLY, WEEKLY, YEARLY, INTERVAL, BIMONTHLY)
+  - Match criteria customization with sensible defaults
+  - YAML preview and confirmation workflow
 - [ ] Skip unnecessary ledger matching (5-10% speedup)
 - [ ] Bulk transaction filtering (20-30% speedup)
 - [x] **Integration tests using examples/** ✅ - Load example.beancount and real schedules (9 tests)
-- [ ] **CLI: `beanschedule generate`** - Create schedule template from a transaction
 - [ ] Performance benchmarking
 - [ ] Resolve remaining ruff complexity warnings (PLR rules)
 
-### v1.2.0 (Soon After - Features & Polish)
+### v1.2.0 (Next - Features & Polish)
 
+- [ ] **CLI: `beanschedule generate` (enhanced)** - Advanced schedule template generation with auto-suggestions
+  - Auto-suggest payee patterns with regex hints
+  - Recommend amount tolerance based on variance in historical transactions
+  - Suggest date windows based on transaction timing variance
+  - Build on top of `create` command foundation
 - [ ] **CLI: `beanschedule detect`** - Auto-detect recurring transactions in ledger
-- [ ] **CLI: `beanschedule init`** - Interactive setup wizard
-- [ ] **CLI: `beanschedule validate`** - Validate schedule YAML files
-- [x] **CLI: `beanschedule show`** - Display schedule summary and next scheduled transactions ✅
 - [ ] **CLI: `beanschedule stats`** - Schedule coverage and match statistics
 - [ ] Dry-run mode for hook
 - [ ] CSV export for matched transactions
