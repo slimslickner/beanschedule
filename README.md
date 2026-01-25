@@ -310,6 +310,60 @@ See the [examples/](examples/) directory for:
 5. **Enrich Matches** - Adds metadata, tags, and posting templates to matched transactions
 6. **Create Placeholders** - Generates placeholder transactions for missing expected payments
 
+## CLI Commands
+
+Beanschedule provides several command-line tools for managing and debugging schedules:
+
+```bash
+# Validate schedule files for syntax and configuration errors
+beanschedule validate schedules/
+beanschedule validate schedules.yaml
+
+# List all schedules with details
+beanschedule list schedules/ --format table
+beanschedule list schedules/ --format json
+beanschedule list schedules/ --enabled-only
+
+# Show detailed information about a specific schedule
+beanschedule show rent-payment
+beanschedule show rent-payment --count 10
+
+# Generate expected occurrence dates for a schedule
+beanschedule generate rent-payment 2024-01-01 2024-12-31
+
+# Initialize a new schedules directory with examples
+beanschedule init
+beanschedule init my-schedules/
+```
+
+### Shell Tab Completion
+
+Enable tab completion for schedule IDs to improve CLI usability:
+
+**Bash (4.4+)**:
+```bash
+eval "$(_BEANSCHEDULE_COMPLETE=bash_source beanschedule)"
+# Add to ~/.bashrc for persistence
+```
+
+**Zsh**:
+```bash
+eval "$(_BEANSCHEDULE_COMPLETE=zsh_source beanschedule)"
+# Add to ~/.zshrc for persistence
+```
+
+**Fish**:
+```bash
+_BEANSCHEDULE_COMPLETE=fish_source beanschedule | source
+# Add to ~/.config/fish/completions/ for persistence
+```
+
+Once enabled, you can tab-complete schedule IDs:
+```bash
+$ beanschedule show r<TAB>      # → rent-payment
+$ beanschedule generate m<TAB>  # → mortgage-payment
+```
+
 ## Matching Algorithm
 
 Beanschedule uses a weighted scoring system:
