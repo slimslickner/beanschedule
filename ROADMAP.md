@@ -14,21 +14,15 @@ Pre-release checklist and performance optimization opportunities before open sou
 - [x] Support for checking schedules against existing ledger entries
 - [x] Placeholder generation format (always 4-tuple for beangulp compatibility)
 - [x] Lazy matching optimization (80%+ performance improvement verified)
+- [x] Fix logging to use deferred formatting (not f-strings) - All 39 logging statements refactored
+- [x] Resolve ruff linting errors - Fixed 91/99 violations (type hints, imports, path operations, unused args)
 
 ### 🔄 In Progress / Todo
 
-- [ ] Fix logging to use deferred formatting (not f-strings) ⭐⭐⭐⭐
-  - Replace all `logger.info(f"...")` with `logger.info("...", var1, var2)`
-  - Logging module's lazy evaluation only works with %-formatting or .format()
-  - F-strings force eager evaluation even when log level is disabled (wastes CPU)
-  - Resolves ruff logging rule violations
-  - **Impact**: Better logging performance, cleaner code, follows Python logging best practices
-  - **Effort**: Low (mechanical refactor of all logging calls)
-- [ ] Resolve remaining ruff linting errors
-  - [ ] Error handling improvements
-    - [ ] Graceful handling of invalid schedule YAML syntax
-    - [ ] Better error messages for misconfigured matching criteria
-    - [ ] Validation of recurrence rules at load time
+- [ ] Error handling improvements
+  - [ ] Graceful handling of invalid schedule YAML syntax
+  - [ ] Better error messages for misconfigured matching criteria
+  - [ ] Validation of recurrence rules at load time
 - [ ] Type hints completion (currently ~90% coverage)
 - [ ] Comprehensive docstrings for public API
 - [ ] Edge case testing
@@ -300,6 +294,8 @@ Track which transactions were already matched, only process new imports.
 - [x] Placeholder generation
 - [x] Basic ledger integration
 - [x] Lazy matching optimization (80%+ speedup)
+- [x] Logging refactor (deferred formatting for performance)
+- [x] Ruff linting fixes (91/99 violations resolved)
 
 ### v1.1.0 (Next - Performance & Setup)
 
@@ -309,6 +305,7 @@ Track which transactions were already matched, only process new imports.
 - [x] **Integration tests using examples/** ✅ - Load example.beancount and real schedules (9 tests)
 - [ ] **CLI: `beanschedule generate`** - Create schedule template from a transaction
 - [ ] Performance benchmarking
+- [ ] Resolve remaining ruff complexity warnings (PLR rules)
 
 ### v1.2.0 (Soon After - Features & Polish)
 
