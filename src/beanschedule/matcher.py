@@ -62,9 +62,13 @@ class TransactionMatcher:
         total_score = (payee_score * 0.4) + (amount_score * 0.4) + (date_score * 0.2)
 
         logger.debug(
-            f"Match score for {transaction.payee} vs {schedule.id}: "
-            f"{total_score:.2f} (payee={payee_score:.2f}, "
-            f"amount={amount_score:.2f}, date={date_score:.2f})",
+            "Match score for %s vs %s: %.2f (payee=%.2f, amount=%.2f, date=%.2f)",
+            transaction.payee,
+            schedule.id,
+            total_score,
+            payee_score,
+            amount_score,
+            date_score,
         )
 
         return total_score
@@ -119,7 +123,7 @@ class TransactionMatcher:
                 return 1.0
             return 0.0
         except re.error as e:
-            logger.warning(f"Invalid regex pattern '{pattern}': {e}")
+            logger.warning("Invalid regex pattern '%s': %s", pattern, e)
             return 0.0
 
     def _fuzzy_match(self, payee: str, pattern: str) -> float:

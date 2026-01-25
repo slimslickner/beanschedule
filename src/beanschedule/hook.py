@@ -42,16 +42,16 @@ def schedule_hook(
     logger.info("Running schedule_hook")
 
     ledger_entries = existing_entries
-    logger.info(f"Imported entries: {len(extracted_entries_list)} file(s)")
-    logger.info(f"Existing ledger entries: {len(ledger_entries or [])} entries")
+    logger.info("Imported entries: %d file(s)", len(extracted_entries_list))
+    logger.info("Existing ledger entries: %d entries", len(ledger_entries or []))
     if ledger_entries:
-        logger.debug(f"Using {len(ledger_entries)} existing ledger entries")
+        logger.debug("Using %d existing ledger entries", len(ledger_entries))
 
     # Step 1: Load schedules
     try:
         schedule_file = load_schedules_file()
     except Exception as e:
-        logger.error(f"Failed to load schedules: {e}")
+        logger.error("Failed to load schedules: %s", e)
         return extracted_entries_list
 
     if schedule_file is None:
@@ -73,11 +73,12 @@ def schedule_hook(
     # to check for missing transactions
     if not extracted_entries_list and ledger_entries:
         logger.info(
-            f"No new imports, but checking schedules against {len(ledger_entries)} existing ledger entries"
+            "No new imports, but checking schedules against %d existing ledger entries",
+            len(ledger_entries),
         )
 
     start_date, end_date = date_range
-    logger.info(f"Processing date range: {start_date} to {end_date}")
+    logger.info("Processing date range: %s to %s", start_date, end_date)
 
     # Step 3: Generate expected dates for each schedule
     recurrence_engine = RecurrenceEngine()
@@ -108,7 +109,7 @@ def schedule_hook(
             schedule_file.config,
         )
         matched_occurrences.update(ledger_matched)
-        logger.debug(f"Matched {len(ledger_matched)} transactions from existing ledger")
+        logger.debug("Matched %d transactions from existing ledger", len(ledger_matched))
 
     for item in extracted_entries_list:
         # Beangulp format: (filepath, entries, account, importer_wrapper)
@@ -119,15 +120,23 @@ def schedule_hook(
         for entry in entries:
             if isinstance(entry, data.Transaction):
                 # Try to match this transaction
+                account_str = entry.postings[0].account if entry.postings else "no postings"
+                units_str = str(entry.postings[0].units) if entry.postings else "no amount"
                 logger.debug(
-                    f"Checking transaction: {entry.date} | {entry.payee} | {entry.postings[0].account if entry.postings else 'no postings'} | {entry.postings[0].units if entry.postings else 'no amount'}",
+                    "Checking transaction: %s | %s | %s | %s",
+                    entry.date,
+                    entry.payee,
+                    account_str,
+                    units_str,
                 )
                 match_result = _match_transaction(entry, expected_occurrences, matcher)
 
                 if match_result:
                     schedule, expected_date, score = match_result
                     logger.info(
-                        f"✓ Matched transaction to schedule '{schedule.id}' (score: {score:.2f})",
+                        "✓ Matched transaction to schedule '%s' (score: %.2f)",
+                        schedule.id,
+                        score,
                     )
                     # Enrich transaction
                     enriched_txn = _enrich_transaction(entry, schedule, expected_date, score)
@@ -148,10 +157,10 @@ def schedule_hook(
     # Log summary of matched transactions
     if matched_details:
         logger.info("=" * 70)
-        logger.info(f"✓ Matched {len(matched_details)} scheduled transaction(s)")
+        logger.info("✓ Matched %d scheduled transaction(s)", len(matched_details))
         logger.info("=" * 70)
         for txn_date, payee, schedule_id in matched_details:
-            logger.info(f"  • {txn_date} - {payee} ({schedule_id})")
+            logger.info("  • %s - %s (%s)", txn_date, payee, schedule_id)
         logger.info("=" * 70)
 
     # Step 6: Create placeholders for missing transactions
@@ -169,13 +178,14 @@ def schedule_hook(
         # Log prominent warning about missing scheduled transactions
         logger.warning("=" * 70)
         logger.warning(
-            f"⚠️  MISSING SCHEDULED TRANSACTIONS: {len(placeholders)} expected transaction(s) not found",
+            "⚠️  MISSING SCHEDULED TRANSACTIONS: %d expected transaction(s) not found",
+            len(placeholders),
         )
         logger.warning("=" * 70)
         for placeholder in placeholders:
             schedule_id = placeholder.meta.get("schedule_id", "unknown")
             expected_date = placeholder.meta.get("schedule_expected_date", "unknown")
-            logger.warning(f"  • {expected_date} - {placeholder.payee} ({schedule_id})")
+            logger.warning("  • %s - %s (%s)", expected_date, placeholder.payee, schedule_id)
         logger.warning("=" * 70)
 
     # Log final summary
@@ -254,7 +264,7 @@ def _generate_expected_occurrences(
         for expected_date in expected_dates:
             occurrences_by_account[schedule.match.account].append((schedule, expected_date))
 
-        logger.debug(f"Schedule {schedule.id}: {len(expected_dates)} expected occurrences")
+        logger.debug("Schedule %s: %d expected occurrences", schedule.id, len(expected_dates))
 
     return occurrences_by_account
 
@@ -305,14 +315,17 @@ def _match_transaction(
             )
             schedule, expected_date = closest_match
             logger.info(
-                f"✓ Using pre-existing schedule_id metadata: '{existing_schedule_id}'",
+                "✓ Using pre-existing schedule_id metadata: '%s'",
+                existing_schedule_id,
             )
             # Return with perfect confidence score since it's explicitly set
             return (schedule, expected_date, 1.0)
         else:
             # Pre-existing schedule_id not found in candidates for this account
             logger.debug(
-                f"Pre-existing schedule_id '{existing_schedule_id}' not found in candidates for account {main_account}",
+                "Pre-existing schedule_id '%s' not found in candidates for account %s",
+                existing_schedule_id,
+                main_account,
             )
 
     # Fall back to fuzzy matching
@@ -343,7 +356,9 @@ def _build_date_index(
             index[entry.date].append(entry)
 
     logger.debug(
-        f"Built date index with {len(index)} unique dates from {len(ledger_entries)} entries"
+        "Built date index with %d unique dates from %d entries",
+        len(index),
+        len(ledger_entries),
     )
     return index
 
@@ -387,7 +402,7 @@ def _match_ledger_transactions_lazy(
 
         schedule = schedule_id_map.get(schedule_id)
         if not schedule:
-            logger.debug(f"Ledger transaction has unknown schedule_id: {schedule_id}")
+            logger.debug("Ledger transaction has unknown schedule_id: %s", schedule_id)
             continue
 
         if not entry.postings:
@@ -396,7 +411,9 @@ def _match_ledger_transactions_lazy(
         main_account = entry.postings[0].account
         if main_account != schedule.match.account:
             logger.debug(
-                f"Ledger transaction account {main_account} doesn't match schedule account {schedule.match.account}",
+                "Ledger transaction account %s doesn't match schedule account %s",
+                main_account,
+                schedule.match.account,
             )
             continue
 
@@ -409,7 +426,10 @@ def _match_ledger_transactions_lazy(
                 if days_diff <= date_window:
                     matched.add((schedule_id, expected_date))
                     logger.debug(
-                        f"Matched ledger transaction {entry.date} to schedule {schedule_id} (expected {expected_date})",
+                        "Matched ledger transaction %s to schedule %s (expected %s)",
+                        entry.date,
+                        schedule_id,
+                        expected_date,
                     )
                     break
 
@@ -455,7 +475,7 @@ def _match_ledger_transactions(
         # Check if this schedule_id exists
         schedule = schedule_id_map.get(schedule_id)
         if not schedule:
-            logger.debug(f"Ledger transaction has unknown schedule_id: {schedule_id}")
+            logger.debug("Ledger transaction has unknown schedule_id: %s", schedule_id)
             continue
 
         # Check if transaction's account matches the schedule's account
@@ -465,7 +485,9 @@ def _match_ledger_transactions(
         main_account = entry.postings[0].account
         if main_account != schedule.match.account:
             logger.debug(
-                f"Ledger transaction account {main_account} doesn't match schedule account {schedule.match.account}",
+                "Ledger transaction account %s doesn't match schedule account %s",
+                main_account,
+                schedule.match.account,
             )
             continue
 
@@ -481,14 +503,19 @@ def _match_ledger_transactions(
                 if days_diff <= date_window:
                     matched.add((schedule_id, expected_date))
                     logger.debug(
-                        f"Matched ledger transaction {entry.date} to schedule {schedule_id} (expected {expected_date})",
+                        "Matched ledger transaction %s to schedule %s (expected %s)",
+                        entry.date,
+                        schedule_id,
+                        expected_date,
                     )
                     found = True
                     break
 
         if not found:
             logger.debug(
-                f"Ledger transaction {entry.date} with schedule_id {schedule_id} doesn't match any expected occurrence",
+                "Ledger transaction %s with schedule_id %s doesn't match any expected occurrence",
+                entry.date,
+                schedule_id,
             )
 
     return matched
@@ -658,7 +685,7 @@ def _log_summary(
     logger.info("=" * 70)
     logger.info("SCHEDULE PROCESSING SUMMARY")
     logger.info("=" * 70)
-    logger.info(f"Date range: {start_date} to {end_date}")
+    logger.info("Date range: %s to %s", start_date, end_date)
     logger.info("")
 
     # Count expected vs matched by schedule
@@ -687,16 +714,20 @@ def _log_summary(
 
         status = "✓" if missing_count == 0 else "⚠"
         logger.info(
-            f"{status} {schedule.id:40} {expected_count:2}/{total_expected_for_schedule:2} matched"
+            "%s %-40s %2d/%2d matched",
+            status,
+            schedule.id,
+            expected_count,
+            total_expected_for_schedule,
         )
 
     logger.info("=" * 70)
-    logger.info(f"TOTAL: {total_matched}/{total_expected} scheduled transaction(s) matched")
+    logger.info("TOTAL: %d/%d scheduled transaction(s) matched", total_matched, total_expected)
 
     if missing_by_schedule:
-        logger.warning(f"Missing in {len(missing_by_schedule)} schedule(s):")
+        logger.warning("Missing in %d schedule(s):", len(missing_by_schedule))
         for schedule_id, count in sorted(missing_by_schedule.items()):
-            logger.warning(f"  • {schedule_id}: {count} missing")
+            logger.warning("  • %s: %d missing", schedule_id, count)
 
     logger.info("=" * 70)
 

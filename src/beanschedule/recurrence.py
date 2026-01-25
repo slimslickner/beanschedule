@@ -51,10 +51,10 @@ class RecurrenceEngine:
                 return self._generate_interval(recurrence, effective_start, effective_end)
             if recurrence.frequency == FrequencyType.BIMONTHLY:
                 return self._generate_bimonthly(recurrence, effective_start, effective_end)
-            logger.error(f"Unknown frequency type: {recurrence.frequency}")
+            logger.error("Unknown frequency type: %s", recurrence.frequency)
             return []
         except Exception as e:
-            logger.error(f"Error generating recurrence for schedule {schedule.id}: {e}")
+            logger.error("Error generating recurrence for schedule %s: %s", schedule.id, e)
             return []
 
     def _generate_monthly(
