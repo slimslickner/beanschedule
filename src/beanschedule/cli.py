@@ -3,6 +3,7 @@
 import csv
 import json
 import logging
+import re
 import sys
 import traceback
 from datetime import date, timedelta
@@ -12,15 +13,19 @@ from pathlib import Path
 from typing import Any
 
 import click
+import yaml
+from beancount import loader as beancount_loader
+from beancount.core import data
 
 from . import __version__
 from .loader import load_schedules_file, load_schedules_from_directory
 from .recurrence import RecurrenceEngine
+from .types import DayOfWeek, FrequencyType
 
 logger = logging.getLogger(__name__)
 
 
-def complete_schedule_id(ctx, param, incomplete):
+def complete_schedule_id(ctx, _, incomplete):
     """Complete schedule IDs from the schedules path.
 
     Loads available schedule IDs and returns those matching the incomplete string.
@@ -49,6 +54,162 @@ def complete_schedule_id(ctx, param, incomplete):
     except Exception:
         # Silently fail - don't break completion
         return []
+
+
+def slugify(text: str) -> str:
+    """Convert text to valid schedule ID.
+
+    Converts text to lowercase, removes special characters,
+    replaces spaces with hyphens, and strips leading/trailing hyphens.
+
+    Args:
+        text: The text to slugify.
+
+    Returns:
+        A valid schedule ID string.
+    """
+    # Lowercase and replace spaces with hyphens
+    slug = text.lower().replace(" ", "-")
+    # Remove special characters, keep only alphanumeric and hyphens
+    slug = re.sub(r"[^a-z0-9\-]", "", slug)
+    # Remove leading/trailing hyphens and multiple consecutive hyphens
+    slug = slug.strip("-")
+    return re.sub(r"-+", "-", slug)
+
+
+def day_of_week_from_date(d: date) -> DayOfWeek:
+    """Get the DayOfWeek enum from a date.
+
+    Args:
+        d: The date to get day of week for.
+
+    Returns:
+        The corresponding DayOfWeek enum.
+    """
+    # Python weekday: 0=Monday, 6=Sunday
+    # DayOfWeek enum: MON=0, TUE=1, ..., SUN=6
+    day_index = d.weekday()
+    days = [
+        DayOfWeek.MON,
+        DayOfWeek.TUE,
+        DayOfWeek.WED,
+        DayOfWeek.THU,
+        DayOfWeek.FRI,
+        DayOfWeek.SAT,
+        DayOfWeek.SUN,
+    ]
+    return days[day_index]
+
+
+def extract_transaction_details(txn: data.Transaction) -> dict[str, Any]:
+    """Extract schedule-relevant details from a beancount transaction.
+
+    Args:
+        txn: The beancount Transaction to extract from.
+
+    Returns:
+        Dictionary with transaction details: date, payee, narration, account,
+        amount, tags, and postings list.
+
+    Raises:
+        ValueError: If transaction has no postings.
+    """
+    if not txn.postings:
+        raise ValueError("Transaction has no postings")
+
+    first_posting = txn.postings[0]
+
+    postings = []
+    for posting in txn.postings:
+        posting_dict = {
+            "account": posting.account,
+            "amount": float(posting.units.number) if posting.units else None,
+            "narration": posting.meta.get("narration") if posting.meta else None,
+        }
+        postings.append(posting_dict)
+
+    return {
+        "date": txn.date,
+        "payee": txn.payee,
+        "narration": txn.narration,
+        "account": first_posting.account,
+        "amount": float(first_posting.units.number) if first_posting.units else None,
+        "tags": list(txn.tags),
+        "postings": postings,
+    }
+
+
+def build_schedule_dict(
+    schedule_id: str,
+    txn_details: dict[str, Any],
+    payee_pattern: str,
+    amount_tolerance: Decimal,
+    date_window_days: int,
+    frequency: FrequencyType,
+    day_of_month: int | None = None,
+    month: int | None = None,
+    day_of_week: DayOfWeek | None = None,
+    interval: int = 1,
+    days_of_month: list[int] | None = None,
+    interval_months: int | None = None,
+) -> dict[str, Any]:
+    """Build a complete schedule dictionary matching the Pydantic schema.
+
+    Args:
+        schedule_id: Unique schedule identifier.
+        txn_details: Transaction details from extract_transaction_details().
+        payee_pattern: Payee pattern for matching.
+        amount_tolerance: Amount tolerance (±).
+        date_window_days: Date matching window in days.
+        frequency: Recurrence frequency type.
+        day_of_month: Day of month for MONTHLY/YEARLY.
+        month: Month for YEARLY.
+        day_of_week: Day of week for WEEKLY.
+        interval: Interval for WEEKLY (e.g., 2 for biweekly).
+        days_of_month: Days of month for BIMONTHLY.
+        interval_months: Month interval for INTERVAL.
+
+    Returns:
+        Dictionary representing a complete Schedule.
+    """
+    return {
+        "id": schedule_id,
+        "enabled": True,
+        "match": {
+            "account": txn_details["account"],
+            "payee_pattern": payee_pattern,
+            "amount": float(txn_details["amount"]) if txn_details["amount"] is not None else None,
+            "amount_tolerance": float(amount_tolerance),
+            "amount_min": None,
+            "amount_max": None,
+            "date_window_days": date_window_days,
+        },
+        "recurrence": {
+            "frequency": frequency.value,
+            "start_date": str(txn_details["date"]),
+            "end_date": None,
+            "day_of_month": day_of_month,
+            "month": month,
+            "day_of_week": day_of_week.value if day_of_week else None,
+            "interval": interval,
+            "days_of_month": days_of_month,
+            "interval_months": interval_months,
+        },
+        "transaction": {
+            "payee": txn_details["payee"],
+            "narration": txn_details["narration"],
+            "tags": txn_details["tags"],
+            "metadata": {
+                "schedule_id": schedule_id,
+            },
+            "postings": txn_details["postings"],
+        },
+        "missing_transaction": {
+            "create_placeholder": True,
+            "flag": "!",
+            "narration_prefix": "[MISSING]",
+        },
+    }
 
 
 @click.group()
@@ -449,6 +610,302 @@ def show(
 
         if len(occurrences) > count:
             click.echo(f"\n({len(occurrences) - count} more occurrences in range)")
+
+    except Exception as e:
+        click.echo(f"Error: {e}", err=True)
+        if logger.isEnabledFor(logging.DEBUG):
+            traceback.print_exc()
+        sys.exit(1)
+
+
+@main.command()
+@click.option(
+    "--ledger",
+    "-l",
+    "ledger_path",
+    type=click.Path(exists=True),
+    required=True,
+    help="Path to Beancount ledger file",
+)
+@click.option(
+    "--date",
+    "-d",
+    "target_date",
+    type=click.DateTime(formats=["%Y-%m-%d"]),
+    required=True,
+    help="Transaction date (YYYY-MM-DD)",
+)
+@click.option(
+    "--output",
+    "-o",
+    "output_path",
+    type=click.Path(),
+    default=None,
+    help="Output file path (default: schedules/{id}.yaml)",
+)
+@click.option(
+    "--schedules-dir",
+    type=click.Path(),
+    default="schedules",
+    help="Schedules directory (default: schedules)",
+)
+def create(ledger_path: str, target_date, output_path: str | None, schedules_dir: str):
+    """Create schedule YAML templates from existing ledger transactions.
+
+    Loads a transaction from your ledger and guides you through creating
+    a schedule template for it. The generated schedule will match future
+    occurrences of similar transactions.
+
+    Examples:
+        beanschedule create --ledger ledger.bean --date 2024-01-15
+        beanschedule create -l ledger.bean -d 2024-01-15 -o schedules/rent.yaml
+    """
+    try:
+        # Load ledger file
+        ledger_file = Path(ledger_path)
+        click.echo(f"Loading ledger from: {ledger_file}")
+
+        entries, errors, _ = beancount_loader.load_file(str(ledger_file))
+
+        if errors:
+            click.echo("Errors found while loading ledger:", err=True)
+            for error in errors:
+                click.echo(f"  {error}", err=True)
+            sys.exit(1)
+
+        # Filter transactions by date
+        target = target_date.date()
+        transactions = [
+            e for e in entries
+            if isinstance(e, data.Transaction) and e.date == target
+        ]
+
+        if not transactions:
+            click.echo(f"No transactions found on {target}", err=True)
+            msg = "Tip: Check the date format (YYYY-MM-DD) and try another date"
+            click.echo(msg, err=True)
+            sys.exit(1)
+
+        # Select transaction if multiple
+        if len(transactions) > 1:
+            click.echo(f"\nFound {len(transactions)} transactions on {target}:")
+            for i, txn in enumerate(transactions, 1):
+                first_posting = txn.postings[0] if txn.postings else None
+                amount_str = (
+                    f"{first_posting.units}"
+                    if first_posting and first_posting.units
+                    else "?"
+                )
+                account_str = (
+                    first_posting.account if first_posting else "?"
+                )
+                click.echo(
+                    f"  {i}. {txn.payee or '(no payee)':<25} "
+                    f"{txn.narration:<20} {account_str:<30} {amount_str}",
+                )
+
+            # Prompt for selection
+            selection = click.prompt(
+                "Select transaction number",
+                type=click.IntRange(1, len(transactions)),
+            )
+            txn = transactions[selection - 1]
+        else:
+            txn = transactions[0]
+            click.echo("\nSelected transaction:")
+            first_posting = txn.postings[0] if txn.postings else None
+            if first_posting:
+                click.echo(f"  Payee: {txn.payee}")
+                click.echo(f"  Narration: {txn.narration}")
+                click.echo(f"  Account: {first_posting.account}")
+                click.echo(f"  Amount: {first_posting.units}")
+
+        # Extract transaction details
+        try:
+            txn_details = extract_transaction_details(txn)
+        except ValueError as e:
+            click.echo(f"Error extracting transaction details: {e}", err=True)
+            sys.exit(1)
+
+        click.echo("")
+
+        # Prompt for schedule ID
+        default_schedule_id = slugify(txn.payee or "transaction")
+        schedule_id = click.prompt(
+            "Schedule ID",
+            default=default_schedule_id,
+            type=str,
+        )
+        # Slugify the user input
+        schedule_id = slugify(schedule_id)
+
+        # Prompt for recurrence frequency
+        click.echo("\nRecurrence frequency:")
+        frequency_options = {
+            "1": ("MONTHLY", FrequencyType.MONTHLY),
+            "2": ("WEEKLY", FrequencyType.WEEKLY),
+            "3": ("YEARLY", FrequencyType.YEARLY),
+            "4": ("INTERVAL", FrequencyType.INTERVAL),
+            "5": ("BIMONTHLY", FrequencyType.BIMONTHLY),
+        }
+        for key, (label, _) in frequency_options.items():
+            click.echo(f"  {key}. {label}")
+
+        freq_choice = click.prompt(
+            "Select frequency",
+            type=click.Choice(list(frequency_options.keys())),
+        )
+        _, frequency = frequency_options[freq_choice]
+
+        # Collect frequency-specific details
+        day_of_month = None
+        month = None
+        day_of_week = None
+        interval = 1
+        days_of_month = None
+        interval_months = None
+
+        if frequency == FrequencyType.MONTHLY:
+            day_of_month = click.prompt(
+                "Day of month (1-31)",
+                default=txn.date.day,
+                type=click.IntRange(1, 31),
+            )
+        elif frequency == FrequencyType.WEEKLY:
+            day_of_week = day_of_week_from_date(txn.date)
+            click.echo(f"Day of week: {day_of_week.value}")
+            interval = click.prompt(
+                "Interval (1=weekly, 2=biweekly, etc.)",
+                default=1,
+                type=click.IntRange(1, 52),
+            )
+        elif frequency == FrequencyType.YEARLY:
+            month = click.prompt(
+                "Month (1-12)",
+                default=txn.date.month,
+                type=click.IntRange(1, 12),
+            )
+            day_of_month = click.prompt(
+                "Day of month (1-31)",
+                default=txn.date.day,
+                type=click.IntRange(1, 31),
+            )
+        elif frequency == FrequencyType.INTERVAL:
+            interval_months = click.prompt(
+                "Month interval (e.g., 3 for quarterly)",
+                default=1,
+                type=click.IntRange(1, 24),
+            )
+            day_of_month = click.prompt(
+                "Day of month (1-31)",
+                default=txn.date.day,
+                type=click.IntRange(1, 31),
+            )
+        elif frequency == FrequencyType.BIMONTHLY:
+            days_input = click.prompt(
+                "Days of month (comma-separated, e.g., 1,15)",
+                default=f"{txn.date.day}",
+            )
+            try:
+                days_of_month = [int(d.strip()) for d in days_input.split(",")]
+                # Validate (1-31 valid days of month)
+                max_day = 31
+                min_day = 1
+                for d in days_of_month:
+                    if d < min_day or d > max_day:
+                        raise ValueError(f"Day {d} out of range")
+            except ValueError as e:
+                click.echo(f"Error parsing days: {e}", err=True)
+                sys.exit(1)
+
+        # Prompt for match criteria
+        click.echo("\nMatch Criteria:")
+        tolerance_str = click.prompt(
+            "Amount tolerance (0 for exact match)",
+            default="0.00",
+            type=str,
+        )
+        amount_tolerance = Decimal(tolerance_str)
+        date_window_days = click.prompt(
+            "Date window in days (±)",
+            default=3,
+            type=click.IntRange(0, 31),
+        )
+
+        # Payee pattern
+        payee_pattern = click.prompt(
+            "Payee pattern (regex or literal text)",
+            default=txn.payee or "",
+        )
+
+        # Build schedule dictionary
+        schedule_dict = build_schedule_dict(
+            schedule_id=schedule_id,
+            txn_details=txn_details,
+            payee_pattern=payee_pattern,
+            amount_tolerance=amount_tolerance,
+            date_window_days=date_window_days,
+            frequency=frequency,
+            day_of_month=day_of_month,
+            month=month,
+            day_of_week=day_of_week,
+            interval=interval,
+            days_of_month=days_of_month,
+            interval_months=interval_months,
+        )
+
+        # Display YAML preview
+        click.echo("\n--- Generated Schedule ---")
+        yaml_content = yaml.dump(
+            schedule_dict,
+            default_flow_style=False,
+            sort_keys=False,
+            allow_unicode=True,
+        )
+        click.echo(yaml_content)
+
+        # Confirm save
+        if not click.confirm("Save schedule?"):
+            click.echo("Cancelled.")
+            return
+
+        # Determine output file (filename must match schedule ID for directory mode)
+        if output_path is None:
+            output_file = Path(schedules_dir) / f"{schedule_id}.yaml"
+        else:
+            # When output path is specified, ensure filename matches schedule ID
+            # This is required for the loader to find the schedule in directory mode
+            output_dir = Path(output_path).parent
+            output_file = output_dir / f"{schedule_id}.yaml"
+
+        # Create parent directory if needed
+        output_file.parent.mkdir(parents=True, exist_ok=True)
+
+        # Check if file exists
+        if output_file.exists() and not click.confirm(
+            f"File exists: {output_file}\nOverwrite?",
+        ):
+            click.echo("Cancelled.")
+            return
+
+        # Write YAML file
+        with output_file.open("w") as f:
+            # Write header comment
+            f.write(f"# Schedule created from transaction on {txn.date}\n")
+            f.write(f"# Payee: {txn.payee}\n")
+            f.write(f"# Narration: {txn.narration}\n\n")
+            # Write schedule
+            f.write(yaml_content)
+
+        click.echo(f"✓ Schedule saved to: {output_file}")
+        click.echo("\nNext steps:")
+        click.echo(f"  1. Validate: beanschedule validate {schedules_dir}/")
+        click.echo(
+            f"  2. Review: beanschedule show {schedule_id} "
+            f"--schedules-path {schedules_dir}/",
+        )
+        msg = "3. Customize the schedule as needed (payee pattern, amounts, etc.)"
+        click.echo(f"  {msg}")
 
     except Exception as e:
         click.echo(f"Error: {e}", err=True)
