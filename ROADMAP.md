@@ -166,11 +166,11 @@ Track which transactions were already matched, only process new imports.
 - [ ] Export matched transactions to CSV for review
 - [ ] Interactive mode for confirming fuzzy matches above threshold
 - [ ] Schedule statistics command (coverage report, match rates over time)
-- [ ] Schedule summary and next transaction command ⭐⭐⭐
+- [x] Schedule summary and next transaction command ⭐⭐⭐ ✅
   - `beanschedule show <schedule_id> [--count N]`
   - Shows schedule details: payee, recurrence pattern, match account
   - Displays next N scheduled transaction dates (default: 5)
-  - Shows last matched transaction date (if any)
+  - Supports optional --from/--to date range filtering
   - **Impact**: Quick way to see when a schedule is due and verify configuration
   - **Effort**: Low
 - [ ] Remove account matching limitation ⭐⭐⭐
@@ -316,7 +316,7 @@ Track which transactions were already matched, only process new imports.
 - [ ] **CLI: `beanschedule detect`** - Auto-detect recurring transactions in ledger
 - [ ] **CLI: `beanschedule init`** - Interactive setup wizard
 - [ ] **CLI: `beanschedule validate`** - Validate schedule YAML files
-- [ ] **CLI: `beanschedule show`** - Display schedule summary and next scheduled transactions
+- [x] **CLI: `beanschedule show`** - Display schedule summary and next scheduled transactions ✅
 - [ ] **CLI: `beanschedule stats`** - Schedule coverage and match statistics
 - [ ] Dry-run mode for hook
 - [ ] CSV export for matched transactions
