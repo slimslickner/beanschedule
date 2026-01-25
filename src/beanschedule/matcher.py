@@ -5,7 +5,7 @@ import re
 from datetime import date
 from decimal import Decimal
 from difflib import SequenceMatcher
-from typing import Optional, Tuple
+from typing import Optional
 
 from beancount.core import data
 
@@ -136,8 +136,7 @@ class TransactionMatcher:
         normalized_payee = payee.upper().strip()
         normalized_pattern = pattern.upper().strip()
 
-        ratio = SequenceMatcher(None, normalized_payee, normalized_pattern).ratio()
-        return ratio
+        return SequenceMatcher(None, normalized_payee, normalized_pattern).ratio()
 
     def _amount_score(self, transaction: data.Transaction, schedule: Schedule) -> float:
         """
@@ -220,8 +219,8 @@ class TransactionMatcher:
     def find_best_match(
         self,
         transaction: data.Transaction,
-        candidates: list[Tuple[Schedule, date]],
-    ) -> Optional[Tuple[Schedule, date, float]]:
+        candidates: list[tuple[Schedule, date]],
+    ) -> Optional[tuple[Schedule, date, float]]:
         """
         Find best matching schedule for transaction.
 

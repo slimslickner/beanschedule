@@ -1,7 +1,10 @@
 """Command-line interface for beanschedule."""
 
+import csv
+import json
 import logging
 import sys
+import traceback
 from datetime import date
 from decimal import Decimal
 from enum import Enum
@@ -76,13 +79,11 @@ def validate(path: str):
     except Exception as e:
         click.echo(f"✗ Validation failed: {e}", err=True)
         if logger.isEnabledFor(logging.DEBUG):
-            import traceback
-
             traceback.print_exc()
         sys.exit(1)
 
 
-@main.command()
+@main.command(name="list")
 @click.argument("path", type=click.Path(exists=True))
 @click.option(
     "--format",
@@ -92,7 +93,7 @@ def validate(path: str):
     help="Output format (default: table)",
 )
 @click.option("--enabled-only", is_flag=True, help="Show only enabled schedules")
-def list(path: str, output_format: str, enabled_only: bool):
+def list_schedules(path: str, output_format: str, enabled_only: bool):
     """List all schedules with details.
 
     PATH can be either a schedules.yaml file or a schedules/ directory.
@@ -131,8 +132,6 @@ def list(path: str, output_format: str, enabled_only: bool):
         if output_format == "table":
             _print_schedule_table(schedules)
         elif output_format == "json":
-            import json
-
             schedules_data = [s.model_dump(mode="python") for s in schedules]
             click.echo(json.dumps(schedules_data, indent=2, default=str))
         elif output_format == "csv":
@@ -141,8 +140,6 @@ def list(path: str, output_format: str, enabled_only: bool):
     except Exception as e:
         click.echo(f"Error: {e}", err=True)
         if logger.isEnabledFor(logging.DEBUG):
-            import traceback
-
             traceback.print_exc()
         sys.exit(1)
 
@@ -174,9 +171,6 @@ def _print_schedule_table(schedules):
 
 def _print_schedule_csv(schedules):
     """Print schedules as CSV."""
-    import csv
-    import sys
-
     writer = csv.writer(sys.stdout)
     writer.writerow(["ID", "Enabled", "Frequency", "Payee", "Account", "Amount"])
 
@@ -254,8 +248,6 @@ def generate(schedule_id: str, start_date, end_date, schedules_path: str):
     except Exception as e:
         click.echo(f"Error: {e}", err=True)
         if logger.isEnabledFor(logging.DEBUG):
-            import traceback
-
             traceback.print_exc()
         sys.exit(1)
 
@@ -320,7 +312,7 @@ default_amount_tolerance_percent: 0.02
 placeholder_flag: '!'
 """
 
-    with open(config_path, "w") as f:
+    with config_path.open("w") as f:
         f.write(config_content)
 
     click.echo(f"Created: {config_path}")
@@ -357,7 +349,7 @@ missing_transaction:
   narration_prefix: '[MISSING]'
 """
 
-    with open(example_path, "w") as f:
+    with example_path.open("w") as f:
         f.write(example_content)
 
     click.echo(f"Created: {example_path}")

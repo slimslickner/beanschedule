@@ -2,7 +2,6 @@
 
 import logging
 from datetime import date, datetime
-from typing import List
 
 from dateutil.rrule import MONTHLY, WEEKLY, YEARLY, rrule
 
@@ -15,7 +14,7 @@ logger = logging.getLogger(__name__)
 class RecurrenceEngine:
     """Engine for generating expected dates from recurrence rules."""
 
-    def generate(self, schedule: Schedule, start_date: date, end_date: date) -> List[date]:
+    def generate(self, schedule: Schedule, start_date: date, end_date: date) -> list[date]:
         """
         Generate expected dates for schedule within date range.
 
@@ -31,10 +30,7 @@ class RecurrenceEngine:
 
         # Determine effective start/end dates
         effective_start = max(recurrence.start_date, start_date)
-        if recurrence.end_date:
-            effective_end = min(recurrence.end_date, end_date)
-        else:
-            effective_end = end_date
+        effective_end = min(recurrence.end_date, end_date) if recurrence.end_date else end_date
 
         # If range is invalid, return empty
         if effective_start > effective_end:
@@ -62,7 +58,7 @@ class RecurrenceEngine:
         recurrence: RecurrenceRule,
         start_date: date,
         end_date: date,
-    ) -> List[date]:
+    ) -> list[date]:
         """Generate monthly recurrence dates."""
         if recurrence.day_of_month is None:
             logger.error("MONTHLY frequency requires day_of_month")
@@ -84,7 +80,7 @@ class RecurrenceEngine:
         recurrence: RecurrenceRule,
         start_date: date,
         end_date: date,
-    ) -> List[date]:
+    ) -> list[date]:
         """Generate weekly recurrence dates."""
         if recurrence.day_of_week is None:
             logger.error("WEEKLY frequency requires day_of_week")
@@ -110,7 +106,7 @@ class RecurrenceEngine:
         recurrence: RecurrenceRule,
         start_date: date,
         end_date: date,
-    ) -> List[date]:
+    ) -> list[date]:
         """Generate yearly recurrence dates."""
         if recurrence.month is None or recurrence.day_of_month is None:
             logger.error("YEARLY frequency requires month and day_of_month")
@@ -133,7 +129,7 @@ class RecurrenceEngine:
         recurrence: RecurrenceRule,
         start_date: date,
         end_date: date,
-    ) -> List[date]:
+    ) -> list[date]:
         """Generate interval-based recurrence dates (every X months)."""
         if recurrence.interval_months is None or recurrence.day_of_month is None:
             logger.error("INTERVAL frequency requires interval_months and day_of_month")
@@ -156,7 +152,7 @@ class RecurrenceEngine:
         recurrence: RecurrenceRule,
         start_date: date,
         end_date: date,
-    ) -> List[date]:
+    ) -> list[date]:
         """Generate bi-monthly recurrence dates (multiple days per month)."""
         if recurrence.days_of_month is None or len(recurrence.days_of_month) == 0:
             logger.error("BIMONTHLY frequency requires days_of_month")

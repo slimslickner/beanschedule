@@ -4,7 +4,7 @@ import logging
 from collections import defaultdict
 from datetime import date, timedelta
 from decimal import Decimal
-from typing import Dict, List, Optional, Set, Tuple
+from typing import Optional
 
 from beancount.core import amount, data
 
@@ -15,10 +15,13 @@ from .schema import GlobalConfig, Schedule
 
 logger = logging.getLogger(__name__)
 
+# Constants
+MIN_BEANGULP_TUPLE_SIZE = 2  # Minimum entries in beangulp tuple
+
 
 def schedule_hook(
     extracted_entries_list,
-    existing_entries: Optional[List[data.Directive]] = None,
+    existing_entries: Optional[list[data.Directive]] = None,
 ):
     """
     Beangulp hook for scheduled transaction matching and enrichment.
@@ -104,9 +107,6 @@ def schedule_hook(
             ledger_entries,
             expected_occurrences,
             enabled_schedules,
-            date_index,
-            matcher,
-            schedule_file.config,
         )
         matched_occurrences.update(ledger_matched)
         logger.debug("Matched %d transactions from existing ledger", len(ledger_matched))
@@ -197,8 +197,8 @@ def schedule_hook(
 
 def _extract_date_range(
     extracted_entries_list,
-    ledger_entries: Optional[List[data.Directive]] = None,
-) -> Optional[Tuple[date, date]]:
+    ledger_entries: Optional[list[data.Directive]] = None,
+) -> Optional[tuple[date, date]]:
     """
     Extract min/max date range from all transactions (imported + ledger).
 
@@ -214,7 +214,7 @@ def _extract_date_range(
     # Extract dates from imported transactions
     for item in extracted_entries_list:
         # Handle both formats: (filepath, entries, account, importer) or (filepath, entries)
-        if len(item) >= 2:
+        if len(item) >= MIN_BEANGULP_TUPLE_SIZE:
             entries = item[1]
             for entry in entries:
                 if isinstance(entry, data.Transaction):
@@ -238,11 +238,11 @@ def _extract_date_range(
 
 
 def _generate_expected_occurrences(
-    schedules: List[Schedule],
+    schedules: list[Schedule],
     recurrence_engine: RecurrenceEngine,
     start_date: date,
     end_date: date,
-) -> Dict[str, List[Tuple[Schedule, date]]]:
+) -> dict[str, list[tuple[Schedule, date]]]:
     """
     Generate expected occurrences for all schedules.
 
@@ -271,9 +271,9 @@ def _generate_expected_occurrences(
 
 def _match_transaction(
     transaction: data.Transaction,
-    expected_occurrences: Dict[str, List[Tuple[Schedule, date]]],
+    expected_occurrences: dict[str, list[tuple[Schedule, date]]],
     matcher: TransactionMatcher,
-) -> Optional[Tuple[Schedule, date, float]]:
+) -> Optional[tuple[Schedule, date, float]]:
     """
     Match transaction to best matching schedule.
 
@@ -320,21 +320,20 @@ def _match_transaction(
             )
             # Return with perfect confidence score since it's explicitly set
             return (schedule, expected_date, 1.0)
-        else:
-            # Pre-existing schedule_id not found in candidates for this account
-            logger.debug(
-                "Pre-existing schedule_id '%s' not found in candidates for account %s",
-                existing_schedule_id,
-                main_account,
-            )
+        # Pre-existing schedule_id not found in candidates for this account
+        logger.debug(
+            "Pre-existing schedule_id '%s' not found in candidates for account %s",
+            existing_schedule_id,
+            main_account,
+        )
 
     # Fall back to fuzzy matching
     return matcher.find_best_match(transaction, candidates)
 
 
 def _build_date_index(
-    ledger_entries: Optional[List[data.Directive]],
-) -> Dict[date, List[data.Transaction]]:
+    ledger_entries: Optional[list[data.Directive]],
+) -> dict[date, list[data.Transaction]]:
     """
     Build an index mapping dates to transactions for fast lookups.
 
@@ -364,26 +363,20 @@ def _build_date_index(
 
 
 def _match_ledger_transactions_lazy(
-    ledger_entries: List[data.Directive],
-    expected_occurrences: Dict[str, List[Tuple[Schedule, date]]],
-    enabled_schedules: List[Schedule],
-    date_index: Dict[date, List[data.Transaction]],
-    matcher: TransactionMatcher,
-    config: GlobalConfig,
-) -> Set[Tuple[str, date]]:
+    ledger_entries: list[data.Directive],
+    expected_occurrences: dict[str, list[tuple[Schedule, date]]],
+    enabled_schedules: list[Schedule],
+) -> set[tuple[str, date]]:
     """
     Match ledger transactions using lazy evaluation with date windows.
 
     Only checks transactions within each schedule's date_window_days instead of
-    scanning all ledger entries. Uses explicit schedule_id metadata when available,
-    then falls back to fuzzy matching within the date window.
+    scanning all ledger entries. Uses explicit schedule_id metadata when available.
 
     Args:
         ledger_entries: Existing ledger entries
         expected_occurrences: Dict of account -> [(schedule, expected_date)]
         enabled_schedules: List of enabled schedules for lookup
-        date_index: Dict of date -> [transactions] for fast lookup
-        matcher: TransactionMatcher for fuzzy matching
 
     Returns:
         Set of (schedule_id, expected_date) tuples for transactions already in ledger
@@ -442,10 +435,10 @@ def _match_ledger_transactions_lazy(
 
 
 def _match_ledger_transactions(
-    ledger_entries: List[data.Directive],
-    expected_occurrences: Dict[str, List[Tuple[Schedule, date]]],
-    enabled_schedules: List[Schedule],
-) -> Set[Tuple[str, date]]:
+    ledger_entries: list[data.Directive],
+    expected_occurrences: dict[str, list[tuple[Schedule, date]]],
+    enabled_schedules: list[Schedule],
+) -> set[tuple[str, date]]:
     """
     Match transactions already in the ledger to expected schedule occurrences.
 
@@ -577,7 +570,7 @@ def _enrich_transaction(
 def _apply_schedule_postings(
     transaction: data.Transaction,
     schedule: Schedule,
-) -> List[data.Posting]:
+) -> list[data.Posting]:
     """
     Apply schedule posting template to transaction.
 
@@ -631,10 +624,10 @@ def _apply_schedule_postings(
 
 
 def _create_placeholders(
-    expected_occurrences: Dict[str, List[Tuple[Schedule, date]]],
-    matched_occurrences: Set[Tuple[str, date]],
+    expected_occurrences: dict[str, list[tuple[Schedule, date]]],
+    matched_occurrences: set[tuple[str, date]],
     placeholder_flag: str,
-) -> List[data.Transaction]:
+) -> list[data.Transaction]:
     """
     Create placeholder transactions for missing scheduled transactions.
 
@@ -648,7 +641,7 @@ def _create_placeholders(
     """
     placeholders = []
 
-    for account, occurrence_list in expected_occurrences.items():
+    for _account, occurrence_list in expected_occurrences.items():
         for schedule, expected_date in occurrence_list:
             # Skip if already matched
             if (schedule.id, expected_date) in matched_occurrences:
@@ -666,9 +659,9 @@ def _create_placeholders(
 
 
 def _log_summary(
-    schedules: List[Schedule],
-    matched_occurrences: Set[Tuple[str, date]],
-    missing_placeholders: List[data.Transaction],
+    schedules: list[Schedule],
+    matched_occurrences: set[tuple[str, date]],
+    missing_placeholders: list[data.Transaction],
     start_date: date,
     end_date: date,
 ) -> None:

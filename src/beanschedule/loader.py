@@ -3,7 +3,7 @@
 import logging
 import os
 from pathlib import Path
-from typing import List, Optional, Tuple
+from typing import Optional
 
 import yaml
 
@@ -12,7 +12,7 @@ from .schema import GlobalConfig, Schedule, ScheduleFile
 logger = logging.getLogger(__name__)
 
 
-def find_schedules_location() -> Optional[Tuple[str, Path]]:
+def find_schedules_location() -> Optional[tuple[str, Path]]:
     """
     Locate schedules configuration (directory or file).
 
@@ -111,7 +111,7 @@ def load_schedule_from_file(filepath: Path) -> Optional[Schedule]:
         Errors are logged but not raised - allows directory loading to continue
     """
     try:
-        with open(filepath) as f:
+        with filepath.open() as f:
             data = yaml.safe_load(f)
 
         if data is None:
@@ -174,7 +174,7 @@ def load_schedules_from_directory(dirpath: Path) -> Optional[ScheduleFile]:
 
     if config_path.is_file():
         try:
-            with open(config_path) as f:
+            with config_path.open() as f:
                 config_data = yaml.safe_load(f)
 
             if config_data is not None:
@@ -261,7 +261,7 @@ def load_schedules_file(filepath: Optional[Path] = None) -> Optional[ScheduleFil
         logger.info("Loading schedules from: %s", filepath)
 
         try:
-            with open(filepath) as f:
+            with filepath.open() as f:
                 data = yaml.safe_load(f)
 
             if data is None:
@@ -300,11 +300,11 @@ def load_schedules_file(filepath: Optional[Path] = None) -> Optional[ScheduleFil
 
     if mode == "dir":
         return load_schedules_from_directory(path)
-    # mode == "file"
+
     logger.info("Loading schedules from: %s", path)
 
     try:
-        with open(path) as f:
+        with path.open() as f:
             data = yaml.safe_load(f)
 
         if data is None:
@@ -333,7 +333,7 @@ def load_schedules_file(filepath: Optional[Path] = None) -> Optional[ScheduleFil
         raise
 
 
-def get_enabled_schedules(schedule_file: Optional[ScheduleFile]) -> List[Schedule]:
+def get_enabled_schedules(schedule_file: Optional[ScheduleFile]) -> list[Schedule]:
     """
     Get list of enabled schedules.
 

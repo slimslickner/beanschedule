@@ -2,11 +2,17 @@
 
 from datetime import date
 from decimal import Decimal
-from typing import Any, Dict, List, Optional
+from typing import Any, Optional
 
 from pydantic import BaseModel, Field, field_validator
 
 from .types import DayOfWeek, FlagType, FrequencyType
+
+# Constants for validation
+MIN_DAY_OF_MONTH = 1
+MAX_DAY_OF_MONTH = 31
+MIN_MONTH = 1
+MAX_MONTH = 12
 
 
 class MatchCriteria(BaseModel):
@@ -22,7 +28,7 @@ class MatchCriteria(BaseModel):
 
     @field_validator("amount_tolerance")
     @classmethod
-    def validate_amount_tolerance(cls, v, info):
+    def validate_amount_tolerance(cls, v):
         """Ensure amount_tolerance is positive."""
         if v is not None and v < 0:
             raise ValueError("amount_tolerance must be positive")
@@ -53,7 +59,7 @@ class RecurrenceRule(BaseModel):
     interval: Optional[int] = Field(1, description="Interval (e.g., 2 for bi-weekly)")
 
     # Bi-monthly
-    days_of_month: Optional[List[int]] = Field(None, description="Days of month for bi-monthly")
+    days_of_month: Optional[list[int]] = Field(None, description="Days of month for bi-monthly")
 
     # Interval (every X months)
     interval_months: Optional[int] = Field(None, description="Month interval")
@@ -62,16 +68,21 @@ class RecurrenceRule(BaseModel):
     @classmethod
     def validate_day_of_month(cls, v):
         """Ensure day_of_month is in valid range."""
-        if v is not None and (v < 1 or v > 31):
-            raise ValueError("day_of_month must be between 1 and 31")
+        if v is not None and (v < MIN_DAY_OF_MONTH or v > MAX_DAY_OF_MONTH):
+            msg = (
+                f"day_of_month must be between {MIN_DAY_OF_MONTH} and "
+                f"{MAX_DAY_OF_MONTH}"
+            )
+            raise ValueError(msg)
         return v
 
     @field_validator("month")
     @classmethod
     def validate_month(cls, v):
         """Ensure month is in valid range."""
-        if v is not None and (v < 1 or v > 12):
-            raise ValueError("month must be between 1 and 12")
+        if v is not None and (v < MIN_MONTH or v > MAX_MONTH):
+            msg = f"month must be between {MIN_MONTH} and {MAX_MONTH}"
+            raise ValueError(msg)
         return v
 
     @field_validator("interval")
@@ -96,8 +107,12 @@ class RecurrenceRule(BaseModel):
         """Ensure days_of_month are in valid range."""
         if v is not None:
             for day in v:
-                if day < 1 or day > 31:
-                    raise ValueError("days_of_month must be between 1 and 31")
+                if day < MIN_DAY_OF_MONTH or day > MAX_DAY_OF_MONTH:
+                    msg = (
+                        f"days_of_month must be between {MIN_DAY_OF_MONTH} and "
+                        f"{MAX_DAY_OF_MONTH}"
+                    )
+                    raise ValueError(msg)
         return v
 
 
@@ -114,9 +129,9 @@ class TransactionTemplate(BaseModel):
 
     payee: Optional[str] = Field(None, description="Payee (overrides imported)")
     narration: Optional[str] = Field(None, description="Narration (overrides imported)")
-    tags: Optional[List[str]] = Field(default_factory=list, description="Tags to add")
-    metadata: Dict[str, Any] = Field(default_factory=dict, description="Metadata to add")
-    postings: Optional[List[Posting]] = Field(None, description="Full posting list")
+    tags: Optional[list[str]] = Field(default_factory=list, description="Tags to add")
+    metadata: dict[str, Any] = Field(default_factory=dict, description="Metadata to add")
+    postings: Optional[list[Posting]] = Field(None, description="Full posting list")
 
     @field_validator("metadata")
     @classmethod
@@ -195,5 +210,5 @@ class ScheduleFile(BaseModel):
     """Root schedule file structure."""
 
     version: str = Field("1.0", description="Schedule file format version")
-    schedules: List[Schedule] = Field(default_factory=list, description="List of schedules")
+    schedules: list[Schedule] = Field(default_factory=list, description="List of schedules")
     config: GlobalConfig = Field(default_factory=GlobalConfig, description="Global configuration")
