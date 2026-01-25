@@ -5,7 +5,7 @@ import json
 import logging
 import sys
 import traceback
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
 from enum import Enum
 from pathlib import Path
@@ -262,6 +262,162 @@ def generate(schedule_id: str, start_date, end_date, schedules_path: str):
 
         for occurrence_date in sorted(occurrences):
             click.echo(f"  {occurrence_date}")
+
+    except Exception as e:
+        click.echo(f"Error: {e}", err=True)
+        if logger.isEnabledFor(logging.DEBUG):
+            traceback.print_exc()
+        sys.exit(1)
+
+
+@main.command()
+@click.argument("schedule_id")
+@click.option(
+    "--count",
+    type=int,
+    default=5,
+    help="Number of future occurrences to show (default: 5)",
+)
+@click.option(
+    "--from",
+    "from_date",
+    type=click.DateTime(formats=["%Y-%m-%d"]),
+    help="Start date for occurrences (YYYY-MM-DD format)",
+)
+@click.option(
+    "--to",
+    "to_date",
+    type=click.DateTime(formats=["%Y-%m-%d"]),
+    help="End date for occurrences (YYYY-MM-DD format)",
+)
+@click.option(
+    "--schedules-path",
+    type=click.Path(exists=True),
+    default="schedules",
+    help="Path to schedules file or directory (default: schedules)",
+)
+def show(
+    schedule_id: str,
+    count: int,
+    from_date,
+    to_date,
+    schedules_path: str,
+):
+    """Show detailed information about a specific schedule.
+
+    SCHEDULE_ID: The ID of the schedule to display
+
+    Examples:
+        beanschedule show mortgage-payment
+        beanschedule show mortgage-payment --count 10
+        beanschedule show mortgage-payment --from 2024-01-01 --to 2024-12-31
+    """
+    path_obj = Path(schedules_path)
+
+    try:
+        # Load schedules
+        if path_obj.is_file():
+            schedule_file = load_schedules_file(path_obj)
+        elif path_obj.is_dir():
+            schedule_file = load_schedules_from_directory(path_obj)
+        else:
+            click.echo(f"Error: Path not found: {path_obj}", err=True)
+            sys.exit(1)
+
+        if schedule_file is None:
+            click.echo("Error: No schedules loaded", err=True)
+            sys.exit(1)
+
+        # Find schedule by ID
+        schedule = next(
+            (s for s in schedule_file.schedules if s.id == schedule_id),
+            None,
+        )
+        if schedule is None:
+            click.echo(f"Error: Schedule '{schedule_id}' not found", err=True)
+            sys.exit(1)
+
+        # Determine date range for occurrences
+        if from_date is None:
+            from_date = date.today()
+        else:
+            from_date = from_date.date()
+
+        if to_date is None:
+            # Calculate end date based on count and frequency
+            # Use a generous range: at least count months into the future
+            to_date = from_date + timedelta(days=count * 45)
+        else:
+            to_date = to_date.date()
+
+        # Generate occurrences
+        engine = RecurrenceEngine()
+        occurrences = engine.generate(schedule, from_date, to_date)
+
+        # Display schedule information
+        status = "✓ enabled" if schedule.enabled else "✗ disabled"
+        click.echo(f"Schedule: {schedule.id}")
+        click.echo(f"Status: {status}")
+        click.echo(f"Frequency: {schedule.recurrence.frequency.value}")
+
+        # Show recurrence details
+        rule = schedule.recurrence
+        if rule.frequency.value == "WEEKLY" and rule.day_of_week:
+            click.echo(f"Day: {rule.day_of_week.value}")
+            if rule.interval and rule.interval > 1:
+                click.echo(f"Interval: Every {rule.interval} weeks")
+        elif rule.frequency.value == "MONTHLY" and rule.day_of_month:
+            click.echo(f"Day of month: {rule.day_of_month}")
+        elif rule.frequency.value == "YEARLY" and rule.month:
+            click.echo(f"Month: {rule.month}")
+            if rule.day_of_month:
+                click.echo(f"Day: {rule.day_of_month}")
+        elif rule.frequency.value == "BI_MONTHLY" and rule.days_of_month:
+            click.echo(f"Days: {rule.days_of_month}")
+
+        click.echo(f"Start date: {rule.start_date}")
+        if rule.end_date:
+            click.echo(f"End date: {rule.end_date}")
+
+        # Match criteria
+        click.echo("\nMatch Criteria:")
+        click.echo(f"  Account: {schedule.match.account}")
+        click.echo(f"  Payee pattern: {schedule.match.payee_pattern}")
+
+        if schedule.match.amount:
+            tolerance_str = ""
+            if schedule.match.amount_tolerance is not None:
+                tolerance_str = f" (± {schedule.match.amount_tolerance})"
+            click.echo(f"  Amount: {schedule.match.amount}{tolerance_str}")
+        elif schedule.match.amount_min and schedule.match.amount_max:
+            click.echo(
+                f"  Amount range: {schedule.match.amount_min} to "
+                f"{schedule.match.amount_max}"
+            )
+        else:
+            click.echo("  Amount: (any amount)")
+
+        if schedule.match.date_window_days:
+            click.echo(f"  Date window: ± {schedule.match.date_window_days} days")
+
+        # Transaction template
+        click.echo("\nTransaction Template:")
+        if schedule.transaction.payee:
+            click.echo(f"  Payee: {schedule.transaction.payee}")
+        if schedule.transaction.narration:
+            click.echo(f"  Narration: {schedule.transaction.narration}")
+        if schedule.transaction.tags:
+            click.echo(f"  Tags: {schedule.transaction.tags}")
+
+        # Next occurrences
+        sorted_occurrences = sorted(occurrences)[:count]
+        click.echo(f"\nNext {len(sorted_occurrences)} occurrences:")
+
+        for occurrence_date in sorted_occurrences:
+            click.echo(f"  {occurrence_date}")
+
+        if len(occurrences) > count:
+            click.echo(f"\n({len(occurrences) - count} more occurrences in range)")
 
     except Exception as e:
         click.echo(f"Error: {e}", err=True)
