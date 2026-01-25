@@ -9,6 +9,7 @@ from datetime import date
 from decimal import Decimal
 from enum import Enum
 from pathlib import Path
+from typing import Any
 
 import click
 
@@ -144,8 +145,16 @@ def list_schedules(path: str, output_format: str, enabled_only: bool):
         sys.exit(1)
 
 
-def _print_schedule_table(schedules):
-    """Print schedules as a formatted table."""
+def _print_schedule_table(schedules: list) -> None:
+    """
+    Print schedules as a formatted ASCII table.
+
+    Displays schedule ID, enabled/disabled status, recurrence frequency, and payee
+    pattern for all schedules. Column widths are auto-calculated based on content.
+
+    Args:
+        schedules: List of Schedule objects to display.
+    """
     # Calculate column widths
     id_width = max(len(s.id) for s in schedules)
     id_width = max(id_width, len("ID"))
@@ -169,8 +178,17 @@ def _print_schedule_table(schedules):
     click.echo(f"\nTotal: {len(schedules)} schedules")
 
 
-def _print_schedule_csv(schedules):
-    """Print schedules as CSV."""
+def _print_schedule_csv(schedules: list) -> None:
+    """
+    Print schedules as comma-separated values (CSV) to stdout.
+
+    Outputs schedule details in CSV format suitable for import into spreadsheet
+    applications. Columns include: ID, Enabled status, Frequency, Payee pattern,
+    Account, and Expected amount.
+
+    Args:
+        schedules: List of Schedule objects to export.
+    """
     writer = csv.writer(sys.stdout)
     writer.writerow(["ID", "Enabled", "Frequency", "Payee", "Account", "Amount"])
 
@@ -252,8 +270,22 @@ def generate(schedule_id: str, start_date, end_date, schedules_path: str):
         sys.exit(1)
 
 
-def _serialize_value(value):
-    """Convert Pydantic values to YAML-serializable types."""
+def _serialize_value(value: Any) -> Any:
+    """
+    Recursively convert Pydantic model values to YAML-serializable types.
+
+    Handles conversion of common Python types to JSON/YAML-safe equivalents:
+    - Decimal → float
+    - Enum → enum value
+    - dict-like objects → plain dict (recursively)
+    - iterables → list (recursively)
+
+    Args:
+        value: The value to serialize (from a Pydantic model dump).
+
+    Returns:
+        The value converted to a YAML-serializable type.
+    """
     try:
         if value is None:
             return None

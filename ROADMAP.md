@@ -16,6 +16,16 @@ Pre-release checklist and performance optimization opportunities before open sou
 - [x] Lazy matching optimization (80%+ performance improvement verified)
 - [x] Fix logging to use deferred formatting (not f-strings) - All 39 logging statements refactored
 - [x] Resolve ruff linting errors - Fixed 91/99 violations (type hints, imports, path operations, unused args)
+- [x] Type hints completion (100%) - Added type hints to all functions and methods
+  - schedule_hook parameters and return type
+  - CLI functions (_print_schedule_table, _print_schedule_csv, _serialize_value)
+  - All Pydantic validators with return type hints
+  - Enhanced matcher methods with detailed parameter documentation
+- [x] Comprehensive docstrings - Expanded docstrings for all modules
+  - Enhanced hook.py with detailed processing steps and notes
+  - Added docstrings to all CLI helper functions
+  - Added Args/Returns sections to matcher methods
+  - Updated validator docstrings with validation details
 
 ### 🔄 In Progress / Todo
 
@@ -23,8 +33,6 @@ Pre-release checklist and performance optimization opportunities before open sou
   - [ ] Graceful handling of invalid schedule YAML syntax
   - [ ] Better error messages for misconfigured matching criteria
   - [ ] Validation of recurrence rules at load time
-- [ ] Type hints completion (currently ~90% coverage)
-- [ ] Comprehensive docstrings for public API
 - [ ] Edge case testing
   - [ ] Leap year handling in recurrence
   - [ ] DST transitions
@@ -290,6 +298,8 @@ Track which transactions were already matched, only process new imports.
 - [x] Lazy matching optimization (80%+ speedup)
 - [x] Logging refactor (deferred formatting for performance)
 - [x] Ruff linting fixes (91/99 violations resolved)
+- [x] Type hints completion (100% coverage)
+- [x] Comprehensive docstrings for all modules
 
 ### v1.1.0 (Next - Performance & Setup)
 

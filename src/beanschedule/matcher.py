@@ -116,8 +116,15 @@ class TransactionMatcher:
         """
         Match payee against regex pattern using cached compiled patterns.
 
+        Patterns are compiled and cached on first use for better performance.
+        Comparison is case-insensitive.
+
+        Args:
+            payee: Transaction payee string to match.
+            pattern: Regex pattern to match against (case-insensitive).
+
         Returns:
-            1.0 if matches, 0.0 if not
+            1.0 if pattern matches payee, 0.0 otherwise.
         """
         try:
             normalized_payee = payee.upper().strip()
@@ -142,8 +149,15 @@ class TransactionMatcher:
         """
         Fuzzy match payee against pattern using sequence similarity with caching.
 
+        Uses SequenceMatcher to calculate string similarity. Results are cached
+        by (payee, pattern) tuple to avoid redundant calculations.
+
+        Args:
+            payee: Transaction payee string to match.
+            pattern: Fuzzy pattern to match against.
+
         Returns:
-            Similarity ratio from 0.0 to 1.0
+            Similarity ratio from 0.0 to 1.0 (cached for performance).
         """
         normalized_payee = payee.upper().strip()
         normalized_pattern = pattern.upper().strip()
@@ -216,10 +230,19 @@ class TransactionMatcher:
         expected_date: date,
     ) -> float:
         """
-        Calculate date proximity score.
+        Calculate date proximity score based on difference from expected date.
+
+        Uses linear interpolation within the configured date window. Transactions
+        matching the expected date exactly score 1.0, declining linearly to 0.0
+        at the window boundary.
+
+        Args:
+            transaction: Transaction with date to evaluate.
+            schedule: Schedule defining the date_window_days tolerance.
+            expected_date: Expected occurrence date from recurrence rule.
 
         Returns:
-            Score from 0.0 to 1.0 (linear decay from exact to window boundary)
+            Score from 0.0 to 1.0 (1.0 at exact match, 0.0 outside window).
         """
         txn_date = transaction.date
         window_days = schedule.match.date_window_days or self.config.default_date_window_days

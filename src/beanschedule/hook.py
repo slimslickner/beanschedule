@@ -20,27 +20,38 @@ MIN_BEANGULP_TUPLE_SIZE = 2  # Minimum entries in beangulp tuple
 
 
 def schedule_hook(
-    extracted_entries_list,
+    extracted_entries_list: list,
     existing_entries: Optional[list[data.Directive]] = None,
-):
+) -> list:
     """
     Beangulp hook for scheduled transaction matching and enrichment.
 
+    Integrates with beangulp to match imported transactions against configured schedules,
+    enrich them with posting templates and metadata, and create placeholders for expected
+    but missing scheduled transactions.
+
     Processing steps:
-    1. Load schedules from schedules.yaml
-    2. Extract date range from all imported transactions
-    3. Generate expected dates for each schedule in range
-    4. Match imported transactions to schedules
-    5. Enrich matched transactions with schedule metadata
-    6. Create placeholders for missing scheduled transactions
-    7. Return modified entries list
+    1. Load schedules from schedules.yaml or schedules/ directory
+    2. Extract date range from all imported and existing ledger transactions
+    3. Generate expected occurrence dates for each schedule in range
+    4. Match imported transactions to schedules using fuzzy scoring algorithm
+    5. Enrich matched transactions with schedule metadata, tags, and postings
+    6. Create placeholder transactions for expected but unmatched schedule occurrences
+    7. Return modified entries list in beangulp format
 
     Args:
-        extracted_entries_list: Entries from importers (beangulp format)
-        existing_entries: Existing ledger entries from beangulp
+        extracted_entries_list: List of 4-tuples (filepath, entries, account, importer)
+            as provided by beangulp importers.
+        existing_entries: Optional list of existing ledger entries from beangulp,
+            used to check for pre-existing matches and prevent duplicate placeholders.
 
     Returns:
-        Modified entries list with enriched transactions
+        List of 4-tuples in beangulp format with enriched transactions and placeholders.
+
+    Note:
+        - Transactions with explicit `schedule_id` metadata are treated as confirmed matches
+        - Placeholder transactions use `schedule_id` metadata to prevent duplication
+        - Fuzzy matching threshold is configurable via GlobalConfig.fuzzy_match_threshold
     """
     logger.info("Running schedule_hook")
 
