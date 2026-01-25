@@ -20,6 +20,37 @@ from .recurrence import RecurrenceEngine
 logger = logging.getLogger(__name__)
 
 
+def complete_schedule_id(ctx, param, incomplete):
+    """Complete schedule IDs from the schedules path.
+
+    Loads available schedule IDs and returns those matching the incomplete string.
+    Falls back to default 'schedules' path if --schedules-path not yet parsed.
+    Used for shell tab completion on schedule_id arguments.
+    """
+    # Try to get schedules-path from context, use default if not available or None
+    schedules_path = ctx.params.get("schedules_path") or "schedules"
+    path_obj = Path(schedules_path)
+
+    try:
+        # Load schedules silently for completion
+        if path_obj.is_file():
+            schedule_file = load_schedules_file(path_obj)
+        elif path_obj.is_dir():
+            schedule_file = load_schedules_from_directory(path_obj)
+        else:
+            return []
+
+        if schedule_file is None:
+            return []
+
+        # Return matching schedule IDs, sorted
+        schedule_ids = sorted([s.id for s in schedule_file.schedules])
+        return [sid for sid in schedule_ids if sid.startswith(incomplete)]
+    except Exception:
+        # Silently fail - don't break completion
+        return []
+
+
 @click.group()
 @click.option("--verbose", "-v", is_flag=True, help="Enable verbose logging")
 @click.version_option(version=__version__)
@@ -206,7 +237,7 @@ def _print_schedule_csv(schedules: list) -> None:
 
 
 @main.command()
-@click.argument("schedule_id")
+@click.argument("schedule_id", shell_complete=complete_schedule_id)
 @click.argument("start_date", type=click.DateTime(formats=["%Y-%m-%d"]))
 @click.argument("end_date", type=click.DateTime(formats=["%Y-%m-%d"]))
 @click.option(
@@ -271,7 +302,7 @@ def generate(schedule_id: str, start_date, end_date, schedules_path: str):
 
 
 @main.command()
-@click.argument("schedule_id")
+@click.argument("schedule_id", shell_complete=complete_schedule_id)
 @click.option(
     "--count",
     type=int,
