@@ -134,16 +134,19 @@ Pre-release checklist and performance optimization opportunities before open sou
 ### Completed
 
 **Lazy Matching Strategy** (80%+ speedup)
+
 - Built date→transaction index from ledger once
 - For each schedule occurrence, only check transactions within `date_window_days`
 - Reduced comparisons from 14k*43 to ~300-500*43
 
 **Payee Pattern Compilation** (40-50% speedup)
+
 - Added regex pattern caching in `TransactionMatcher.__init__`
 - Lazy compilation on first use with cache reuse
 - Fuzzy match result caching keyed by (payee, pattern) tuples
 
 **Performance Baseline** (M2 MacBook Pro, 14,874 ledger entries, 43 schedules)
+
 - Before lazy matching: ~45 seconds
 - After lazy matching: ~5-10 seconds
 - Target after remaining optimizations: ~2-3 seconds

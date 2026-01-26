@@ -399,27 +399,31 @@ beanschedule init [my-schedules/]
 Enable tab completion for schedule IDs to improve CLI usability:
 
 **Bash (4.4+)**:
+
 ```bash
 eval "$(_BEANSCHEDULE_COMPLETE=bash_source beanschedule)"
 # Add to ~/.bashrc for persistence
 ```
 
 **Zsh**:
+
 ```bash
 eval "$(_BEANSCHEDULE_COMPLETE=zsh_source beanschedule)"
 # Add to ~/.zshrc for persistence
 ```
 
 **Fish**:
+
 ```bash
 _BEANSCHEDULE_COMPLETE=fish_source beanschedule | source
 # Add to ~/.config/fish/completions/ for persistence
 ```
 
 Once enabled, you can tab-complete schedule IDs:
+
 ```bash
-$ beanschedule show r<TAB>      # → rent-payment
-$ beanschedule generate m<TAB>  # → mortgage-payment
+beanschedule show r<TAB>      # → rent-payment
+beanschedule generate m<TAB>  # → mortgage-payment
 ```
 
 ## Examples & Documentation
