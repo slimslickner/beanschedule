@@ -18,7 +18,7 @@ Pre-release checklist and performance optimization opportunities before open sou
 - [x] Resolve ruff linting errors - Fixed 91/99 violations (type hints, imports, path operations, unused args)
 - [x] Type hints completion (100%) - Added type hints to all functions and methods
   - schedule_hook parameters and return type
-  - CLI functions (_print_schedule_table, _print_schedule_csv, _serialize_value)
+  - CLI functions (_print_schedule_table,_print_schedule_csv, _serialize_value)
   - All Pydantic validators with return type hints
   - Enhanced matcher methods with detailed parameter documentation
 - [x] Comprehensive docstrings - Expanded docstrings for all modules
@@ -141,14 +141,6 @@ Track which transactions were already matched, only process new imports.
 
 ### High Priority (UX - Getting Started)
 
-- [ ] **CLI: Generate schedule template from transaction** ⭐⭐⭐⭐⭐
-  - `beanschedule generate --date 2024-01-15 --ledger path/to/ledger.bean`
-  - Prompts user to select a transaction from that date
-  - Creates a schedule YAML template with that transaction's details (payee, amount, account)
-  - User fills in recurrence pattern
-  - **Impact**: Drastically reduces friction for new users bootstrapping schedules
-  - **Effort**: Medium
-
 - [ ] **CLI: Auto-detect recurring transactions** ⭐⭐⭐⭐
   - `beanschedule detect --ledger path/to/ledger.bean [--confidence 0.8]`
   - Analyzes ledger to find likely recurring transactions
@@ -164,12 +156,6 @@ Track which transactions were already matched, only process new imports.
     - Calculate confidence score based on regularity (e.g., 95% if 19/20 months present)
     - Filter out noise: require minimum 3 occurrences before suggesting
     - Output candidates sorted by confidence with user preview
-
-- [ ] **Interactive setup wizard** ⭐⭐⭐⭐
-  - `beanschedule init` - guided setup for new users
-  - Walk through: where to store schedules, which accounts to monitor, basic schedule creation
-  - **Impact**: Excellent first-time user experience
-  - **Effort**: Medium
 
 ### Medium Priority
 
@@ -332,13 +318,7 @@ Track which transactions were already matched, only process new imports.
 
 ### v1.2.0 (Next - Features & Polish)
 
-- [ ] **CLI: `beanschedule generate` (enhanced)** - Advanced schedule template generation with auto-suggestions
-  - Auto-suggest payee patterns with regex hints
-  - Recommend amount tolerance based on variance in historical transactions
-  - Suggest date windows based on transaction timing variance
-  - Build on top of `create` command foundation
 - [ ] **CLI: `beanschedule detect`** - Auto-detect recurring transactions in ledger
-- [ ] **CLI: `beanschedule stats`** - Schedule coverage and match statistics
 - [ ] Dry-run mode for hook
 - [ ] CSV export for matched transactions
 
