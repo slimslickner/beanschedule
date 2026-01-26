@@ -2,255 +2,213 @@
 
 Pre-release checklist and performance optimization opportunities before open sourcing.
 
-## Status: Beta → Production Ready
+---
+
+## Status Overview
+
+**Current Version**: v1.1.0 (Stable)
+**Next Milestone**: v1.2.0 (Polish & Advanced Features)
+**Vision**: v2.0.0+ (Advanced Capabilities)
+
+| Item | Status | Version |
+|------|--------|---------|
+| Core matching & enrichment | ✅ Complete | v1.0 |
+| Pattern discovery (detect) | ✅ Complete | v1.1 |
+| Performance optimization | ✅ 80%+ speedup achieved | v1.0-v1.1 |
+| Quality & testing | ✅ 86% coverage | v1.0-v1.1 |
+| Error handling improvements | 🔄 Planned | v1.2 |
+| Dry-run mode | 🔄 Planned | v1.2 |
 
 ---
 
-## Core Fixes & Stability
+## Completed Features (v1.0.0 - Core)
 
-### ✅ Fixed
+### Matching & Enrichment
 
 - [x] Hook signature alignment with beangulp (accepting `existing_entries` directly)
 - [x] Support for checking schedules against existing ledger entries
 - [x] Placeholder generation format (always 4-tuple for beangulp compatibility)
-- [x] Lazy matching optimization (80%+ performance improvement verified)
-- [x] Fix logging to use deferred formatting (not f-strings) - All 39 logging statements refactored
-- [x] Resolve ruff linting errors - Fixed 91/99 violations (type hints, imports, path operations, unused args)
-- [x] Type hints completion (100%) - Added type hints to all functions and methods
-  - schedule_hook parameters and return type
-  - CLI functions (_print_schedule_table,_print_schedule_csv, _serialize_value)
-  - All Pydantic validators with return type hints
-  - Enhanced matcher methods with detailed parameter documentation
-- [x] Comprehensive docstrings - Expanded docstrings for all modules
-  - Enhanced hook.py with detailed processing steps and notes
-  - Added docstrings to all CLI helper functions
-  - Added Args/Returns sections to matcher methods
-  - Updated validator docstrings with validation details
+- [x] Flexible recurrence patterns: MONTHLY, WEEKLY, YEARLY, INTERVAL, BIMONTHLY
+- [x] Smart amount matching: exact, tolerance, range-based
+- [x] Regex and fuzzy payee matching
 
-### 🔄 In Progress / Todo
+### Code Quality & Performance
+
+- [x] Lazy matching optimization (80%+ speedup verified)
+- [x] Payee pattern compilation & caching (40-50% additional speedup)
+- [x] Fix logging to use deferred formatting (not f-strings)
+- [x] Resolve ruff linting errors (91/99 violations fixed)
+- [x] Type hints completion (100% coverage)
+- [x] Comprehensive docstrings for all modules
+
+### Testing
+
+- [x] Unit tests for core matching logic (28/28 passing)
+- [x] Lazy matching tested and verified (80%+ speedup confirmed)
+- [x] Removed dead code (unused fixtures)
+
+---
+
+## Completed Features (v1.1.0 - Pattern Discovery)
+
+### New CLI Commands
+
+- [x] **`beanschedule create`** - Interactive schedule creation from ledger transaction
+  - All 5 recurrence frequency types (MONTHLY, WEEKLY, YEARLY, INTERVAL, BIMONTHLY)
+  - Match criteria customization with sensible defaults
+  - YAML preview and confirmation workflow
+
+- [x] **`beanschedule detect`** - Auto-detect recurring transaction patterns
+  - Hierarchical transaction grouping (account → fuzzy payee → amount tolerance)
+  - Gap analysis with median/mean/std dev calculation
+  - Frequency detection: weekly, bi-weekly, monthly, quarterly, yearly
+  - Confidence scoring based on coverage (50%) + regularity (30%) + sample size (20%)
+  - Descriptive schedule IDs combining payee + frequency
+  - Full account names in output (no truncation)
+  - Integration with `beanschedule create` via command suggestions
+  - 38 comprehensive unit tests with 90% code coverage
+
+- [x] **`beanschedule show`** - Display schedule details and next transactions
+  - Shows recurrence pattern and match account
+  - Displays next N scheduled transaction dates (default: 5)
+
+- [x] Other commands: `list`, `validate`, `generate`, `init`
+
+### Testing & Quality
+
+- [x] Pattern detection tests (38/38 passing)
+  - Transaction grouping (7 tests)
+  - Gap analysis (4 tests)
+  - Frequency detection (6 tests)
+  - Confidence scoring (4 tests)
+  - Full detection pipeline (7 tests)
+  - Edge cases (5 tests)
+- [x] Integration tests using real examples (11+ tests)
+- [x] Code coverage: 86% total
+
+---
+
+## In Progress / Next Up
+
+### v1.2.0 - Polish & Advanced Features
+
+#### High Priority
 
 - [ ] Error handling improvements
   - [ ] Graceful handling of invalid schedule YAML syntax
   - [ ] Better error messages for misconfigured matching criteria
   - [ ] Validation of recurrence rules at load time
+
+- [ ] Dry-run mode (`--dry-run` flag for testing without committing)
+
+#### Medium Priority
+
 - [ ] Edge case testing
   - [ ] Leap year handling in recurrence
   - [ ] DST transitions
   - [ ] Schedules with no transactions in ledger
 
+- [ ] CSV export for matched transactions
+
+- [ ] Interactive mode for confirming fuzzy matches above threshold
+
+- [ ] Performance: Skip unnecessary ledger matching (5-10% speedup)
+  - Logic: If no transactions in ledger have `schedule_id` metadata, skip ledger matching
+
+### v1.3.0 - Enhanced Flexibility
+
+- [ ] Remove account matching limitation
+  - Allow schedules to match from any account (not just the configured one)
+  - Add optional `match.account` field (if present, enforce; if absent, match any account)
+
+- [ ] Conditional schedule instances (skip if conditions not met)
+  - Skip generating a scheduled instance if conditions are not met
+  - Use cases: skip transfer if credit card balance is zero
+
+- [ ] Schedule statistics command (coverage report, match rates over time)
+
 ---
 
 ## Performance Optimizations
 
-**Current Bottleneck**: Payee pattern compilation and fuzzy matching via `SequenceMatcher`. Current run: **5-10 seconds** (down from 45s with lazy matching).
+### Completed
 
-### ✅ Completed
+**Lazy Matching Strategy** (80%+ speedup)
+- Built date→transaction index from ledger once
+- For each schedule occurrence, only check transactions within `date_window_days`
+- Reduced comparisons from 14k*43 to ~300-500*43
 
-#### 1. **Lazy Matching Strategy** ⭐⭐⭐⭐⭐
+**Payee Pattern Compilation** (40-50% speedup)
+- Added regex pattern caching in `TransactionMatcher.__init__`
+- Lazy compilation on first use with cache reuse
+- Fuzzy match result caching keyed by (payee, pattern) tuples
 
-Only match transactions that fall within expected date windows, not all historical transactions.
+**Performance Baseline** (M2 MacBook Pro, 14,874 ledger entries, 43 schedules)
+- Before lazy matching: ~45 seconds
+- After lazy matching: ~5-10 seconds
+- Target after remaining optimizations: ~2-3 seconds
 
-- **Impact**: 90%+ speedup when ledger has years of data ✅ VERIFIED
-- **Effort**: Medium ✅ DONE
-- **Implementation**:
-  - ✅ Built date→transaction index from ledger once
-  - ✅ For each schedule occurrence, only check transactions within schedule's `date_window_days`
-  - ✅ Reduced comparisons from 14k*43 to ~300-500*43
-  - ✅ Only ledger transactions with explicit `schedule_id` metadata block placeholders (prevents false matches)
+### Remaining Opportunities
 
-### High Priority (Critical - Next)
+| Item | Impact | Effort | Status |
+|------|--------|--------|--------|
+| Skip ledger matching when no `schedule_id` | 5-10% | Trivial | ⏳ v1.2 |
+| Bulk transaction filtering (filter by account) | 20-30% | Medium | ⏳ v1.3 |
+| Recurrence caching | 10-15% | Low | ⏳ v1.3+ |
+| Batch scoring (vectorized operations) | 15-25% | Medium-High | ⏳ v2.0 |
+| Parallel processing | 2-3x | High | ⏳ v2.0 |
+| Incremental mode | Minimal | Medium | ⏳ v2.0 |
 
-#### 2. **Payee Pattern Compilation** ⭐⭐⭐⭐ ✅ DONE
-
-Pre-compile regex patterns and cache fuzzy match results.
-
-- **Impact**: 40-50% speedup ✅ IMPLEMENTED
-- **Effort**: Low ✅ COMPLETED
-- **Implementation**:
-  - ✅ Added `compiled_patterns` dict in `TransactionMatcher.__init__`
-  - ✅ Lazy compilation of regex patterns on first use (caches for reuse)
-  - ✅ Added `fuzzy_cache` dict keyed by (normalized_payee, normalized_pattern) tuples
-  - ✅ All 28 matcher tests passing
-  - ✅ Verified caching reduces redundant pattern compilations and SequenceMatcher calls
-
-#### 3. **Skip Ledger Matching When No Schedule Has schedule_id** ⭐⭐⭐
-
-- **Impact**: 5-10% speedup
-- **Effort**: Trivial
-- **Logic**: If no transactions in ledger have `schedule_id` metadata, skip ledger matching entirely
-
-### Medium Priority
-
-#### 4. **Bulk Transaction Filtering**
-
-Only extract and match transactions for accounts that have active schedules.
-
-- **Impact**: 20-30% speedup
-- **Effort**: Medium
-- **Implementation**:
-  - Build set of account→schedules map
-  - Filter ledger entries before matching loop
-  - Skip accounts with no active schedules
-
-#### 5. **Recurrence Caching**
-
-Cache generated occurrences across multiple hook runs (useful in repl/testing).
-
-- **Impact**: 10-15% speedup on repeated runs
-- **Effort**: Low
-- **Note**: Need to consider cache invalidation on schedule file changes
-
-#### 6. **Batch Scoring**
-
-Use vectorized operations (numpy) for score calculations instead of per-transaction loops.
-
-- **Impact**: 15-25% speedup
-- **Effort**: Medium-High
-- **Tradeoff**: Adds numpy dependency
-
-### Low Priority (Nice-to-Have)
-
-#### 7. **Parallel Processing**
-
-- Use multiprocessing for matching independent schedules
-- **Impact**: 2-3x speedup on multi-core systems
-- **Effort**: High
-- **Tradeoff**: Complexity, thread-safety concerns with logging
-
-#### 8. **Incremental Mode**
-
-Track which transactions were already matched, only process new imports.
-
-- **Impact**: Minimal for normal use (most value in development/testing)
-- **Effort**: Medium
+**Current Bottleneck**: Payee pattern matching and fuzzy matching via `SequenceMatcher` (takes ~1-2s of the 5-10s total)
 
 ---
 
-## Feature Completeness
+## Testing & Quality Status
 
-### ✅ Completed (UX)
+### Code Coverage: 86%
 
-- [x] **CLI: Create schedule template from transaction** ⭐⭐⭐⭐⭐ ✅
-  - `beanschedule create --ledger path/to/ledger.bean --date 2024-01-15`
-  - Interactive transaction selection from ledger by date
-  - Support for all 5 recurrence frequency types (MONTHLY, WEEKLY, YEARLY, INTERVAL, BIMONTHLY)
-  - Match criteria customization (amount tolerance, date window, payee pattern)
-  - YAML preview and confirmation workflow
-  - **Impact**: Drastically reduces friction for new users bootstrapping schedules ✅
-  - **Effort**: Medium ✅ COMPLETED
+| Component | Status | Coverage |
+|-----------|--------|----------|
+| Matcher | ✅ | 28/28 tests passing |
+| Detector | ✅ | 38/38 tests passing, 90% coverage |
+| Schema | ✅ | 34/34 tests passing |
+| Hook | ✅ | 15/15 tests passing |
+| Integration | ✅ | 11+ examples tested |
 
-- [x] **CLI: Auto-detect recurring transactions** ⭐⭐⭐⭐ ✅
-  - `beanschedule detect --ledger path/to/ledger.bean [--confidence 0.8]`
-  - Analyzes ledger to find likely recurring transactions
-  - Shows user suggestions: "Found monthly mortgage (confidence: 95%)", "Found quarterly utilities (confidence: 78%)"
-  - Option to auto-create schedule templates for detected patterns
-  - **Impact**: Users can auto-generate 50-80% of schedules instead of manual entry ✅
-  - **Effort**: High ✅ COMPLETED
-  - **Algorithm Implementation**:
-    - ✅ Hierarchical grouping: account → payee (fuzzy match 0.85) → amount tolerance (±5%)
-    - ✅ Gap analysis: median/mean/std dev of date differences
-    - ✅ Pattern detection: weekly (7d), bi-weekly (14d), monthly (28-32d), quarterly (88-92d), yearly (360-370d)
-    - ✅ Confidence scoring: coverage (50%) + regularity (30%) + sample size (20%)
-    - ✅ Edge case handling: month-end dates, leap years, weekend adjustments, amount variance
-    - ✅ Descriptive schedule IDs combining payee + frequency (e.g., "edison-power-monthly")
-    - ✅ Full account names displayed (no truncation in output)
-    - ✅ Command hooks to integrate with `beanschedule create`
-  - **Testing**: 38 comprehensive unit tests, 90% code coverage
+### Remaining Test Gaps
 
-### High Priority (UX - Getting Started)
-
-(None remaining - Pattern discovery complete)
-
-### Medium Priority
-
-- [ ] Dry-run mode (`--dry-run` flag for testing without committing)
-- [ ] Export matched transactions to CSV for review
-- [ ] Interactive mode for confirming fuzzy matches above threshold
-- [ ] Schedule statistics command (coverage report, match rates over time)
-- [x] Schedule summary and next transaction command ⭐⭐⭐ ✅
-  - `beanschedule show <schedule_id> [--count N]`
-  - Shows schedule details: payee, recurrence pattern, match account
-  - Displays next N scheduled transaction dates (default: 5)
-  - Supports optional --from/--to date range filtering
-  - **Impact**: Quick way to see when a schedule is due and verify configuration
-  - **Effort**: Low
-- [ ] Remove account matching limitation ⭐⭐⭐
-  - Allow schedules to match from any account (not just the configured one)
-  - Add optional `match.account` field (if present, enforce; if absent, match any account)
-  - Useful for flexibility when paying bills from different accounts
-  - **Impact**: More flexible matching for real-world scenarios where payment source varies
-  - **Effort**: Low
-- [ ] Conditional schedule instances (skip if conditions not met) ⭐⭐
-  - Skip generating a scheduled instance if conditions are not met
-  - Use cases: skip transfer if credit card balance is zero, skip payment if no budget remaining
-  - Could be implemented as: `condition: skip_if_zero_balance`, or more general conditional logic
-  - **Impact**: Prevents unnecessary placeholder transactions for optional/conditional payments
-  - **Effort**: Medium (requires balance/account state querying)
-- [ ] Support for split schedules (one schedule can generate multiple postings based on rules)
-
----
-
-## CLI Commands
-
-### Current (v1.1.0+)
-
-- `beanschedule` (no args) - shows help/version
-- [x] `beanschedule create` ✅ - Create schedule template from a transaction (interactive)
-- [x] `beanschedule detect` ✅ - Auto-detect recurring transaction patterns in ledger
-- [x] `beanschedule show` ✅ - Display schedule summary and next scheduled transactions
-- [x] `beanschedule validate` ✅ - Validate schedule YAML files for syntax/logic errors
-- [x] `beanschedule list` ✅ - List all schedules with details
-- [x] `beanschedule generate` ✅ - Generate expected occurrence dates for a schedule
-- [x] `beanschedule init` ✅ - Initialize a new schedules directory with examples
-
-### Planned (v1.2.0+)
-
-- [ ] `beanschedule generate` (enhanced) - Create schedule template with auto-suggestions (payee patterns, amount tolerance, date windows)
-- [ ] `beanschedule stats` - Show schedule coverage and match statistics
-- [ ] `beanschedule export` - Export matched transactions to CSV
-
----
-
-## Testing & Quality
-
-- [x] Unit tests for core matching logic (28/28 passing)
-- [x] Lazy matching tested and verified (80%+ speedup confirmed)
-- [x] **Pattern detection tests** ✅ (38/38 passing)
-  - [x] Transaction grouping (7 tests) - account separation, fuzzy payee matching, amount tolerance
-  - [x] Gap analysis (4 tests) - regular/irregular/weekly/monthly patterns
-  - [x] Frequency detection (6 tests) - weekly, bi-weekly, monthly, quarterly, yearly
-  - [x] Confidence scoring (4 tests) - perfect/irregular/small sample/missing occurrences
-  - [x] Full detection pipeline (7 tests) - end-to-end detection scenarios
-  - [x] Edge cases (5 tests) - fuzzy match caching, month-end dates, weekday detection
-  - [x] 90% code coverage on detector module ✅
-- [x] **Integration tests using examples/** ✅ (11 tests total)
-  - [x] Load example.beancount as existing ledger
-  - [x] Process against examples/schedules/* (11+ real, realistic schedules)
-  - [x] Verify matching behavior against real transaction patterns
-  - [x] TestExamplesIntegration class with 9 comprehensive tests
-  - [x] **TestPerScheduleIntegration class** - Tests each schedule with synthetic imports + real ledger
-  - [x] All 11+ example schedules are now directly tested
-- [x] Removed dead code
-  - [x] Deleted unused `sample_posting` fixture
-  - [x] Deleted unused `custom_global_config` fixture
-  - [x] Removed synthetic integration test classes (replaced with real examples)
 - [ ] Performance benchmarks (with/without optimizations)
 - [ ] Regression testing for schedule formats
-- [ ] CI/CD pipeline (GitHub Actions)
-- [x] **Code coverage: 70%** ✅ (target: 85%+ - Good progress with detector tests)
+- [ ] CLI command tests
+- [ ] Recurrence generation edge cases
+- [ ] Loader validation
+
+### Pre-Release Quality Checklist
+
+- [x] Type hints: 100% coverage
+- [x] Docstrings: All modules documented
+- [x] Logging: Deferred formatting throughout
+- [x] Linting: 91/99 violations resolved (ruff)
+- [ ] CI/CD: GitHub Actions pipeline
+- [ ] Code coverage reporting: codecov integration
 
 ---
 
-## Documentation
+## Known Limitations
 
-- [x] README with basic usage
-- [ ] API documentation (Sphinx/mkdocs)
-- [ ] Schedule YAML schema documentation with examples
-- [ ] CLI command reference
-- [ ] Getting started guide (with `beanschedule generate` workflow)
-- [ ] Troubleshooting guide (common matching failures)
-- [ ] Migration guide (upgrading between versions)
-- [ ] Architecture decision records (ADRs)
+### Current
+
+1. **Ledger must fit in memory** - Not suitable for extremely large ledgers (100k+ entries)
+2. **No multi-currency support** - Assumes all amounts in schedule currency
+3. **Regex patterns only** - No glob patterns for payees
+4. **Date matching only on exact date** - No "Nth weekday of month" rules
+5. **No transaction dependencies** - Can't express "this payment depends on that income"
+
+### By Design
+
+1. No automatic posting generation beyond templates
+2. No integration with beancount plugins directly (hook-based only)
+3. Schedules are YAML (not Python) for simplicity and distribution
 
 ---
 
@@ -258,7 +216,7 @@ Track which transactions were already matched, only process new imports.
 
 ### Required
 
-- [ ] MIT License badge in README
+- [ ] MIT License badge in README ✅ (already present)
 - [ ] CONTRIBUTING.md with development setup
 - [ ] CODE_OF_CONDUCT.md
 - [ ] CHANGELOG.md tracking all changes
@@ -282,100 +240,41 @@ Track which transactions were already matched, only process new imports.
 
 ---
 
-## Known Limitations
+## Documentation Roadmap
 
-### Current
+### Completed
 
-1. **Ledger must fit in memory** - Not suitable for extremely large ledgers (100k+ entries)
-2. **No multi-currency support** - Assumes all amounts in schedule currency
-3. **Regex patterns only** - No glob patterns for payees
-4. **Date matching only on exact date** - No "Nth weekday of month" rules
-5. **No transaction dependencies** - Can't express "this payment depends on that income"
+- [x] README with quick start and feature overview
+- [x] Example schedules in examples/ directory
+- [x] Inline code documentation and docstrings
 
-### By Design
+### Planned
 
-1. No automatic posting generation beyond templates
-2. No integration with beancount plugins directly (hook-based only)
-3. Schedules are YAML (not Python) for simplicity and distribution
+- [ ] API documentation (Sphinx/mkdocs)
+- [ ] Schedule YAML schema documentation with examples
+- [ ] CLI command reference
+- [ ] Getting started guide (with workflow)
+- [ ] Troubleshooting guide (common matching failures)
+- [ ] Migration guide (upgrading between versions)
+- [ ] Architecture decision records (ADRs)
 
 ---
 
-## Version Roadmap
+## Future Vision (v2.0.0+)
 
-### v1.0.0 (Current - Beta) ✅
-
-- [x] Core matching and enrichment
-- [x] Placeholder generation
-- [x] Basic ledger integration
-- [x] Lazy matching optimization (80%+ speedup)
-- [x] Logging refactor (deferred formatting for performance)
-- [x] Ruff linting fixes (91/99 violations resolved)
-- [x] Type hints completion (100% coverage)
-- [x] Comprehensive docstrings for all modules
-
-### v1.1.0 (Current - Performance & Setup)
-
-- [x] Pattern compilation & caching (40% speedup) ✅
-- [x] **CLI: `beanschedule create`** - Create schedule template from a transaction ✅
-  - Interactive transaction selection from ledger by date
-  - Support for all 5 recurrence frequency types (MONTHLY, WEEKLY, YEARLY, INTERVAL, BIMONTHLY)
-  - Match criteria customization with sensible defaults
-  - YAML preview and confirmation workflow
-- [x] **CLI: `beanschedule detect`** - Auto-detect recurring transactions in ledger ✅
-  - Hierarchical transaction grouping (account → fuzzy payee → amount tolerance)
-  - Gap analysis with median/mean/std dev calculation
-  - Frequency detection for weekly, bi-weekly, monthly, quarterly, and yearly patterns
-  - Confidence scoring based on coverage, regularity, and sample size
-  - Descriptive schedule IDs combining payee + frequency
-  - Full account names in output (no truncation)
-  - Integration with `beanschedule create` via command suggestions
-  - 38 comprehensive unit tests with 90% code coverage
-- [ ] Skip unnecessary ledger matching (5-10% speedup)
-- [ ] Bulk transaction filtering (20-30% speedup)
-- [x] **Integration tests using examples/** ✅ - Load example.beancount and real schedules (9 tests)
-- [ ] Performance benchmarking
-- [ ] Resolve remaining ruff complexity warnings (PLR rules)
-
-### v1.2.0 (Next - Polish & Advanced Features)
-
-- [ ] Dry-run mode for hook
-- [ ] CSV export for matched transactions
-- [ ] Interactive mode for confirming fuzzy matches above threshold
-- [ ] Better error messages and validation
-
-### v1.3.0 (Polish)
-
-- [ ] Interactive mode for confirming fuzzy matches above threshold
-- [ ] Better error messages and validation
-- [ ] Recurrence caching for performance
-
-### v2.0.0 (Longer term - Advanced Features)
+### Advanced Features
 
 - [ ] Multi-currency support
 - [ ] Advanced recurrence rules (nth weekday, complex patterns)
-- [ ] Parallel processing
-- [ ] Incremental/watch mode
+- [ ] Parallel processing for independent schedules (2-3x speedup)
+- [ ] Incremental/watch mode for continuous monitoring
 - [ ] Split schedules (one schedule → multiple postings based on rules)
 
----
+### Extensibility
 
-## Performance Baseline
-
-*Measured on M2 MacBook Pro with 14,874 ledger entries and 43 schedules*
-
-- **Before lazy matching**: ~45 seconds
-- **After lazy matching**: ~5-10 seconds ✅ (80%+ reduction achieved!)
-- **Target after remaining optimizations**: ~2-3 seconds
-
----
-
-## Open Source Considerations
-
-- Repository already on GitHub (private)
-- Dependencies: beancount, beangulp, pydantic, pyyaml (all popular/maintained)
-- No GPL dependencies (MIT/Apache licensed)
-- Python 3.9+ support
-- Cross-platform (macOS, Linux, Windows)
+- [ ] Plugin system for custom matchers
+- [ ] Custom pattern detection algorithms
+- [ ] Integration with other accounting tools
 
 ---
 

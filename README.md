@@ -29,175 +29,44 @@ Beanschedule is a [beangulp](https://github.com/beancount/beangulp) hook that in
 pip install beanschedule
 ```
 
-### Option A: Auto-Discover Schedules (Recommended)
+### Getting Started (Recommended)
 
-The easiest way to get started is to let Beanschedule detect recurring patterns from your existing ledger:
+Start by auto-discovering recurring patterns from your existing ledger:
 
 ```bash
-# Detect recurring patterns in your ledger
+# Step 1: Detect recurring patterns
 beanschedule detect ledger.beancount --output-dir schedules/
 
-# Review detected patterns
+# Step 2: Review and customize detected patterns
 beanschedule list schedules/
 
-# Customize any patterns as needed, then integrate with Beangulp (see Option B step 2)
+# Step 3: Integrate with Beangulp (see Setup section below)
 ```
 
-This creates a `schedules/` directory with auto-generated schedule files, which you can then customize.
+This creates a `schedules/` directory with auto-generated schedule files. If you prefer manual setup instead, see the [Manual Setup](#manual-setup) section.
 
-### Option B: Create Schedules Manually
+## How It Works
 
-If you prefer to create schedules manually, follow these steps:
+1. **Load Schedules** - Reads schedule definitions from YAML files
+2. **Extract Date Range** - Determines date range from imported transactions
+3. **Generate Expected Dates** - Calculates when each schedule should occur
+4. **Match Transactions** - Scores imported transactions against expected occurrences using weighted scoring
+5. **Enrich Matches** - Adds metadata, tags, and posting templates to matched transactions
+6. **Create Placeholders** - Generates placeholder transactions for missing expected payments
 
-### 1. Create Your First Schedule
+### Matching Algorithm
 
-Create a `schedules/` directory with a `_config.yaml` and your first schedule:
+Beanschedule uses a weighted scoring system:
 
-```bash
-mkdir schedules
-```
+- **Payee match**: 40% (supports regex patterns and fuzzy matching)
+- **Amount match**: 40% (exact, tolerance, or range-based)
+- **Date match**: 20% (uses day difference with linear decay)
 
-Create `schedules/_config.yaml`:
+Default threshold: 0.80 (configurable)
 
-```yaml
-fuzzy_match_threshold: 0.80
-default_date_window_days: 3
-default_amount_tolerance_percent: 0.02
-placeholder_flag: '!'
-```
+## Understanding Schedules
 
-Create `schedules/rent.yaml`:
-
-```yaml
-id: rent-payment
-enabled: true
-match:
-  account: Assets:Bank:Checking
-  payee_pattern: "Property Manager|Landlord"
-  amount: -1500.00
-  amount_tolerance: 0.00
-  date_window_days: 2
-recurrence:
-  frequency: MONTHLY
-  day_of_month: 1
-  start_date: 2024-01-01
-transaction:
-  payee: Property Manager
-  narration: Monthly Rent
-  tags: []
-  metadata:
-    schedule_id: rent-payment
-  postings:
-    - account: Assets:Bank:Checking
-      amount: null  # Use imported amount
-    - account: Expenses:Housing:Rent
-      amount: null
-missing_transaction:
-  create_placeholder: true
-  flag: '!'
-  narration_prefix: '[MISSING]'
-```
-
-### 2. Integrate with Beangulp
-
-Add to your `importers/config.py`:
-
-```python
-from beanschedule import schedule_hook
-
-# ... your importer configuration ...
-
-HOOKS = [schedule_hook]
-```
-
-### 3. Run Your Imports
-
-```bash
-bean-extract importers/config.py documents/ > output.beancount
-```
-
-Matched transactions will be enriched with complete posting information and metadata. Missing expected transactions will appear with the `!` flag.
-
-## Before and After Example
-
-**Before** (imported from bank):
-
-```beancount
-2024-01-01 * "PROPERTY MGR" ""
-  Assets:Bank:Checking                   -1500.00 USD
-```
-
-**After** (matched and enriched by beanschedule):
-
-```beancount
-2024-01-01 * "Property Manager" "Monthly Rent"
-  schedule_id: "rent-payment"
-  schedule_matched_date: 2024-01-01
-  schedule_confidence: 0.92
-  Assets:Bank:Checking                   -1500.00 USD
-  Expenses:Housing:Rent                   1500.00 USD
-```
-
-## Auto-Discover Recurring Patterns
-
-Don't want to manually create schedules? Beanschedule can automatically detect recurring transaction patterns in your existing ledger:
-
-```bash
-# Detect all recurring patterns with default settings (60% confidence minimum)
-beanschedule detect ledger.beancount
-
-# Detect patterns with higher confidence threshold
-beanschedule detect ledger.beancount --confidence 0.80
-
-# Generate YAML schedule files for detected patterns
-beanschedule detect ledger.beancount --output-dir detected-schedules/
-
-# Get results in JSON format for processing
-beanschedule detect ledger.beancount --format json
-```
-
-**Example Output:**
-
-```
-Detected 15 recurring patterns:
-
-Confidence  Frequency  Payee                      Account                     Amount  Count
-──────────────────────────────────────────────────────────────────────────────────────────
-99%         Monthly    BANK FEES                  Assets:US:BofA:Checking       4.00    36
-99%         Monthly    EDISON POWER               Assets:US:BofA:Checking      65.00    35
-98%         Monthly    RiverBank Properties       Assets:US:BofA:Checking    2400.00    35
-98%         Quarterly  Chase:Slate                Liabilities:US:Chase:Slate   812.10     3
-
-To manually create schedules for detected patterns, use `beanschedule create`:
-Examples for top patterns:
-
-  99% confidence - BANK FEES
-    beanschedule create --ledger ledger.beancount --date 2013-01-04
-
-  99% confidence - EDISON POWER
-    beanschedule create --ledger ledger.beancount --date 2013-01-09
-```
-
-### How Pattern Detection Works
-
-1. **Grouping** - Groups transactions by account, payee (fuzzy match), and amount tolerance
-2. **Gap Analysis** - Analyzes date gaps between transactions (median, mean, standard deviation)
-3. **Frequency Detection** - Maps gaps to frequency types (weekly, monthly, quarterly, yearly)
-4. **Confidence Scoring** - Scores patterns based on:
-   - Coverage (50%) - ratio of actual to expected occurrences
-   - Regularity (30%) - consistency of gaps (inverse of variance)
-   - Sample Size (20%) - more transactions = higher confidence
-
-### Detection Options
-
-- `--confidence` - Minimum confidence threshold (0.0-1.0, default: 0.60)
-- `--fuzzy-threshold` - Payee fuzzy match threshold (0.0-1.0, default: 0.85)
-- `--amount-tolerance` - Amount variance tolerance as % (default: 0.05 = ±5%)
-- `--min-occurrences` - Minimum transactions to consider a pattern (default: 3)
-- `--output-dir` - Save detected patterns as YAML schedule files
-- `--format` - Output format: `table` or `json`
-
-## Recurrence Types
+### Recurrence Types
 
 Beanschedule supports multiple recurrence patterns:
 
@@ -249,26 +118,159 @@ recurrence:
   start_date: 2024-09-15
 ```
 
-## CLI Tools
+## Manual Setup
 
-Beanschedule includes a command-line interface for managing and testing schedules:
+If you prefer to create schedules manually instead of auto-discovering them:
+
+### Step 1: Create Your First Schedule
+
+Create a `schedules/` directory with a `_config.yaml` and your first schedule:
 
 ```bash
-# Validate schedule files
-beanschedule validate schedules/
-
-# List all schedules
-beanschedule list schedules/
-
-# Generate expected occurrence dates
-beanschedule generate mortgage-payment 2024-01-01 2024-12-31
-
-# Initialize example schedules
-beanschedule init my-schedules/
-
-# Migrate single YAML to directory structure
-beanschedule migrate schedules.yaml schedules/
+mkdir schedules
 ```
+
+Create `schedules/_config.yaml`:
+
+```yaml
+fuzzy_match_threshold: 0.80
+default_date_window_days: 3
+default_amount_tolerance_percent: 0.02
+placeholder_flag: '!'
+```
+
+Create `schedules/rent.yaml`:
+
+```yaml
+id: rent-payment
+enabled: true
+match:
+  account: Assets:Bank:Checking
+  payee_pattern: "Property Manager|Landlord"
+  amount: -1500.00
+  amount_tolerance: 0.00
+  date_window_days: 2
+recurrence:
+  frequency: MONTHLY
+  day_of_month: 1
+  start_date: 2024-01-01
+transaction:
+  payee: Property Manager
+  narration: Monthly Rent
+  tags: []
+  metadata:
+    schedule_id: rent-payment
+  postings:
+    - account: Assets:Bank:Checking
+      amount: null  # Use imported amount
+    - account: Expenses:Housing:Rent
+      amount: null
+missing_transaction:
+  create_placeholder: true
+  flag: '!'
+  narration_prefix: '[MISSING]'
+```
+
+### Step 2: Integrate with Beangulp
+
+Add to your `importers/config.py`:
+
+```python
+from beanschedule import schedule_hook
+
+# ... your importer configuration ...
+
+HOOKS = [schedule_hook]
+```
+
+### Step 3: Run Your Imports
+
+```bash
+bean-extract importers/config.py documents/ > output.beancount
+```
+
+Matched transactions will be enriched with complete posting information and metadata. Missing expected transactions will appear with the `!` flag.
+
+## Example Output
+
+**Before** (imported from bank):
+
+```beancount
+2024-01-01 * "PROPERTY MGR" ""
+  Assets:Bank:Checking                   -1500.00 USD
+```
+
+**After** (matched and enriched by beanschedule):
+
+```beancount
+2024-01-01 * "Property Manager" "Monthly Rent"
+  schedule_id: "rent-payment"
+  schedule_matched_date: 2024-01-01
+  schedule_confidence: 0.92
+  Assets:Bank:Checking                   -1500.00 USD
+  Expenses:Housing:Rent                   1500.00 USD
+```
+
+## Auto-Discovering Patterns
+
+### How Pattern Detection Works
+
+Beanschedule can automatically analyze your ledger to find recurring transaction patterns:
+
+```bash
+# Detect all recurring patterns with default settings (60% confidence minimum)
+beanschedule detect ledger.beancount
+
+# Detect patterns with higher confidence threshold
+beanschedule detect ledger.beancount --confidence 0.80
+
+# Generate YAML schedule files for detected patterns
+beanschedule detect ledger.beancount --output-dir detected-schedules/
+
+# Get results in JSON format for processing
+beanschedule detect ledger.beancount --format json
+```
+
+**Example Output:**
+
+```
+Detected 15 recurring patterns:
+
+Confidence  Frequency  Payee                      Account                     Amount  Count
+──────────────────────────────────────────────────────────────────────────────────────────
+99%         Monthly    BANK FEES                  Assets:US:BofA:Checking       4.00    36
+99%         Monthly    EDISON POWER               Assets:US:BofA:Checking      65.00    35
+98%         Monthly    RiverBank Properties       Assets:US:BofA:Checking    2400.00    35
+98%         Quarterly  Chase:Slate                Liabilities:US:Chase:Slate   812.10     3
+
+To manually create schedules for detected patterns, use `beanschedule create`:
+Examples for top patterns:
+
+  99% confidence - BANK FEES
+    beanschedule create --ledger ledger.beancount --date 2013-01-04
+
+  99% confidence - EDISON POWER
+    beanschedule create --ledger ledger.beancount --date 2013-01-09
+```
+
+### Detection Algorithm
+
+1. **Grouping** - Groups transactions by account, payee (fuzzy match 0.85), and amount tolerance (±5%)
+2. **Gap Analysis** - Analyzes date gaps between transactions (median, mean, standard deviation)
+3. **Frequency Detection** - Maps gaps to frequency types (weekly, monthly, quarterly, yearly)
+4. **Confidence Scoring** - Scores patterns based on:
+   - Coverage (50%) - ratio of actual to expected occurrences
+   - Regularity (30%) - consistency of gaps (inverse of variance)
+   - Sample Size (20%) - more transactions = higher confidence
+
+### Detection Options
+
+- `--confidence` - Minimum confidence threshold (0.0-1.0, default: 0.60)
+- `--fuzzy-threshold` - Payee fuzzy match threshold (0.0-1.0, default: 0.85)
+- `--amount-tolerance` - Amount variance tolerance as % (default: 0.05 = ±5%)
+- `--min-occurrences` - Minimum transactions to consider a pattern (default: 3)
+- `--output-dir` - Save detected patterns as YAML schedule files
+- `--format` - Output format: `table` or `json`
 
 ## Advanced Features
 
@@ -364,55 +366,23 @@ transaction:
 
 The zerosum plugin will create both postings automatically (Assets:Checking → Equity:ZeroSum:Transfers and Liabilities:CreditCard → Equity:ZeroSum:Transfers). You get the benefits of scheduled transaction tracking without maintaining duplicate schedule definitions.
 
-## Examples
-
-See the [examples/](examples/) directory for:
-
-- 10 example schedule files covering different scenarios
-- Sample `example.beancount` ledger
-- Detailed README with usage tips
-
-## Documentation
-
-- **Installation Guide** - [docs/installation.md](docs/installation.md)
-- **Quick Start** - [docs/quickstart.md](docs/quickstart.md)
-- **User Guide** - [docs/user-guide.md](docs/user-guide.md)
-- **Schedule Format Reference** - [docs/schedule-format.md](docs/schedule-format.md)
-- **Recurrence Patterns** - [docs/recurrence-patterns.md](docs/recurrence-patterns.md)
-- **Troubleshooting** - [docs/troubleshooting.md](docs/troubleshooting.md)
-
-## How It Works
-
-1. **Load Schedules** - Reads schedule definitions from YAML files
-2. **Extract Date Range** - Determines date range from imported transactions
-3. **Generate Expected Dates** - Calculates when each schedule should occur
-4. **Match Transactions** - Scores imported transactions against expected occurrences
-5. **Enrich Matches** - Adds metadata, tags, and posting templates to matched transactions
-6. **Create Placeholders** - Generates placeholder transactions for missing expected payments
-
 ## CLI Commands
 
-Beanschedule provides several command-line tools for managing and debugging schedules:
+Beanschedule provides command-line tools for managing and debugging schedules:
 
 ```bash
 # Detect recurring patterns in your ledger (auto-discovery)
-beanschedule detect ledger.beancount
-beanschedule detect ledger.beancount --confidence 0.75
-beanschedule detect ledger.beancount --output-dir detected-schedules/
-beanschedule detect ledger.beancount --format json
+beanschedule detect ledger.beancount [--confidence 0.75] [--output-dir dir/] [--format json|table]
 
 # Validate schedule files for syntax and configuration errors
 beanschedule validate schedules/
 beanschedule validate schedules.yaml
 
 # List all schedules with details
-beanschedule list schedules/ --format table
-beanschedule list schedules/ --format json
-beanschedule list schedules/ --enabled-only
+beanschedule list schedules/ [--format table|json] [--enabled-only]
 
 # Show detailed information about a specific schedule
-beanschedule show rent-payment
-beanschedule show rent-payment --count 10
+beanschedule show rent-payment [--count N]
 
 # Generate expected occurrence dates for a schedule
 beanschedule generate rent-payment 2024-01-01 2024-12-31
@@ -421,8 +391,7 @@ beanschedule generate rent-payment 2024-01-01 2024-12-31
 beanschedule create --ledger ledger.beancount --date 2024-01-15
 
 # Initialize a new schedules directory with examples
-beanschedule init
-beanschedule init my-schedules/
+beanschedule init [my-schedules/]
 ```
 
 ### Shell Tab Completion
@@ -453,15 +422,22 @@ $ beanschedule show r<TAB>      # → rent-payment
 $ beanschedule generate m<TAB>  # → mortgage-payment
 ```
 
-## Matching Algorithm
+## Examples & Documentation
 
-Beanschedule uses a weighted scoring system:
+See the [examples/](examples/) directory for:
 
-- **Payee match**: 40% (supports regex patterns and fuzzy matching)
-- **Amount match**: 40% (exact, tolerance, or range-based)
-- **Date match**: 20% (uses day difference with linear decay)
+- 10 example schedule files covering different scenarios
+- Sample `example.beancount` ledger
+- Detailed README with usage tips
 
-Default threshold: 0.80 (configurable)
+Additional documentation:
+
+- **Installation Guide** - [docs/installation.md](docs/installation.md)
+- **Quick Start** - [docs/quickstart.md](docs/quickstart.md)
+- **User Guide** - [docs/user-guide.md](docs/user-guide.md)
+- **Schedule Format Reference** - [docs/schedule-format.md](docs/schedule-format.md)
+- **Recurrence Patterns** - [docs/recurrence-patterns.md](docs/recurrence-patterns.md)
+- **Troubleshooting** - [docs/troubleshooting.md](docs/troubleshooting.md)
 
 ## Requirements
 
