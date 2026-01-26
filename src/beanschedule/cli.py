@@ -914,6 +914,345 @@ def create(ledger_path: str, target_date, output_path: str | None, schedules_dir
         sys.exit(1)
 
 
+@main.command()
+@click.argument("ledger_path", type=click.Path(exists=True))
+@click.option(
+    "--confidence",
+    type=float,
+    default=0.60,
+    help="Minimum confidence threshold (0.0-1.0, default: 0.60)",
+)
+@click.option(
+    "--fuzzy-threshold",
+    type=float,
+    default=0.85,
+    help="Payee fuzzy match threshold (0.0-1.0, default: 0.85)",
+)
+@click.option(
+    "--amount-tolerance",
+    type=float,
+    default=0.05,
+    help="Amount variance tolerance as percentage (default: 0.05 = 5%)",
+)
+@click.option(
+    "--min-occurrences",
+    type=int,
+    default=3,
+    help="Minimum transaction occurrences to detect pattern (default: 3)",
+)
+@click.option(
+    "--output-dir",
+    type=click.Path(),
+    default=None,
+    help="Save detected schedules as YAML files to this directory",
+)
+@click.option(
+    "--format",
+    "output_format",
+    type=click.Choice(["table", "json"]),
+    default="table",
+    help="Output format (default: table)",
+)
+def detect(
+    ledger_path: str,
+    confidence: float,
+    fuzzy_threshold: float,
+    amount_tolerance: float,
+    min_occurrences: int,
+    output_dir: str | None,
+    output_format: str,
+):
+    """Detect recurring transaction patterns in a ledger.
+
+    Analyzes your Beancount ledger to discover recurring transactions
+    and generates schedule templates with confidence scoring.
+
+    Examples:
+        beanschedule detect ledger.bean
+        beanschedule detect ledger.bean --confidence 0.75
+        beanschedule detect ledger.bean --output-dir detected-schedules/
+        beanschedule detect ledger.bean --format json
+    """
+    from .detector import RecurrenceDetector
+
+    try:
+        # Validate input parameters
+        if not (0.0 <= confidence <= 1.0):
+            click.echo("Error: --confidence must be between 0.0 and 1.0", err=True)
+            sys.exit(1)
+
+        if not (0.0 <= fuzzy_threshold <= 1.0):
+            click.echo("Error: --fuzzy-threshold must be between 0.0 and 1.0", err=True)
+            sys.exit(1)
+
+        if not (0.0 <= amount_tolerance <= 1.0):
+            click.echo("Error: --amount-tolerance must be between 0.0 and 1.0", err=True)
+            sys.exit(1)
+
+        if min_occurrences < 2:
+            click.echo("Error: --min-occurrences must be at least 2", err=True)
+            sys.exit(1)
+
+        # Load ledger
+        ledger_file = Path(ledger_path)
+        click.echo(f"Loading ledger from: {ledger_file}")
+
+        entries, errors, _ = beancount_loader.load_file(str(ledger_file))
+
+        if errors:
+            click.echo("Errors found while loading ledger:", err=True)
+            for error in errors:
+                click.echo(f"  {error}", err=True)
+            sys.exit(1)
+
+        # Create detector and run detection
+        detector = RecurrenceDetector(
+            fuzzy_threshold=fuzzy_threshold,
+            amount_tolerance_pct=amount_tolerance,
+            min_occurrences=min_occurrences,
+            min_confidence=confidence,
+        )
+
+        click.echo(f"Analyzing {len(entries)} ledger entries...")
+        candidates = detector.detect(entries)
+
+        if not candidates:
+            click.echo("No recurring patterns detected.")
+            click.echo(
+                f"Try adjusting thresholds: lower --confidence or "
+                f"--min-occurrences"
+            )
+            sys.exit(0)
+
+        # Display results
+        click.echo(f"\nDetected {len(candidates)} recurring patterns:\n")
+
+        if output_format == "table":
+            _print_detection_table(candidates)
+        elif output_format == "json":
+            _print_detection_json(candidates)
+
+        # Show top candidates with schedule creation guidance
+        if output_format == "table":
+            click.echo(f"\n{'─' * 120}")
+            click.echo("\nTo manually create schedules for detected patterns, use `beanschedule create`:")
+            click.echo("Examples for top patterns:\n")
+            for candidate in candidates[:3]:
+                cmd = (
+                    f"  beanschedule create --ledger {ledger_path} "
+                    f"--date {candidate.first_date}"
+                )
+                click.echo(f"  {candidate.confidence*100:.0f}% confidence - {candidate.payee}")
+                click.echo(f"  {cmd}")
+                click.echo()
+
+        # Save to YAML files if requested
+        if output_dir:
+            output_path = Path(output_dir)
+            saved_count = _save_detected_schedules(candidates, output_path)
+            click.echo(f"\n✓ Saved {saved_count} schedules to: {output_path}")
+            click.echo("\nNext steps:")
+            click.echo(f"  1. Review: beanschedule list {output_path}")
+            click.echo(f"  2. Validate: beanschedule validate {output_path}")
+            click.echo(f"  3. Customize as needed (payee patterns, amounts, etc.)")
+
+    except Exception as e:
+        click.echo(f"Error: {e}", err=True)
+        if logger.isEnabledFor(logging.DEBUG):
+            traceback.print_exc()
+        sys.exit(1)
+
+
+def _print_detection_table(candidates: list) -> None:
+    """Print detected patterns as a formatted ASCII table.
+
+    Shows confidence, frequency, payee, account, amount, and transaction count
+    for each detected pattern. Displays full account names without truncation.
+
+    Args:
+        candidates: List of RecurringCandidate objects.
+    """
+    # Calculate column widths (no hard cap on account width)
+    confidence_width = len("Confidence")
+    frequency_width = max(
+        len("Frequency"),
+        max((len(c.frequency.formatted_name()) for c in candidates), default=0),
+    )
+    frequency_width = min(frequency_width, 15)
+
+    payee_width = max(
+        len("Payee"),
+        max((len(c.payee) for c in candidates), default=0),
+    )
+    payee_width = min(payee_width, 25)
+
+    # Calculate account width dynamically without hard cap
+    account_width = max(
+        len("Account"),
+        max((len(c.account) for c in candidates), default=0),
+    )
+
+    amount_width = len("Amount")
+
+    # Print header
+    header = (
+        f"{'Confidence':<{confidence_width}}  "
+        f"{'Frequency':<{frequency_width}}  "
+        f"{'Payee':<{payee_width}}  "
+        f"{'Account':<{account_width}}  "
+        f"{'Amount':<{amount_width}}  "
+        f"Count"
+    )
+    click.echo(header)
+    click.echo("-" * min(len(header), 120))  # Cap separator line at 120 chars
+
+    # Print candidates sorted by confidence (highest first)
+    for candidate in candidates:
+        confidence_pct = f"{candidate.confidence * 100:.0f}%"
+        frequency_name = candidate.frequency.formatted_name()
+        payee = candidate.payee[:payee_width]
+        account = candidate.account  # No truncation
+        amount = f"{candidate.amount:.2f}"
+
+        row = (
+            f"{confidence_pct:<{confidence_width}}  "
+            f"{frequency_name:<{frequency_width}}  "
+            f"{payee:<{payee_width}}  "
+            f"{account:<{account_width}}  "
+            f"{amount:<{amount_width}}  "
+            f"{candidate.transaction_count}"
+        )
+        click.echo(row)
+
+
+def _print_detection_json(candidates: list) -> None:
+    """Print detected patterns as JSON.
+
+    Args:
+        candidates: List of RecurringCandidate objects.
+    """
+    output = []
+    for c in candidates:
+        output.append(
+            {
+                "schedule_id": c.schedule_id,
+                "payee": c.payee,
+                "account": c.account,
+                "amount": float(c.amount),
+                "amount_tolerance": float(c.amount_tolerance),
+                "frequency": c.frequency.frequency.value,
+                "frequency_name": c.frequency.formatted_name(),
+                "confidence": round(c.confidence, 3),
+                "transaction_count": c.transaction_count,
+                "date_range": {
+                    "first": str(c.first_date),
+                    "last": str(c.last_date),
+                },
+                "expected_occurrences": c.expected_occurrences,
+            }
+        )
+
+    click.echo(json.dumps(output, indent=2))
+
+
+def _save_detected_schedules(candidates: list, output_dir: Path) -> int:
+    """Save detected candidates as YAML schedule files.
+
+    Creates a schedules directory with individual YAML files for each
+    detected pattern, ready to be customized and used.
+
+    Args:
+        candidates: List of RecurringCandidate objects.
+        output_dir: Directory to save schedule files.
+
+    Returns:
+        Number of schedules saved.
+    """
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    # Create _config.yaml if it doesn't exist
+    config_file = output_dir / "_config.yaml"
+    if not config_file.exists():
+        config = {
+            "fuzzy_match_threshold": 0.80,
+            "default_date_window_days": 3,
+            "default_amount_tolerance_percent": 0.02,
+            "placeholder_flag": "!",
+        }
+        with config_file.open("w") as f:
+            yaml.dump(config, f)
+
+    saved_count = 0
+
+    for candidate in candidates:
+        # Build schedule dictionary
+        schedule_dict = {
+            "id": candidate.schedule_id,
+            "enabled": True,
+            "match": {
+                "account": candidate.account,
+                "payee_pattern": candidate.payee_pattern,
+                "amount": float(candidate.amount),
+                "amount_tolerance": float(candidate.amount_tolerance),
+                "amount_min": None,
+                "amount_max": None,
+                "date_window_days": 3,
+            },
+            "recurrence": {
+                "frequency": candidate.frequency.frequency.value,
+                "start_date": str(candidate.first_date),
+                "end_date": None,
+                "day_of_month": candidate.frequency.day_of_month,
+                "month": candidate.frequency.month,
+                "day_of_week": (
+                    candidate.frequency.day_of_week.value
+                    if candidate.frequency.day_of_week
+                    else None
+                ),
+                "interval": candidate.frequency.interval,
+                "days_of_month": None,
+                "interval_months": candidate.frequency.interval_months,
+            },
+            "transaction": {
+                "payee": candidate.payee,
+                "narration": f"{candidate.frequency.formatted_name()} transaction",
+                "tags": [],
+                "metadata": {
+                    "schedule_id": candidate.schedule_id,
+                },
+                "postings": None,
+            },
+            "missing_transaction": {
+                "create_placeholder": True,
+                "flag": "!",
+                "narration_prefix": "[MISSING]",
+            },
+        }
+
+        # Write YAML file
+        output_file = output_dir / f"{candidate.schedule_id}.yaml"
+        with output_file.open("w") as f:
+            f.write(f"# Auto-detected {candidate.frequency.formatted_name()} pattern\n")
+            f.write(
+                f"# Confidence: {candidate.confidence * 100:.0f}% "
+                f"({candidate.transaction_count} transactions)\n"
+            )
+            f.write(f"# Date range: {candidate.first_date} to {candidate.last_date}\n")
+            f.write(f"# Payee: {candidate.payee}\n\n")
+            yaml.dump(
+                schedule_dict,
+                f,
+                default_flow_style=False,
+                sort_keys=False,
+                allow_unicode=True,
+            )
+
+        saved_count += 1
+        logger.info("Saved schedule: %s", output_file)
+
+    return saved_count
+
+
 def _serialize_value(value: Any) -> Any:
     """
     Recursively convert Pydantic model values to YAML-serializable types.
