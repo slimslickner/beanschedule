@@ -728,11 +728,6 @@ def _log_summary(
     logger.info("=" * 70)
     logger.info("TOTAL: %d/%d scheduled transaction(s) matched", total_matched, total_expected)
 
-    if missing_by_schedule:
-        logger.warning("Missing in %d schedule(s):", len(missing_by_schedule))
-        for schedule_id, count in sorted(missing_by_schedule.items()):
-            logger.warning("  • %s: %d missing", schedule_id, count)
-
     logger.info("=" * 70)
 
 
