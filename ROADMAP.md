@@ -103,6 +103,20 @@ Pre-release checklist and performance optimization opportunities before open sou
 
 #### Medium Priority
 
+- [ ] One-time/ad-hoc schedules ⭐⭐⭐⭐
+  - Add `ONCE` frequency type for non-recurring schedules
+  - Match exactly one expected occurrence on `start_date`
+  - Perfect for: planned purchases, upcoming one-time expenses, split transactions
+  - Use case: Record transaction notes before import (e.g., Amazon purchase split across 3 accounts)
+  - **Impact**: Enables pre-planning of complex one-time transactions with splits
+
+- [ ] CLI: Quick schedule creation walkthrough ⭐⭐⭐⭐
+  - `beanschedule quick` - Interactive guided schedule creation
+  - Ask questions: date, payee, amount, account, split postings, frequency (including ONCE)
+  - Generate and save schedule YAML from answers
+  - Alternative faster workflow to `beanschedule create` (which requires existing ledger transaction)
+  - **Impact**: Drastically simplifies creating one-time and recurring schedules from scratch
+
 - [ ] Edge case testing
   - [ ] Leap year handling in recurrence
   - [ ] DST transitions
