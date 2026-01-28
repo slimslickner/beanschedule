@@ -17,14 +17,12 @@ uv run pytest tests/test_matcher.py::TestPayeeMatching::test_exact_payee_match -
 uv run pytest tests/ --cov=beanschedule --cov-report=html                # Coverage report
 
 # Code Quality
-uv run ruff check src/ tests/                                             # Lint
-uv run ruff format src/ tests/                                            # Format
-uv run mypy src/beanschedule/                                             # Type check
-
-# Development
-uv run beanschedule --help                                                # CLI help
-uv run beanschedule validate schedules.yaml                               # Validate schedule files
+uv run ruff check beanschedule/ tests/                                    # Lint
+uv run ruff format beanschedule/ tests/                                   # Format
+uv run mypy beanschedule/                                                 # Type check
 ```
+
+**Note**: Do NOT manually test CLI commands during development (e.g., `uv run beanschedule --help`). Use Click's `CliRunner` fixture in unit tests instead. Manual CLI testing is only for end-user validation, not for verifying code changes.
 
 ## Architecture Overview
 
@@ -163,7 +161,31 @@ Fixtures in `tests/conftest.py`:
 - `temp_schedule_dir`, `temp_schedule_file` - Temp files
 - `assert_transaction_enriched()` - Custom assertions
 
-Example test:
+### CLI Testing (IMPORTANT)
+
+**DO NOT manually run CLI commands to test them** (e.g., `uv run beanschedule --help`). Instead, use Click's `CliRunner` fixture in unit tests:
+
+```python
+from click.testing import CliRunner
+from beanschedule.cli import main
+
+def test_beanschedule_help():
+    runner = CliRunner()
+    result = runner.invoke(main, ['--help'])
+    assert result.exit_code == 0
+    assert 'Beanschedule' in result.output
+
+def test_validate_command():
+    runner = CliRunner()
+    with runner.isolated_filesystem():
+        # Set up test files
+        result = runner.invoke(main, ['validate', 'schedules.yaml'])
+        assert result.exit_code == 0
+```
+
+**Why**: Manual CLI testing (`uv run beanschedule ...`) is for end-user validation, not for verifying code correctness. Unit tests with `CliRunner` are faster, more reliable, and don't require package installation.
+
+### Example Unit Test
 
 ```python
 def test_exact_payee_match(sample_transaction, sample_schedule):
@@ -175,6 +197,8 @@ def test_exact_payee_match(sample_transaction, sample_schedule):
     )
     assert score > 0.8  # Passes when payee matches exactly
 ```
+
+### Integration Tests
 
 Integration tests use real `examples/` directory:
 
@@ -219,8 +243,9 @@ Current bottleneck: Payee pattern compilation and fuzzy matching via `SequenceMa
 
 ## Dependencies & Environment
 
-- **Python**: 3.9+ (tested 3.9-3.13)
+- **Python**: 3.11+ (tested 3.11-3.13)
 - **Build**: `setuptools>=68.0`, modern `pyproject.toml` (PEP 517)
+- **Package Layout**: Flat-layout with `beanschedule/` at root (not src-layout)
 - **Core**: `beancount>=3.2.0`, `beangulp>=0.2.0`, `pydantic>=2.0.0`, `pyyaml>=6.0`
 - **Date Math**: `python-dateutil>=2.8.0` (for `rrule`)
 - **CLI**: `click>=8.0.0`
