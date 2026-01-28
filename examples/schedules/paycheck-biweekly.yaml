@@ -16,7 +16,7 @@ recurrence:
   end_date: null
   day_of_month: null
   month: null
-  day_of_week: Thursday
+  day_of_week: THU
   interval: 2
   days_of_month: null
   interval_months: null
