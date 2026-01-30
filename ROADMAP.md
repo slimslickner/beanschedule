@@ -94,6 +94,18 @@ Pre-release checklist and performance optimization opportunities before open sou
 
 #### High Priority
 
+- [ ] **Forecast plugin syntax for templates** ⭐⭐⭐⭐⭐
+  - Leverage [beanlabs forecast plugin](https://github.com/beancount/beanlabs/blob/master/beanlabs/plugins/forecast.py) syntax for schedule templates
+  - Replace YAML-based schedule definitions with in-ledger transaction templates
+  - Syntax: `2024-03-08 # "Electricity bill [MONTHLY]"` with `#` flag
+  - Support all forecast syntax: `[MONTHLY]`, `[YEARLY]`, `[WEEKLY]`, `[DAILY]`
+  - Support `SKIP N TIMES`, `REPEAT N TIMES`, `UNTIL YYYY-MM-DD` modifiers
+  - Template transactions stay in ledger as source of truth alongside historical data
+  - **Breaking change**: Remove YAML schedule support entirely in v2.0
+  - Migration script: `beanschedule migrate` command to transform YAML → in-ledger forecast templates
+  - Migration outputs template transactions to stdout or specified .bean file
+  - **Impact**: Eliminates separate YAML files, keeps all financial data in one place, simpler mental model, unified syntax with beanlabs
+
 - [ ] Error handling improvements
   - [ ] Graceful handling of invalid schedule YAML syntax
   - [ ] Better error messages for misconfigured matching criteria
