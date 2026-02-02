@@ -1,0 +1,266 @@
+"""Beanschedule plugin for Beancount - generates forecast transactions from YAML schedules.
+
+This plugin reads schedule definitions from schedules.yaml and generates
+forecast transactions for future occurrences.
+
+Usage in ledger:
+    plugin "beanschedule.plugins.schedules"
+
+    ; Or specify custom path:
+    plugin "beanschedule.plugins.schedules" "path/to/schedules.yaml"
+
+The plugin will:
+1. Auto-discover schedules.yaml (or use provided path)
+2. Load schedule definitions
+3. Generate forecast transactions for enabled schedules
+4. Return them as # (forecast) flag transactions
+
+Schedules are defined in YAML format. Example:
+
+    version: "1.0"
+    schedules:
+      - id: rent-monthly
+        enabled: true
+        match:
+          account: Assets:Checking
+          payee_pattern: ".*LANDLORD.*"
+        recurrence:
+          frequency: MONTHLY
+          start_date: 2024-01-01
+          day_of_month: 1
+        transaction:
+          payee: "Rent Payment"
+          narration: "Monthly rent"
+          metadata:
+            schedule_id: rent-monthly
+          postings:
+            - account: Expenses:Housing:Rent
+              amount: 1500.00
+            - account: Assets:Checking
+
+For more information, see: https://github.com/yourusername/beanschedule
+"""
+
+__copyright__ = "Copyright (C) 2026 beanschedule"
+__license__ = "GNU GPLv2"
+
+import logging
+from datetime import date, timedelta
+from decimal import Decimal
+from pathlib import Path
+
+from beancount.core import amount, data
+
+logger = logging.getLogger(__name__)
+
+__plugins__ = ("schedules",)
+
+
+def schedules(entries, options_map, config_file=None):
+    """Generate forecast transactions from YAML schedule definitions.
+
+    Args:
+        entries: Existing beancount entries
+        options_map: Beancount options
+        config_file: Optional path to schedules.yaml (auto-discovers if not provided)
+
+    Returns:
+        Tuple of (entries + forecast_entries, errors)
+
+    Example:
+        ; Auto-discover schedules.yaml
+        plugin "beanschedule.plugins.schedules"
+
+        ; Custom path
+        plugin "beanschedule.plugins.schedules" "config/schedules.yaml"
+    """
+    from beanschedule.loader import (
+        find_schedules_location,
+        load_schedules_file,
+        load_schedules_from_directory,
+    )
+    from beanschedule.recurrence import RecurrenceEngine
+
+    errors = []
+
+    # 1. Load YAML schedules
+    try:
+        if config_file:
+            # Use provided path
+            schedule_path = Path(config_file)
+            if not schedule_path.is_absolute():
+                # Make relative to ledger file location
+                ledger_file = options_map.get("filename")
+                if ledger_file:
+                    ledger_dir = Path(ledger_file).parent
+                    schedule_path = ledger_dir / schedule_path
+
+            if not schedule_path.exists():
+                error_msg = f"Schedules file not found: {schedule_path}"
+                logger.error(error_msg)
+                errors.append(error_msg)
+                return entries, errors
+
+            schedule_file = load_schedules_file(schedule_path)
+        else:
+            # Auto-discover
+            schedule_location = find_schedules_location()
+            if schedule_location:
+                location_type, schedule_path = schedule_location
+                if location_type == "dir":
+                    schedule_file = load_schedules_from_directory(schedule_path)
+                else:  # "file"
+                    schedule_file = load_schedules_file(schedule_path)
+            else:
+                logger.info("No schedules.yaml found, skipping forecast generation")
+                return entries, []
+
+        if not schedule_file:
+            logger.warning("Failed to load schedules, skipping forecast generation")
+            return entries, []
+
+    except Exception as e:
+        error_msg = f"Failed to load schedules: {e}"
+        logger.error(error_msg)
+        errors.append(error_msg)
+        return entries, errors
+
+    # 2. Determine forecast horizon
+    # Default: Today + 1 year
+    # Can be configured via plugin options in future
+    today = date.today()
+    forecast_start = today
+    forecast_end = today + timedelta(days=365)
+
+    logger.info(
+        f"Generating forecasts from {forecast_start} to {forecast_end} "
+        f"({len(schedule_file.schedules)} schedule(s))"
+    )
+
+    # 3. Generate forecast transactions
+    forecast_entries = []
+    engine = RecurrenceEngine()
+
+    for schedule in schedule_file.schedules:
+        if not schedule.enabled:
+            logger.debug(f"Skipping disabled schedule: {schedule.id}")
+            continue
+
+        try:
+            # Generate occurrence dates
+            occurrences = engine.generate(schedule, forecast_start, forecast_end)
+
+            # Create forecast transaction for each occurrence
+            for occurrence_date in occurrences:
+                forecast_txn = _create_forecast_transaction(
+                    schedule, occurrence_date, schedule_file.config
+                )
+                forecast_entries.append(forecast_txn)
+
+            logger.debug(f"Generated {len(occurrences)} forecast(s) for {schedule.id}")
+
+        except Exception as e:
+            error_msg = f"Failed to generate forecasts for {schedule.id}: {e}"
+            logger.error(error_msg)
+            errors.append(error_msg)
+
+    logger.info(f"Generated {len(forecast_entries)} forecast transaction(s)")
+
+    # 4. Sort and return
+    forecast_entries.sort(key=data.entry_sortkey)
+
+    return entries + forecast_entries, errors
+
+
+def _create_forecast_transaction(schedule, occurrence_date, global_config):
+    """Create a forecast transaction from a schedule.
+
+    Args:
+        schedule: Schedule object from schema
+        occurrence_date: Date for this forecast occurrence
+        global_config: GlobalConfig with defaults
+
+    Returns:
+        beancount.core.data.Transaction with forecast flag (#)
+    """
+    # Build metadata
+    meta = {
+        "filename": "<schedules.yaml>",
+        "lineno": 0,
+        "schedule_id": schedule.id,  # For tracking, not matching
+    }
+
+    # Add schedule metadata if present
+    if schedule.transaction.metadata:
+        for key, value in schedule.transaction.metadata.items():
+            # Don't duplicate schedule_id
+            if key != "schedule_id":
+                meta[key] = value
+
+    # Build postings - calculate balancing amounts for forecast transactions
+    postings = []
+    amounts_with_values = []
+    balancing_posting_idx = None
+
+    # First pass: collect amounts and find balancing posting
+    for idx, posting_template in enumerate(schedule.transaction.postings):
+        if posting_template.amount is not None:
+            amounts_with_values.append(Decimal(str(posting_template.amount)))
+        else:
+            balancing_posting_idx = idx
+
+    # Calculate balancing amount if needed
+    balancing_amount = None
+    if balancing_posting_idx is not None and amounts_with_values:
+        # Sum all specified amounts and negate for balance
+        total = sum(amounts_with_values)
+        balancing_amount = -total
+
+    # Second pass: create postings
+    for idx, posting_template in enumerate(schedule.transaction.postings):
+        # Determine amount
+        if idx == balancing_posting_idx and balancing_amount is not None:
+            posting_amount = amount.Amount(
+                balancing_amount,
+                global_config.default_currency,
+            )
+        elif posting_template.amount is not None:
+            posting_amount = amount.Amount(
+                Decimal(str(posting_template.amount)),
+                global_config.default_currency,
+            )
+        else:
+            # This shouldn't happen if YAML is valid, but provide a safe default
+            posting_amount = amount.Amount(
+                Decimal("0"),
+                global_config.default_currency,
+            )
+
+        # Build posting metadata if any
+        posting_meta = {}
+        if posting_template.narration:
+            posting_meta["narration"] = posting_template.narration
+
+        posting = data.Posting(
+            account=posting_template.account,
+            units=posting_amount,
+            cost=None,
+            price=None,
+            flag=None,
+            meta=posting_meta if posting_meta else None,
+        )
+        postings.append(posting)
+
+    # Create transaction with # flag (forecast)
+    txn = data.Transaction(
+        meta=meta,
+        date=occurrence_date,
+        flag="#",  # Forecast flag
+        payee=schedule.transaction.payee,
+        narration=schedule.transaction.narration,
+        tags=frozenset(schedule.transaction.tags or []),
+        links=frozenset(schedule.transaction.links or []),
+        postings=postings,
+    )
+
+    return txn

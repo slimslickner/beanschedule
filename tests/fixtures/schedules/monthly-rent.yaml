@@ -3,7 +3,7 @@ enabled: true
 match:
   account: Assets:Bank:Checking
   payee_pattern: "Landlord|Property Manager"
-  amount: -1500.00
+  amount: -1500
   amount_tolerance: 50.00
   amount_min: null
   amount_max: null
@@ -25,10 +25,10 @@ transaction:
   metadata:
     schedule_id: monthly-rent
   postings:
-    - account: Assets:Bank:Checking
-      amount: null
-    - account: Expenses:Housing:Rent
-      amount: null
+  - account: Assets:Bank:Checking
+    amount: null
+  - account: Expenses:Housing:Rent
+    amount: null
 missing_transaction:
   create_placeholder: true
   flag: '!'

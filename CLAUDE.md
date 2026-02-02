@@ -96,7 +96,6 @@ Beanschedule is a **beangulp hook** that automatically matches imported bank tra
   - `list` - List schedules with filters
   - `generate` - Create expected dates for a schedule (date range)
   - `init` - Initialize example schedules
-  - `migrate` - Migrate single YAML to directory structure
 
 ### Critical Optimization: Lazy Matching
 

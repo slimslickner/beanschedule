@@ -147,7 +147,6 @@ Date range clipping and edge cases
 - `list` command with formats
 - `generate` command
 - `init` command
-- `migrate` command
 
 #### 8. **test_beangulp_integration.py** - End-to-End (est. 10 tests)
 

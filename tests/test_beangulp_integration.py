@@ -9,12 +9,10 @@ import pytest
 import yaml
 
 from beancount.core import amount, data
-from beancount.core.number import D
 from beancount import loader as beancount_loader
 
 from beanschedule import schedule_hook
-from beanschedule.loader import load_schedules_from_directory, load_schedules_file
-from beanschedule.schema import ScheduleFile, GlobalConfig, Schedule
+from beanschedule.loader import load_schedules_from_directory
 
 
 class TestPerScheduleIntegration:

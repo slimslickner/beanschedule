@@ -8,7 +8,7 @@ import logging
 import statistics
 from collections import Counter, defaultdict
 from dataclasses import dataclass, field
-from datetime import date, timedelta
+from datetime import date
 from decimal import Decimal
 from difflib import SequenceMatcher
 from typing import Optional
@@ -220,9 +220,7 @@ class RecurrenceDetector:
 
         # Filter to only Transaction entries and those with postings
         valid_txns = [
-            t
-            for t in transactions
-            if isinstance(t, data.Transaction) and t.postings and t.payee
+            t for t in transactions if isinstance(t, data.Transaction) and t.postings and t.payee
         ]
 
         if not valid_txns:
@@ -557,9 +555,7 @@ class RecurrenceDetector:
         sample_size_score = min(1.0, 0.7 + (group.count / 15.0))
 
         # Weighted combination
-        confidence = (
-            (coverage_score * 0.5) + (regularity_score * 0.3) + (sample_size_score * 0.2)
-        )
+        confidence = (coverage_score * 0.5) + (regularity_score * 0.3) + (sample_size_score * 0.2)
 
         # Apply frequency detection penalty
         confidence *= 1.0 - frequency.confidence_penalty
@@ -594,7 +590,9 @@ class RecurrenceDetector:
         days = [d.day for d in dates]
         counter = Counter(days)
         # Handle month-end dates (28, 29, 30, 31)
-        month_end_days = counter.get(28, 0) + counter.get(29, 0) + counter.get(30, 0) + counter.get(31, 0)
+        month_end_days = (
+            counter.get(28, 0) + counter.get(29, 0) + counter.get(30, 0) + counter.get(31, 0)
+        )
         if month_end_days > len(dates) // 2:
             return 28  # End of month
         return max(counter, key=counter.get) if counter else 1

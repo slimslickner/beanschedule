@@ -17,8 +17,8 @@ recurrence:
   day_of_week: null
   interval: 1
   days_of_month:
-    - 5
-    - 20
+  - 5
+  - 20
   interval_months: null
 transaction:
   payee: ACME Corp

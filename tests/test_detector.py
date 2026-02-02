@@ -1,17 +1,14 @@
 """Tests for the RecurrenceDetector pattern detection engine."""
 
-import pytest
 from datetime import date, timedelta
 from decimal import Decimal
 
-from beancount.core import data, amount
+from beancount.core import data
 
 from beanschedule.detector import (
     RecurrenceDetector,
-    TransactionGroup,
     GapAnalysis,
     FrequencyDetection,
-    RecurringCandidate,
 )
 from beanschedule.types import FrequencyType, DayOfWeek
 
@@ -19,6 +16,7 @@ from beanschedule.types import FrequencyType, DayOfWeek
 def make_transaction(date_, payee, account, amount_value, currency="USD", **kwargs):
     """Create a beancount Transaction with a single posting."""
     from beancount.core import data, amount
+
     meta = data.new_metadata(kwargs.get("filename", "test"), 0)
     for key, value in kwargs.items():
         if key not in ["filename", "narration", "tags", "links"]:
@@ -47,6 +45,7 @@ def make_transaction(date_, payee, account, amount_value, currency="USD", **kwar
 def make_posting(account, amount_value, currency="USD", **kwargs):
     """Create a beancount Posting with amount."""
     from beancount.core import data, amount
+
     posting_amount = amount.Amount(amount_value, currency) if amount_value is not None else None
     return data.Posting(
         account=account,
@@ -61,6 +60,7 @@ def make_posting(account, amount_value, currency="USD", **kwargs):
 def make_transaction_with_postings(date_, payee, postings, **kwargs):
     """Create a beancount Transaction with multiple postings."""
     from beancount.core import data
+
     meta = data.new_metadata(kwargs.get("filename", "test"), 0)
     for key, value in kwargs.items():
         if key not in ["filename", "narration", "tags", "links"]:

@@ -76,10 +76,7 @@ class RecurrenceRule(BaseModel):
     def validate_day_of_month(cls, v: Optional[int]) -> Optional[int]:
         """Ensure day_of_month is in valid range."""
         if v is not None and (v < MIN_DAY_OF_MONTH or v > MAX_DAY_OF_MONTH):
-            msg = (
-                f"day_of_month must be between {MIN_DAY_OF_MONTH} and "
-                f"{MAX_DAY_OF_MONTH}"
-            )
+            msg = f"day_of_month must be between {MIN_DAY_OF_MONTH} and {MAX_DAY_OF_MONTH}"
             raise ValueError(msg)
         return v
 
@@ -115,10 +112,7 @@ class RecurrenceRule(BaseModel):
         if v is not None:
             for day in v:
                 if day < MIN_DAY_OF_MONTH or day > MAX_DAY_OF_MONTH:
-                    msg = (
-                        f"days_of_month must be between {MIN_DAY_OF_MONTH} and "
-                        f"{MAX_DAY_OF_MONTH}"
-                    )
+                    msg = f"days_of_month must be between {MIN_DAY_OF_MONTH} and {MAX_DAY_OF_MONTH}"
                     raise ValueError(msg)
         return v
 
@@ -145,6 +139,7 @@ class TransactionTemplate(BaseModel):
     payee: Optional[str] = Field(None, description="Payee (overrides imported)")
     narration: Optional[str] = Field(None, description="Narration (overrides imported)")
     tags: Optional[list[str]] = Field(default_factory=list, description="Tags to add")
+    links: Optional[list[str]] = Field(default_factory=list, description="Links to add")
     metadata: dict[str, Any] = Field(default_factory=dict, description="Metadata to add")
     postings: Optional[list[Posting]] = Field(None, description="Full posting list")
 
@@ -208,6 +203,7 @@ class Schedule(BaseModel):
 class GlobalConfig(BaseModel):
     """Global configuration for beanschedule."""
 
+    default_currency: str = Field("USD", description="Default currency for transactions")
     fuzzy_match_threshold: float = Field(0.80, description="Fuzzy match threshold (0.0-1.0)")
     default_date_window_days: int = Field(3, description="Default date window (±days)")
     default_amount_tolerance_percent: float = Field(

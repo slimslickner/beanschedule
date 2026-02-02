@@ -14,6 +14,7 @@ Beanschedule is a [beangulp](https://github.com/beancount/beangulp) hook that in
 - **Pattern Discovery** - Auto-detect recurring transaction patterns from your ledger
 - **Automatic Matching** - Fuzzy matching with weighted scoring (payee 40%, amount 40%, date 20%)
 - **Transaction Enrichment** - Add metadata, tags, and complete posting splits to imported transactions
+- **Forecast Generation** - Generate future transactions for budgeting and visualization (Beancount plugin)
 - **Missing Transaction Detection** - Create placeholder transactions for expected payments that didn't occur
 - **Flexible Recurrence Patterns** - Monthly, bi-monthly, weekly, bi-weekly, yearly, and custom intervals
 - **Smart Amount Matching** - Fixed amounts with tolerance, range matching, or null amounts
@@ -210,6 +211,64 @@ Matched transactions will be enriched with complete posting information and meta
   Assets:Bank:Checking                   -1500.00 USD
   Expenses:Housing:Rent                   1500.00 USD
 ```
+
+## Forecast Transactions
+
+In addition to matching imported transactions, beanschedule can generate **forecast transactions** for budgeting and visualization. The forecast plugin reads your YAML schedules and generates future transactions with the `#` flag.
+
+### Using the Forecast Plugin
+
+Add the plugin to your main ledger file:
+
+```beancount
+plugin "beanschedule.plugins.schedules"
+```
+
+Or specify a custom schedule file path:
+
+```beancount
+plugin "beanschedule.plugins.schedules" "path/to/schedules.yaml"
+```
+
+### What It Does
+
+The plugin:
+
+1. Reads your YAML schedules (auto-discovers `schedules.yaml` or `schedules/` directory)
+2. Generates forecast transactions for the next 12 months
+3. Returns them with the `#` flag (forecast flag)
+4. Includes all metadata and tags from your schedule definitions
+
+### Example Forecast Output
+
+```beancount
+2024-02-01 # "Property Manager" "Monthly Rent"
+  schedule_id: "rent-payment"
+  category: "housing"
+  rent:
+  recurring:
+  Expenses:Housing:Rent                   1500.00 USD
+  Assets:Bank:Checking                   -1500.00 USD
+
+2024-03-01 # "Property Manager" "Monthly Rent"
+  schedule_id: "rent-payment"
+  category: "housing"
+  rent:
+  recurring:
+  Expenses:Housing:Rent                   1500.00 USD
+  Assets:Bank:Checking                   -1500.00 USD
+```
+
+### Visualization
+
+Forecast transactions integrate seamlessly with Beancount visualization tools like [Fava](https://github.com/beancount/fava), allowing you to:
+
+- See projected cash flow for upcoming months
+- Visualize future expenses by category
+- Plan for seasonal variations in spending
+- Track expected vs. actual spending
+
+**Note**: Forecast transactions are generated dynamically when you load your ledger with `bean-check` or Fava. They don't need to be manually updated - just modify your YAML schedules and reload.
 
 ## Auto-Discovering Patterns
 

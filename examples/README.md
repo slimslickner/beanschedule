@@ -7,6 +7,7 @@ This directory contains example schedule files and a sample Beancount ledger dem
 The `schedules/` directory contains 10 example schedule files showing different recurrence patterns and matching strategies.
 
 **Schedules that match the example.beancount ledger** (enabled):
+
 1. **paycheck-biweekly.yaml** - Bi-weekly Hoogle payroll with tax deductions (matches real transactions)
 2. **rent-payment.yaml** - Monthly rent payment to RiverBank Properties (matches real transactions)
 3. **utilities-electric.yaml** - Monthly electric bill from EDISON POWER (matches real transactions)
@@ -48,16 +49,19 @@ The examples show three ways to match transaction amounts:
 ### 1. Try the CLI Tool
 
 Validate the example schedules:
+
 ```bash
 beanschedule validate examples/schedules/
 ```
 
 List all schedules:
+
 ```bash
 beanschedule list examples/schedules/
 ```
 
 Generate expected dates for a schedule:
+
 ```bash
 beanschedule generate mortgage-payment 2024-01-01 2024-12-31 --schedules-path examples/schedules/
 ```
@@ -65,6 +69,7 @@ beanschedule generate mortgage-payment 2024-01-01 2024-12-31 --schedules-path ex
 ### 2. Customize for Your Use
 
 1. Copy the `schedules/` directory to your project:
+
    ```bash
    cp -r examples/schedules/ my-project/schedules/
    ```
@@ -92,6 +97,7 @@ HOOKS = [schedule_hook]
 ```
 
 Then run your imports as normal:
+
 ```bash
 bean-extract importers/config.py documents/ > output.beancount
 ```
@@ -111,4 +117,4 @@ See `example.beancount` for a sample ledger showing how scheduled transactions a
 ## Questions?
 
 For full documentation, see the main project README and documentation at:
-https://github.com/yourusername/beanschedule
+<https://github.com/yourusername/beanschedule>
