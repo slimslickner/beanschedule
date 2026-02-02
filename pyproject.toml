@@ -66,8 +66,9 @@ Changelog = "https://github.com/slimslickner/beanschedule/blob/main/CHANGELOG.md
 [project.scripts]
 beanschedule = "beanschedule.cli:main"
 
-[tool.setuptools]
-packages = ["beanschedule"]
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["beanschedule*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

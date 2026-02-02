@@ -13,6 +13,11 @@ class FrequencyType(str, Enum):
     INTERVAL = "INTERVAL"
     BIMONTHLY = "BIMONTHLY"
 
+    # Advanced recurrence types (Phase 3)
+    MONTHLY_ON_DAYS = "MONTHLY_ON_DAYS"  # Multiple days per month (e.g., 5th & 20th)
+    NTH_WEEKDAY = "NTH_WEEKDAY"  # Nth occurrence of weekday (e.g., 2nd Tuesday)
+    LAST_DAY_OF_MONTH = "LAST_DAY_OF_MONTH"  # Always last day of month
+
 
 class DayOfWeek(str, Enum):
     """Days of the week for weekly recurrence."""

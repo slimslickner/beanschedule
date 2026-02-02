@@ -58,11 +58,18 @@ class RecurrenceRule(BaseModel):
     day_of_week: Optional[DayOfWeek] = Field(None, description="Day of week")
     interval: Optional[int] = Field(1, description="Interval (e.g., 2 for bi-weekly)")
 
-    # Bi-monthly
-    days_of_month: Optional[list[int]] = Field(None, description="Days of month for bi-monthly")
+    # Bi-monthly / MONTHLY_ON_DAYS
+    days_of_month: Optional[list[int]] = Field(
+        None, description="Days of month (for BIMONTHLY/MONTHLY_ON_DAYS)"
+    )
 
     # Interval (every X months)
     interval_months: Optional[int] = Field(None, description="Month interval")
+
+    # NTH_WEEKDAY (e.g., 2nd Tuesday)
+    nth_occurrence: Optional[int] = Field(
+        None, description="Nth occurrence of weekday (1-5, -1 for last)"
+    )
 
     @field_validator("day_of_month")
     @classmethod
@@ -113,6 +120,14 @@ class RecurrenceRule(BaseModel):
                         f"{MAX_DAY_OF_MONTH}"
                     )
                     raise ValueError(msg)
+        return v
+
+    @field_validator("nth_occurrence")
+    @classmethod
+    def validate_nth_occurrence(cls, v: Optional[int]) -> Optional[int]:
+        """Ensure nth_occurrence is valid (1-5 or -1 for last)."""
+        if v is not None and (v < -1 or v == 0 or v > 5):
+            raise ValueError("nth_occurrence must be 1-5 or -1 (for last)")
         return v
 
 

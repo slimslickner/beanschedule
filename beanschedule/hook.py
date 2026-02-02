@@ -8,10 +8,12 @@ from typing import Optional
 
 from beancount.core import amount, data
 
+from .forecast_advancement import calculate_next_occurrence
+from .forecast_loader import load_forecast_schedules
 from .loader import get_enabled_schedules, load_schedules_file
 from .matcher import TransactionMatcher
 from .recurrence import RecurrenceEngine
-from .schema import GlobalConfig, Schedule
+from .schema import GlobalConfig, Schedule, ScheduleFile
 
 logger = logging.getLogger(__name__)
 
@@ -61,15 +63,29 @@ def schedule_hook(
     if ledger_entries:
         logger.debug("Using %d existing ledger entries", len(ledger_entries))
 
-    # Step 1: Load schedules
+    # Step 1: Load schedules (forecast transactions or YAML)
+    schedule_file = None
+
+    # Try loading forecast schedules from existing_entries first
     try:
-        schedule_file = load_schedules_file()
+        schedule_file = load_forecast_schedules(ledger_entries)
+        if schedule_file:
+            logger.info("Loaded schedules from forecast transactions")
     except Exception as e:
-        logger.error("Failed to load schedules: %s", e)
-        return extracted_entries_list
+        logger.warning("Failed to load forecast schedules: %s", e)
+
+    # Fall back to YAML schedules if no forecast schedules found
+    if schedule_file is None:
+        try:
+            schedule_file = load_schedules_file()
+            if schedule_file:
+                logger.info("Loaded schedules from YAML file")
+        except Exception as e:
+            logger.error("Failed to load YAML schedules: %s", e)
+            return extracted_entries_list
 
     if schedule_file is None:
-        logger.info("No schedules loaded, returning entries unchanged")
+        logger.info("No schedules loaded (neither forecast nor YAML), returning entries unchanged")
         return extracted_entries_list
 
     enabled_schedules = get_enabled_schedules(schedule_file)
@@ -155,6 +171,10 @@ def schedule_hook(
                     # Mark occurrence as matched
                     matched_occurrences.add((schedule.id, expected_date))
                     matched_details.append((entry.date, schedule.transaction.payee, schedule.id))
+
+                    # Track forecast matches for advancement (Phase 2)
+                    if schedule_file.version == "2.0":  # Forecast schedules
+                        _track_forecast_match(schedule, entry.date, expected_date)
                 else:
                     # No match, keep original
                     logger.debug("  No match found")
@@ -554,10 +574,10 @@ def _enrich_transaction(
         if key != "schedule_id":  # Already added
             new_meta[key] = value
 
-    # Merge tags
-    new_tags = transaction.tags.copy()
+    # Merge tags (frozensets are immutable, use union)
+    new_tags = transaction.tags
     if schedule.transaction.tags:
-        new_tags.update(schedule.transaction.tags)
+        new_tags = transaction.tags | frozenset(schedule.transaction.tags)
 
     # Override payee/narration if specified
     new_payee = schedule.transaction.payee or transaction.payee
@@ -642,15 +662,22 @@ def _create_placeholders(
     """
     Create placeholder transactions for missing scheduled transactions.
 
+    Only creates placeholders for transactions that are overdue or imminent
+    (within the date window of today). Future transactions that aren't due
+    yet are not flagged as missing.
+
     Args:
         expected_occurrences: All expected occurrences
         matched_occurrences: Set of (schedule_id, expected_date) that were matched
         placeholder_flag: Flag character for placeholders
 
     Returns:
-        List of placeholder transactions
+        List of placeholder transactions for overdue/imminent missing transactions
     """
+    from datetime import date as date_type
+
     placeholders = []
+    today = date_type.today()
 
     for _account, occurrence_list in expected_occurrences.items():
         for schedule, expected_date in occurrence_list:
@@ -660,6 +687,12 @@ def _create_placeholders(
 
             # Skip if placeholder creation disabled
             if not schedule.missing_transaction.create_placeholder:
+                continue
+
+            # Only create placeholder for transactions that are overdue or imminent
+            # Skip future transactions that aren't due yet
+            date_window = schedule.match.date_window_days or 3
+            if expected_date > today + timedelta(days=date_window):
                 continue
 
             # Create placeholder transaction
@@ -809,3 +842,29 @@ def _create_placeholder_transaction(
         links=set(),
         postings=postings,
     )
+
+
+def _track_forecast_match(schedule: Schedule, matched_date: date, expected_date: date) -> None:
+    """
+    Track a matched forecast transaction for later advancement.
+
+    Args:
+        schedule: Matched schedule
+        matched_date: Date of the imported transaction
+        expected_date: Expected occurrence date from schedule
+
+    Note:
+        Writes match info to ~/.beanschedule/matched_forecasts.json
+        for later advancement via `beanschedule advance-forecasts` command.
+    """
+    try:
+        # Calculate next occurrence
+        next_date = calculate_next_occurrence(schedule, matched_date)
+
+        if not next_date:
+            logger.warning(
+                "No future occurrences for schedule %s (may have ended)",
+                schedule.id,
+            )
+    except Exception as e:
+        logger.error("Failed to track forecast match for %s: %s", schedule.id, e)
