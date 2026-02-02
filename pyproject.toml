@@ -77,6 +77,10 @@ python_classes = ["Test*"]
 python_functions = ["test_*"]
 addopts = "-v --cov=beanschedule --cov-report=term-missing --cov-report=html"
 
+[tool.coverage.run]
+data_file = ".coverage"
+parallel = false
+
 [tool.black]
 line-length = 100
 target-version = ['py311']

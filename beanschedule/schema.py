@@ -136,6 +136,24 @@ class Posting(BaseModel):
     account: str = Field(..., description="Account name")
     amount: Optional[Decimal] = Field(None, description="Amount (null = use imported)")
     narration: Optional[str] = Field(None, description="Comment for this posting")
+    role: Optional[str] = Field(
+        None,
+        description=(
+            "Posting role for amortization: 'principal', 'interest', 'payment', or 'escrow'. "
+            "If not specified, account name keywords are used (deprecated)."
+        ),
+    )
+
+    @field_validator("role")
+    @classmethod
+    def validate_role(cls, v: Optional[str]) -> Optional[str]:
+        """Ensure role is valid."""
+        if v is not None:
+            allowed_roles = {"principal", "interest", "payment", "escrow"}
+            if v not in allowed_roles:
+                msg = f"role must be one of {allowed_roles}, got '{v}'"
+                raise ValueError(msg)
+        return v
 
 
 class TransactionTemplate(BaseModel):
@@ -165,6 +183,61 @@ class MissingTransactionConfig(BaseModel):
     narration_prefix: str = Field("[MISSING]", description="Prefix for narration")
 
 
+class AmortizationConfig(BaseModel):
+    """Loan amortization configuration for automatic principal/interest split.
+
+    When configured, the schedule will automatically calculate principal and
+    interest components for each payment based on loan parameters.
+
+    Example:
+        amortization:
+          principal: 300000.00
+          annual_rate: 0.0675
+          term_months: 360
+          start_date: 2024-01-01
+    """
+
+    principal: Decimal = Field(..., description="Initial loan principal amount")
+    annual_rate: Decimal = Field(..., description="Annual interest rate (e.g., 0.0675 for 6.75%)")
+    term_months: int = Field(..., description="Loan term in months")
+    start_date: date = Field(..., description="First payment date")
+    extra_principal: Optional[Decimal] = Field(
+        None, description="Optional extra principal payment per period"
+    )
+
+    @field_validator("principal")
+    @classmethod
+    def validate_principal_positive(cls, v: Decimal) -> Decimal:
+        """Ensure principal is positive."""
+        if v <= 0:
+            raise ValueError("principal must be positive")
+        return v
+
+    @field_validator("annual_rate")
+    @classmethod
+    def validate_rate_nonnegative(cls, v: Decimal) -> Decimal:
+        """Ensure annual_rate is non-negative."""
+        if v < 0:
+            raise ValueError("annual_rate must be non-negative")
+        return v
+
+    @field_validator("term_months")
+    @classmethod
+    def validate_term_positive(cls, v: int) -> int:
+        """Ensure term_months is positive."""
+        if v <= 0:
+            raise ValueError("term_months must be positive")
+        return v
+
+    @field_validator("extra_principal")
+    @classmethod
+    def validate_extra_principal_nonnegative(cls, v: Optional[Decimal]) -> Optional[Decimal]:
+        """Ensure extra_principal is non-negative if provided."""
+        if v is not None and v < 0:
+            raise ValueError("extra_principal must be non-negative")
+        return v
+
+
 class Schedule(BaseModel):
     """Complete schedule definition."""
 
@@ -178,6 +251,9 @@ class Schedule(BaseModel):
     missing_transaction: MissingTransactionConfig = Field(
         default_factory=MissingTransactionConfig,
         description="Missing transaction config",
+    )
+    amortization: Optional[AmortizationConfig] = Field(
+        None, description="Optional loan amortization configuration"
     )
     source_file: Optional[Path] = Field(
         None,

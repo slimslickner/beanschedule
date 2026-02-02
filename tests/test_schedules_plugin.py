@@ -555,3 +555,216 @@ schedules:
         # Check filename metadata uses relative path from BEANSCHEDULE_DISPLAY_BASE
         forecast_txn = result_entries[0]
         assert forecast_txn.meta["filename"] == "config/schedules.yaml"
+
+
+class TestAmortizationRoleValidation:
+    """Tests for explicit role validation on amortization schedules."""
+
+    def test_missing_role_raises_helpful_error(self, tmp_path, monkeypatch):
+        """Should raise helpful error when role is missing on amortization posting."""
+        from beanschedule.plugins.schedules import schedules
+
+        schedule_yaml = tmp_path / "schedules.yaml"
+        schedule_yaml.write_text(
+            """
+version: "1.0"
+schedules:
+  - id: mortgage-no-role
+    enabled: true
+    match:
+      account: Assets:Checking
+      payee_pattern: "MORTGAGE"
+    recurrence:
+      frequency: MONTHLY
+      start_date: 2024-01-01
+      day_of_month: 1
+    amortization:
+      principal: 100000.00
+      annual_rate: 0.06
+      term_months: 360
+      start_date: 2024-01-01
+    transaction:
+      payee: "Mortgage Company"
+      metadata:
+        schedule_id: mortgage-no-role
+      postings:
+        # Missing role fields - should raise error
+        - account: Assets:Checking
+          amount: null
+        - account: Expenses:Mortgage-Interest
+          amount: null
+        - account: Liabilities:Mortgage
+          amount: null
+"""
+        )
+
+        monkeypatch.chdir(tmp_path)
+        options_map = {"filename": str(tmp_path / "main.bean")}
+        result_entries, errors = schedules([], options_map, config_file=str(schedule_yaml))
+
+        # Should have error
+        assert len(errors) == 1
+        error_msg = errors[0]
+
+        # Error message should be helpful
+        assert "mortgage-no-role" in error_msg
+        assert "role" in error_msg.lower()
+        assert "payment" in error_msg
+        assert "interest" in error_msg
+        assert "principal" in error_msg
+        assert "POSTING_ROLES.md" in error_msg
+
+
+class TestAmortizationWithEscrow:
+    """Tests for amortization with fixed escrow amounts."""
+
+    def test_amortization_with_escrow(self, tmp_path, monkeypatch):
+        """Should handle amortization with fixed escrow postings."""
+        from beanschedule.plugins.schedules import schedules
+
+        schedule_yaml = tmp_path / "schedules.yaml"
+        schedule_yaml.write_text(
+            """
+version: "1.0"
+schedules:
+  - id: mortgage-with-escrow
+    enabled: true
+    match:
+      account: Assets:Checking
+      payee_pattern: "MORTGAGE"
+    recurrence:
+      frequency: MONTHLY
+      start_date: 2024-01-01
+      day_of_month: 1
+    amortization:
+      principal: 100000.00
+      annual_rate: 0.06
+      term_months: 360
+      start_date: 2024-01-01
+    transaction:
+      payee: "Mortgage Company"
+      narration: "Mortgage payment with escrow"
+      metadata:
+        schedule_id: mortgage-with-escrow
+      postings:
+        # Payment account - should balance all below
+        - account: Assets:Checking
+          amount: null
+          role: payment
+        # Amortized amounts
+        - account: Expenses:Mortgage-Interest
+          amount: null
+          role: interest
+        - account: Liabilities:Mortgage
+          amount: null
+          role: principal
+        # Fixed escrow amounts
+        - account: Expenses:Property-Tax-Escrow
+          amount: 350.00
+          role: escrow
+        - account: Expenses:Insurance-Escrow
+          amount: 125.00
+          role: escrow
+"""
+        )
+
+        monkeypatch.chdir(tmp_path)
+        options_map = {"filename": str(tmp_path / "main.bean")}
+        result_entries, errors = schedules([], options_map, config_file=str(schedule_yaml))
+
+        assert len(errors) == 0
+        assert len(result_entries) > 0
+
+        # Check first forecast transaction
+        forecast_txn = result_entries[0]
+
+        # Should have 5 postings
+        assert len(forecast_txn.postings) == 5
+
+        # Find postings by account
+        postings_by_account = {p.account: p.units.number for p in forecast_txn.postings}
+
+        # Payment account should be negative sum of all others
+        checking = postings_by_account["Assets:Checking"]
+        interest = postings_by_account["Expenses:Mortgage-Interest"]
+        principal = postings_by_account["Liabilities:Mortgage"]
+        tax_escrow = postings_by_account["Expenses:Property-Tax-Escrow"]
+        insurance_escrow = postings_by_account["Expenses:Insurance-Escrow"]
+
+        # Verify escrow amounts are as specified
+        assert tax_escrow == Decimal("350.00")
+        assert insurance_escrow == Decimal("125.00")
+
+        # Verify interest and principal are calculated (non-zero, positive)
+        assert interest > 0
+        assert principal > 0
+
+        # Verify checking account balances everything
+        total = interest + principal + tax_escrow + insurance_escrow
+        assert checking == -total
+
+        # For a $100k loan at 6%, first payment interest should be around:
+        # Interest ≈ $500 (100000 * 0.06 / 12), give or take
+        # But the actual first payment will be less since some goes to principal
+        assert Decimal("400") < interest < Decimal("510")
+        # Total payment should include P+I+Escrow (around $1075)
+        assert abs(checking) > Decimal("1000")  # Principal + Interest + Escrow
+
+    def test_amortization_metadata_with_escrow(self, tmp_path, monkeypatch):
+        """Should include correct amortization metadata with escrow."""
+        from beanschedule.plugins.schedules import schedules
+
+        schedule_yaml = tmp_path / "schedules.yaml"
+        schedule_yaml.write_text(
+            """
+version: "1.0"
+schedules:
+  - id: test-mortgage
+    enabled: true
+    match:
+      account: Assets:Checking
+      payee_pattern: "TEST"
+    recurrence:
+      frequency: MONTHLY
+      start_date: 2024-01-01
+      day_of_month: 1
+    amortization:
+      principal: 50000.00
+      annual_rate: 0.05
+      term_months: 120
+      start_date: 2024-01-01
+    transaction:
+      payee: "Test"
+      metadata:
+        schedule_id: test-mortgage
+      postings:
+        - account: Assets:Checking
+          amount: null
+          role: payment
+        - account: Expenses:Interest
+          amount: null
+          role: interest
+        - account: Liabilities:Loan
+          amount: null
+          role: principal
+        - account: Expenses:Escrow
+          amount: 200.00
+          role: escrow
+"""
+        )
+
+        monkeypatch.chdir(tmp_path)
+        options_map = {"filename": str(tmp_path / "main.bean")}
+        result_entries, errors = schedules([], options_map, config_file=str(schedule_yaml))
+
+        forecast_txn = result_entries[0]
+
+        # Should have amortization metadata
+        assert "amortization_payment_number" in forecast_txn.meta
+        assert "amortization_balance_after" in forecast_txn.meta
+        assert "amortization_principal" in forecast_txn.meta
+        assert "amortization_interest" in forecast_txn.meta
+
+        # Payment number will be based on forecast date (today + 1 year)
+        # Just verify it's a positive integer
+        assert forecast_txn.meta["amortization_payment_number"] > 0

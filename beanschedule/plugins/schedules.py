@@ -221,56 +221,138 @@ def _create_forecast_transaction(schedule, occurrence_date, global_config):
             if key != "schedule_id":
                 meta[key] = value
 
+    # Check if amortization is configured
+    amortization_split = None
+    if schedule.amortization:
+        from beanschedule.amortization import AmortizationSchedule
+
+        # Create amortization schedule
+        amort_schedule = AmortizationSchedule(
+            principal=schedule.amortization.principal,
+            annual_rate=schedule.amortization.annual_rate,
+            term_months=schedule.amortization.term_months,
+            start_date=schedule.amortization.start_date,
+            extra_principal=schedule.amortization.extra_principal,
+        )
+
+        # Get payment number for this occurrence
+        payment_number = amort_schedule.get_payment_number_for_date(occurrence_date)
+
+        if payment_number is not None:
+            # Calculate principal/interest split
+            amortization_split = amort_schedule.get_payment_split(payment_number)
+
+            # Add amortization metadata
+            meta["amortization_payment_number"] = payment_number
+            meta["amortization_balance_after"] = str(amortization_split.remaining_balance)
+            meta["amortization_principal"] = str(amortization_split.principal)
+            meta["amortization_interest"] = str(amortization_split.interest)
+
     # Build postings - calculate balancing amounts for forecast transactions
     postings = []
 
     # First pass: collect amounts and validate posting structure
     null_amount_indices = []
     specified_amounts = []
+    amortized_amounts = {}  # Track which postings will use amortization
 
     for idx, posting_template in enumerate(schedule.transaction.postings):
         if posting_template.amount is not None:
             specified_amounts.append(Decimal(str(posting_template.amount)))
         else:
             null_amount_indices.append(idx)
+            # Check if this null posting will be filled by amortization
+            if amortization_split:
+                # Use explicit role - required for amortization
+                role = posting_template.role
+                if role == "interest":
+                    amortized_amounts[idx] = amortization_split.interest
+                elif role == "principal":
+                    amortized_amounts[idx] = amortization_split.principal
+                elif role is None:
+                    # No role specified - this posting won't be filled by amortization
+                    pass
 
-    # Validation: at most one posting can have null amount
-    if len(null_amount_indices) > 1:
-        raise ValueError(
-            f"Schedule {schedule.id}: Multiple postings have null amounts. "
-            f"At most one posting can have a null amount (the balancing posting)."
-        )
+    # With amortization: allow multiple null amounts (they'll be calculated)
+    # Without amortization: only allow one null amount (balancing posting)
+    if not amortization_split:
+        if len(null_amount_indices) > 1:
+            raise ValueError(
+                f"Schedule {schedule.id}: Multiple postings have null amounts. "
+                f"At most one posting can have a null amount (the balancing posting)."
+            )
 
     # Validation: if all amounts are null, that's an error
     if len(null_amount_indices) == len(schedule.transaction.postings):
-        raise ValueError(
-            f"Schedule {schedule.id}: All postings have null amounts. "
-            f"At least one posting must specify an amount."
-        )
+        if amortization_split:
+            raise ValueError(
+                f"Schedule {schedule.id}: All postings have null amounts. "
+                f"For amortization schedules, postings must have explicit 'role' fields "
+                f"(payment, interest, principal, escrow). See POSTING_ROLES.md for details."
+            )
+        else:
+            raise ValueError(
+                f"Schedule {schedule.id}: All postings have null amounts. "
+                f"At least one posting must specify an amount."
+            )
 
-    # Calculate balancing amount if there's exactly one null posting
-    balancing_posting_idx = null_amount_indices[0] if null_amount_indices else None
-    balancing_amount = None
-    if balancing_posting_idx is not None:
-        # Sum all specified amounts and negate for balance
-        total = sum(specified_amounts)
-        balancing_amount = -total
+    # Calculate amounts for all non-payment postings first
+    total_non_payment = sum(specified_amounts)  # Fixed amounts (e.g., escrow)
+    total_non_payment += sum(amortized_amounts.values())  # Amortized amounts (principal, interest)
 
     # Second pass: create postings
     for idx, posting_template in enumerate(schedule.transaction.postings):
-        # Determine amount
-        if idx == balancing_posting_idx:
-            # This is the balancing posting
-            posting_amount = amount.Amount(
-                balancing_amount,
-                global_config.default_currency,
-            )
-        else:
-            # This posting must have an explicit amount (validated above)
-            posting_amount = amount.Amount(
-                Decimal(str(posting_template.amount)),
-                global_config.default_currency,
-            )
+        # Determine amount - check if this is an amortization posting
+        posting_amount_value = None
+
+        # Priority 1: Use explicit amount from YAML
+        if posting_template.amount is not None:
+            posting_amount_value = Decimal(str(posting_template.amount))
+
+        # Priority 2: Use amortized amount
+        elif idx in amortized_amounts:
+            posting_amount_value = amortized_amounts[idx]
+
+        # Priority 3: Calculate balancing amount
+        elif posting_template.amount is None:
+            role = posting_template.role
+
+            # Check if this is a payment account (for amortization or regular balancing)
+            if role == "payment":
+                # Payment account balances all other postings
+                if amortization_split or amortized_amounts:
+                    # With amortization: balance principal + interest + fixed amounts
+                    posting_amount_value = -total_non_payment
+                else:
+                    # Without amortization: standard balancing
+                    posting_amount_value = -sum(specified_amounts)
+            else:
+                # Non-payment account with null - must be balancing posting
+                balancing_posting_idx = null_amount_indices[0] if null_amount_indices else None
+                if idx == balancing_posting_idx and not amortization_split:
+                    posting_amount_value = -sum(specified_amounts)
+
+        # Validation: posting_amount_value should never be None at this point
+        if posting_amount_value is None:
+            # Provide helpful error message
+            if amortization_split:
+                raise ValueError(
+                    f"Schedule {schedule.id}: Could not determine amount for posting "
+                    f"to account '{posting_template.account}' (index {idx}). "
+                    f"For amortization schedules, postings with 'amount: null' must have an explicit 'role' field. "
+                    f"Valid roles: 'payment', 'interest', 'principal', 'escrow'. "
+                    f"See POSTING_ROLES.md for details."
+                )
+            else:
+                raise ValueError(
+                    f"Schedule {schedule.id}: Could not determine amount for posting "
+                    f"to account '{posting_template.account}' (index {idx})"
+                )
+
+        posting_amount = amount.Amount(
+            posting_amount_value,
+            global_config.default_currency,
+        )
 
         # Build posting metadata if any
         posting_meta = {}
