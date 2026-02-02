@@ -94,6 +94,18 @@ Pre-release checklist and performance optimization opportunities before open sou
 
 #### High Priority
 
+- [x] **FIX: Posting amount inheritance** 🐛 ✅
+  - **Problem**: If all postings have `amount: null`, they all get assigned `0` in forecast transactions
+  - **Solution Implemented**:
+    - Mandate at least one posting with explicit amount
+    - At most one posting can have `null` amount (becomes balancing posting)
+    - Validation errors if multiple nulls or all nulls
+  - **Additional improvement**: Deprecated `match.amount` field
+    - Expected amount now derived from posting for the matched account
+    - Eliminates redundancy (DRY principle)
+    - `match.amount` kept for backward compatibility but marked deprecated
+  - **Impact**: Forecast transactions now show correct amounts, cleaner schema
+
 - [ ] Error handling improvements
   - [ ] Graceful handling of invalid schedule YAML syntax
   - [ ] Better error messages for misconfigured matching criteria
@@ -141,6 +153,29 @@ Pre-release checklist and performance optimization opportunities before open sou
 - [ ] Conditional schedule instances (skip if conditions not met)
   - Skip generating a scheduled instance if conditions are not met
   - Use cases: skip transfer if credit card balance is zero
+
+- [ ] **Amortization Calendars** ⭐⭐⭐⭐⭐
+  - Add support for amortization schedules (mortgages, loans, leases)
+  - Dynamic posting values that change over time (principal vs interest)
+  - Configuration fields:
+    - `loan_amount`: Total loan principal
+    - `interest_rate`: Annual interest rate (APR)
+    - `compounding_frequency`: How often interest compounds (DAILY, MONTHLY, ANNUALLY)
+      - Student loans: typically DAILY compounding
+      - Mortgages: typically MONTHLY compounding
+      - Some loans: ANNUALLY
+    - `payment_frequency`: Handled by existing recurrence rules (MONTHLY, BIWEEKLY, etc.)
+    - `term_months` or `term_payments`: Loan term (in months or number of payments)
+    - `start_date`: First payment date (via recurrence.start_date)
+  - Auto-calculate each payment's principal/interest split using amortization formula
+  - Formula accounts for compounding frequency between payments
+  - Generate postings with calculated amounts:
+    - `Expenses:House:Mortgage-Interest: <calculated interest>`
+    - `Liabilities:Mortgage: <calculated principal>`
+    - `Assets:Checking: <-total payment>`
+  - **Use cases**: Mortgages, car loans, student loans, equipment leases
+  - **Impact**: Enables accurate forecasting of loan amortization schedules without manual calculation
+  - **Note**: Compounding frequency matters! Daily vs monthly compounding affects amortization significantly
 
 - [ ] Schedule statistics command (coverage report, match rates over time)
 

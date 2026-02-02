@@ -20,7 +20,11 @@ class MatchCriteria(BaseModel):
 
     account: str = Field(..., description="Account to match (exact)")
     payee_pattern: str = Field(..., description="Payee pattern (regex or fuzzy)")
-    amount: Optional[Decimal] = Field(None, description="Expected amount")
+    amount: Optional[Decimal] = Field(
+        None,
+        description="[DEPRECATED] Expected amount - prefer specifying amount in postings instead. "
+        "Amount is now derived from the posting for the matched account.",
+    )
     amount_tolerance: Optional[Decimal] = Field(None, description="Amount tolerance (±)")
     amount_min: Optional[Decimal] = Field(None, description="Minimum amount for range")
     amount_max: Optional[Decimal] = Field(None, description="Maximum amount for range")

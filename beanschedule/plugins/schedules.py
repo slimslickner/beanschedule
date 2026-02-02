@@ -199,40 +199,52 @@ def _create_forecast_transaction(schedule, occurrence_date, global_config):
 
     # Build postings - calculate balancing amounts for forecast transactions
     postings = []
-    amounts_with_values = []
-    balancing_posting_idx = None
 
-    # First pass: collect amounts and find balancing posting
+    # First pass: collect amounts and validate posting structure
+    null_amount_indices = []
+    specified_amounts = []
+
     for idx, posting_template in enumerate(schedule.transaction.postings):
         if posting_template.amount is not None:
-            amounts_with_values.append(Decimal(str(posting_template.amount)))
+            specified_amounts.append(Decimal(str(posting_template.amount)))
         else:
-            balancing_posting_idx = idx
+            null_amount_indices.append(idx)
 
-    # Calculate balancing amount if needed
+    # Validation: at most one posting can have null amount
+    if len(null_amount_indices) > 1:
+        raise ValueError(
+            f"Schedule {schedule.id}: Multiple postings have null amounts. "
+            f"At most one posting can have a null amount (the balancing posting)."
+        )
+
+    # Validation: if all amounts are null, that's an error
+    if len(null_amount_indices) == len(schedule.transaction.postings):
+        raise ValueError(
+            f"Schedule {schedule.id}: All postings have null amounts. "
+            f"At least one posting must specify an amount."
+        )
+
+    # Calculate balancing amount if there's exactly one null posting
+    balancing_posting_idx = null_amount_indices[0] if null_amount_indices else None
     balancing_amount = None
-    if balancing_posting_idx is not None and amounts_with_values:
+    if balancing_posting_idx is not None:
         # Sum all specified amounts and negate for balance
-        total = sum(amounts_with_values)
+        total = sum(specified_amounts)
         balancing_amount = -total
 
     # Second pass: create postings
     for idx, posting_template in enumerate(schedule.transaction.postings):
         # Determine amount
-        if idx == balancing_posting_idx and balancing_amount is not None:
+        if idx == balancing_posting_idx:
+            # This is the balancing posting
             posting_amount = amount.Amount(
                 balancing_amount,
                 global_config.default_currency,
             )
-        elif posting_template.amount is not None:
+        else:
+            # This posting must have an explicit amount (validated above)
             posting_amount = amount.Amount(
                 Decimal(str(posting_template.amount)),
-                global_config.default_currency,
-            )
-        else:
-            # This shouldn't happen if YAML is valid, but provide a safe default
-            posting_amount = amount.Amount(
-                Decimal("0"),
                 global_config.default_currency,
             )
 

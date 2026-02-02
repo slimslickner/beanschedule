@@ -177,7 +177,7 @@ class TransactionMatcher:
         Calculate amount matching score.
 
         Supports:
-        - Exact amount with tolerance
+        - Exact amount with tolerance (derived from posting for matched account)
         - Amount range (min/max)
 
         Returns:
@@ -197,12 +197,13 @@ class TransactionMatcher:
                 return 1.0
             return 0.0
 
-        # Check if using exact amount with tolerance
-        if match_criteria.amount is None:
-            # No amount criteria
+        # Derive expected amount from schedule's posting for the matched account
+        expected_amount = self._get_expected_amount_from_postings(schedule)
+
+        if expected_amount is None:
+            # No amount criteria - match any amount
             return 1.0
 
-        expected_amount = match_criteria.amount
         tolerance = match_criteria.amount_tolerance
 
         if tolerance is None:
@@ -222,6 +223,30 @@ class TransactionMatcher:
         # Linear interpolation: 1.0 at exact match, 0.0 at tolerance boundary
         score = 1.0 - float(diff / tolerance)
         return max(0.0, min(1.0, score))
+
+    def _get_expected_amount_from_postings(self, schedule: Schedule) -> Optional[Decimal]:
+        """
+        Get expected amount from schedule postings by finding the posting
+        that matches the schedule's match account.
+
+        Args:
+            schedule: Schedule with transaction postings
+
+        Returns:
+            Expected amount from matched account posting, or None if not found
+        """
+        if not schedule.transaction.postings:
+            return None
+
+        # Find the posting for the matched account
+        for posting in schedule.transaction.postings:
+            if posting.account == schedule.match.account:
+                if posting.amount is not None:
+                    return Decimal(str(posting.amount))
+                return None
+
+        # If matched account not found in postings, no amount criteria
+        return None
 
     def _date_score(
         self,
