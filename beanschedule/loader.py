@@ -121,6 +121,9 @@ def load_schedule_from_file(filepath: Path) -> Optional[Schedule]:
         # Validate and parse with Pydantic
         schedule = Schedule(**data)
 
+        # Store source file path
+        schedule.source_file = filepath
+
         # Validate filename matches schedule ID
         expected_filename = f"{schedule.id}.yaml"
         if filepath.name != expected_filename:
@@ -274,6 +277,11 @@ def load_schedules_file(filepath: Optional[Path] = None) -> Optional[ScheduleFil
 
             # Validate and parse with Pydantic
             schedule_file = ScheduleFile(**data)
+
+            # Set source file for all schedules
+            for schedule in schedule_file.schedules:
+                schedule.source_file = filepath
+
             logger.info(
                 "Loaded %d schedules (%d enabled)",
                 len(schedule_file.schedules),
@@ -317,6 +325,11 @@ def load_schedules_file(filepath: Optional[Path] = None) -> Optional[ScheduleFil
 
         # Validate and parse with Pydantic
         schedule_file = ScheduleFile(**data)
+
+        # Set source file for all schedules
+        for schedule in schedule_file.schedules:
+            schedule.source_file = path
+
         logger.info(
             "Loaded %d schedules (%d enabled)",
             len(schedule_file.schedules),

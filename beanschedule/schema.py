@@ -2,9 +2,10 @@
 
 from datetime import date
 from decimal import Decimal
+from pathlib import Path
 from typing import Any, Optional
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from .types import DayOfWeek, FlagType, FrequencyType
 
@@ -167,6 +168,8 @@ class MissingTransactionConfig(BaseModel):
 class Schedule(BaseModel):
     """Complete schedule definition."""
 
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
     id: str = Field(..., description="Unique schedule identifier")
     enabled: bool = Field(True, description="Whether schedule is enabled")
     match: MatchCriteria = Field(..., description="Match criteria")
@@ -175,6 +178,11 @@ class Schedule(BaseModel):
     missing_transaction: MissingTransactionConfig = Field(
         default_factory=MissingTransactionConfig,
         description="Missing transaction config",
+    )
+    source_file: Optional[Path] = Field(
+        None,
+        exclude=True,
+        description="Source file path (populated during loading, not from YAML)",
     )
 
     @field_validator("id")

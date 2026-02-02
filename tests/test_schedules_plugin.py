@@ -370,3 +370,188 @@ schedules:
         # Should resolve correctly and generate forecasts
         assert len(result_entries) > 0
         assert len(errors) == 0
+
+
+class TestPluginFileMetadata:
+    """Tests for filename metadata in forecast transactions."""
+
+    def test_single_file_mode_sets_filename(self, tmp_path, monkeypatch):
+        """Should set filename metadata to schedules.yaml for single file mode."""
+        import os
+
+        schedule_yaml = tmp_path / "schedules.yaml"
+        schedule_yaml.write_text(
+            """
+version: "1.0"
+schedules:
+  - id: test-schedule
+    enabled: true
+    match:
+      account: Assets:Checking
+      payee_pattern: ".*TEST.*"
+    recurrence:
+      frequency: MONTHLY
+      start_date: 2024-01-01
+      day_of_month: 1
+    transaction:
+      payee: "Test"
+      narration: "Test transaction"
+      metadata:
+        schedule_id: test-schedule
+      postings:
+        - account: Expenses:Test
+          amount: 100.00
+        - account: Assets:Checking
+"""
+        )
+
+        # Change to tmp_path so relative path works
+        monkeypatch.chdir(tmp_path)
+
+        options_map = {"filename": str(tmp_path / "main.bean")}
+        result_entries, errors = schedules([], options_map, config_file=str(schedule_yaml))
+
+        # Check filename metadata
+        forecast_txn = result_entries[0]
+        assert "filename" in forecast_txn.meta
+        # Should show relative path from cwd
+        assert forecast_txn.meta["filename"] == "schedules.yaml"
+        assert forecast_txn.meta["lineno"] == 0
+
+    def test_directory_mode_sets_individual_filenames(self, tmp_path, monkeypatch):
+        """Should set filename to individual schedule files in directory mode."""
+        import os
+        from beanschedule import loader
+
+        # Create schedules directory
+        schedules_dir = tmp_path / "schedules"
+        schedules_dir.mkdir()
+
+        # Create _config.yaml
+        config_yaml = schedules_dir / "_config.yaml"
+        config_yaml.write_text(
+            """
+default_currency: USD
+"""
+        )
+
+        # Create individual schedule files
+        rent_yaml = schedules_dir / "rent-monthly.yaml"
+        rent_yaml.write_text(
+            """
+id: rent-monthly
+enabled: true
+match:
+  account: Assets:Checking
+  payee_pattern: ".*LANDLORD.*"
+recurrence:
+  frequency: MONTHLY
+  start_date: 2024-01-01
+  day_of_month: 1
+transaction:
+  payee: "Rent"
+  narration: "Monthly rent"
+  metadata:
+    schedule_id: rent-monthly
+  postings:
+    - account: Expenses:Housing:Rent
+      amount: 1500.00
+    - account: Assets:Checking
+"""
+        )
+
+        paycheck_yaml = schedules_dir / "paycheck.yaml"
+        paycheck_yaml.write_text(
+            """
+id: paycheck
+enabled: true
+match:
+  account: Assets:Checking
+  payee_pattern: ".*EMPLOYER.*"
+recurrence:
+  frequency: MONTHLY_ON_DAYS
+  start_date: 2024-01-05
+  days_of_month: [5, 20]
+transaction:
+  payee: "Employer"
+  narration: "Paycheck"
+  metadata:
+    schedule_id: paycheck
+  postings:
+    - account: Assets:Checking
+      amount: 2500.00
+    - account: Income:Salary
+"""
+        )
+
+        # Change to tmp_path so relative paths work
+        monkeypatch.chdir(tmp_path)
+
+        # Mock auto-discovery to find our directory
+        monkeypatch.setattr(loader, "find_schedules_location", lambda: ("dir", schedules_dir))
+
+        options_map = {"filename": str(tmp_path / "main.bean")}
+        result_entries, errors = schedules([], options_map)
+
+        # Should have forecasts from both schedules
+        assert len(result_entries) > 0
+        assert len(errors) == 0
+
+        # Check that different schedules have different source files
+        rent_forecasts = [e for e in result_entries if e.meta.get("schedule_id") == "rent-monthly"]
+        paycheck_forecasts = [e for e in result_entries if e.meta.get("schedule_id") == "paycheck"]
+
+        assert len(rent_forecasts) > 0
+        assert len(paycheck_forecasts) > 0
+
+        # Verify filenames point to individual schedule files
+        rent_filename = rent_forecasts[0].meta["filename"]
+        paycheck_filename = paycheck_forecasts[0].meta["filename"]
+
+        assert "rent-monthly.yaml" in rent_filename
+        assert "paycheck.yaml" in paycheck_filename
+        assert rent_filename != paycheck_filename
+
+    def test_filename_respects_display_base_env_var(self, tmp_path, monkeypatch):
+        """Should respect BEANSCHEDULE_DISPLAY_BASE for relative paths."""
+        import os
+
+        # Create nested structure
+        config_dir = tmp_path / "config"
+        config_dir.mkdir()
+
+        schedule_yaml = config_dir / "schedules.yaml"
+        schedule_yaml.write_text(
+            """
+version: "1.0"
+schedules:
+  - id: test
+    enabled: true
+    match:
+      account: Assets:Checking
+      payee_pattern: ".*TEST.*"
+    recurrence:
+      frequency: MONTHLY
+      start_date: 2024-01-01
+      day_of_month: 1
+    transaction:
+      payee: "Test"
+      narration: ""
+      metadata:
+        schedule_id: test
+      postings:
+        - account: Expenses:Test
+          amount: 100.00
+        - account: Assets:Checking
+"""
+        )
+
+        # Set base directory env var
+        monkeypatch.setenv("BEANSCHEDULE_DISPLAY_BASE", str(tmp_path))
+
+        options_map = {"filename": str(tmp_path / "main.bean")}
+        result_entries, errors = schedules([], options_map, config_file=str(schedule_yaml))
+
+        # Check filename metadata uses relative path from BEANSCHEDULE_DISPLAY_BASE
+        forecast_txn = result_entries[0]
+        assert forecast_txn.meta["filename"] == "config/schedules.yaml"

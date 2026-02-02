@@ -45,6 +45,7 @@ __copyright__ = "Copyright (C) 2026 beanschedule"
 __license__ = "GNU GPLv2"
 
 import logging
+import os
 from datetime import date, timedelta
 from decimal import Decimal
 from pathlib import Path
@@ -183,9 +184,32 @@ def _create_forecast_transaction(schedule, occurrence_date, global_config):
     Returns:
         beancount.core.data.Transaction with forecast flag (#)
     """
+    # Compute display filename for metadata
+    display_filename = "<schedules.yaml>"  # Default fallback
+    if schedule.source_file:
+        # Try to make path relative to CWD or base directory from env var
+        base_dir = os.getenv("BEANSCHEDULE_DISPLAY_BASE")
+        if base_dir:
+            try:
+                display_filename = str(schedule.source_file.relative_to(Path(base_dir)))
+            except ValueError:
+                # source_file is not relative to base_dir, use relative to CWD
+                try:
+                    display_filename = str(schedule.source_file.relative_to(Path.cwd()))
+                except ValueError:
+                    # Can't make relative, use absolute path
+                    display_filename = str(schedule.source_file)
+        else:
+            # No base dir specified, try CWD
+            try:
+                display_filename = str(schedule.source_file.relative_to(Path.cwd()))
+            except ValueError:
+                # Can't make relative to CWD, use absolute path
+                display_filename = str(schedule.source_file)
+
     # Build metadata
     meta = {
-        "filename": "<schedules.yaml>",
+        "filename": display_filename,
         "lineno": 0,
         "schedule_id": schedule.id,  # For tracking, not matching
     }
