@@ -298,6 +298,10 @@ class AmortizationConfig(BaseModel):
         CompoundingFrequency.MONTHLY,
         description="Interest compounding frequency (MONTHLY or DAILY)",
     )
+    payment_day_of_month: Optional[int] = Field(
+        None,
+        description="Day of month for amortization payments (1-31). If set, overrides the transaction recurrence day for amortization calculations. Defaults to transaction recurrence day if not specified.",
+    )
 
     # ── validators ────────────────────────────────────────────────────────
 
@@ -339,6 +343,14 @@ class AmortizationConfig(BaseModel):
         """Ensure monthly_payment is positive if provided."""
         if v is not None and v <= 0:
             raise ValueError("monthly_payment must be positive")
+        return v
+
+    @field_validator("payment_day_of_month")
+    @classmethod
+    def validate_payment_day_of_month(cls, v: Optional[int]) -> Optional[int]:
+        """Ensure payment_day_of_month is between 1 and 31 if provided."""
+        if v is not None and (v < 1 or v > 31):
+            raise ValueError("payment_day_of_month must be between 1 and 31")
         return v
 
     @model_validator(mode="after")

@@ -9,6 +9,8 @@ from datetime import date
 from decimal import Decimal
 from typing import NamedTuple
 
+from beancount.core import data, realization
+
 logger = logging.getLogger(__name__)
 
 
@@ -372,3 +374,91 @@ def compute_stateful_splits(
         previous_date = payment_date
 
     return splits
+
+
+def build_liability_balance_index(
+    entries, accounts: set[str]
+) -> dict[str, tuple[Decimal, date]]:
+    """Compute (remaining_balance, most_recent_date) for each tracked liability account.
+
+    Uses beancount's realization engine to correctly compute account balances,
+    which respects pad directives, balances, and all internal beancount mechanisms.
+    Only cleared (``*``) transactions are considered — forecast (``#``) and
+    placeholder (``!``) entries are ignored so the plugin does not count its
+    own predictions as actuals.
+
+    The beancount balance for a liability is negative (credit-normal).  We
+    negate it so the returned ``remaining_balance`` is the positive amount
+    still owed.
+
+    Args:
+        entries: Full list of beancount entries (already in memory).
+        accounts: Set of account names to track.
+
+    Returns:
+        Dict mapping account name → (remaining_balance, most_recent_date).
+        Accounts with no cleared postings are absent.
+    """
+    if not accounts:
+        return {}
+
+    # Filter entries to exclude forecast (#) and placeholder (!) transactions
+    # We include both cleared (*) and pending (P) transactions for balance
+    # computation. Pending transactions often represent the initial loan
+    # disbursement which establishes the starting liability balance.
+    filtered_entries = [
+        entry
+        for entry in entries
+        if not isinstance(entry, data.Transaction) or entry.flag in ("*", "P")
+    ]
+
+    # Use beancount's realization engine to get correct balances
+    # This handles pad directives, balance assertions, and all beancount internals
+    real_root = realization.realize(filtered_entries)
+
+    result: dict[str, tuple[Decimal, date]] = {}
+
+    for account_name in accounts:
+        # Navigate to the account in the realization tree
+        real_account = realization.get(real_root, account_name)
+        if real_account is None:
+            continue
+
+        # Get the balance as an Inventory
+        balance_inventory = real_account.balance
+
+        # Extract the amount (assume single-currency for now)
+        if balance_inventory.is_empty():
+            continue
+
+        # Get the first (and should be only) position's units
+        # For liabilities, balance is negative (credit-normal)
+        balance = Decimal("0")
+        currency = None
+        for pos in balance_inventory:
+            if pos.units is not None:
+                balance = pos.units.number
+                currency = pos.units.currency
+                break
+
+        # Skip if no valid balance or wrong currency
+        if currency is None or balance == 0:
+            continue
+
+        # Find the most recent cleared posting date for this account
+        latest_date: date | None = None
+        for entry in entries:
+            if not isinstance(entry, data.Transaction):
+                continue
+            if entry.flag != "*":
+                continue
+            for posting in entry.postings:
+                if posting.account == account_name:
+                    if latest_date is None or entry.date > latest_date:
+                        latest_date = entry.date
+
+        if latest_date is not None:
+            # Negate to get positive remaining balance (what the user "owes")
+            result[account_name] = (-balance, latest_date)
+
+    return result

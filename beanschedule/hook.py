@@ -8,6 +8,12 @@ from typing import Optional
 
 from beancount.core import amount, data
 
+from .amortization import (
+    AmortizationSchedule,
+    PaymentSplit,
+    build_liability_balance_index,
+    compute_stateful_splits,
+)
 from .loader import get_enabled_schedules, load_schedules_file
 from .matcher import TransactionMatcher
 from .recurrence import RecurrenceEngine
@@ -149,8 +155,30 @@ def schedule_hook(
                         schedule.id,
                         score,
                     )
+                    # Compute amortization split dynamically
+                    amort_split = None
+                    split_lookup_date = expected_date
+                    if schedule.amortization and ledger_entries:
+                        # Find the next amortization date based on ledger history
+                        amort_result = _compute_amortization_split(
+                            schedule, ledger_entries, recurrence_engine, start_date, end_date
+                        )
+                        if amort_result:
+                            amort_split, split_lookup_date = amort_result
+                            logger.debug(
+                                "  Amortization: %s - "
+                                "principal=%.2f, interest=%.2f, balance_after=%.2f",
+                                split_lookup_date,
+                                amort_split.principal,
+                                amort_split.interest,
+                                amort_split.remaining_balance,
+                            )
+                        else:
+                            logger.debug("  Amortization: could not compute split for %s", schedule.id)
                     # Enrich transaction
-                    enriched_txn = _enrich_transaction(entry, schedule, expected_date, score)
+                    enriched_txn = _enrich_transaction(
+                        entry, schedule, expected_date, score, amort_split, split_lookup_date
+                    )
                     modified_entries.append(enriched_txn)
                     # Mark occurrence as matched
                     matched_occurrences.add((schedule.id, expected_date))
@@ -246,6 +274,124 @@ def _extract_date_range(
     # Add buffer for edge cases
     buffer = timedelta(days=7)
     return (min_date - buffer, max_date + buffer)
+
+
+def _get_principal_account(schedule: Schedule) -> Optional[str]:
+    """Return the account with role='principal' from a schedule's postings, or None."""
+    if not schedule.transaction.postings:
+        return None
+    for posting in schedule.transaction.postings:
+        if posting.role == "principal":
+            return posting.account
+    return None
+
+
+def _find_last_schedule_transaction(
+    ledger_entries: list[data.Directive], schedule_id: str
+) -> Optional[data.Transaction]:
+    """Find the most recent transaction in ledger with matching schedule_id.
+
+    Args:
+        ledger_entries: Existing ledger entries
+        schedule_id: Schedule ID to search for
+
+    Returns:
+        Most recent transaction with this schedule_id, or None
+    """
+    for entry in reversed(ledger_entries):
+        if not isinstance(entry, data.Transaction):
+            continue
+        if entry.meta.get("schedule_id") == schedule_id:
+            return entry
+    return None
+
+
+def _compute_amortization_split(
+    schedule: Schedule,
+    ledger_entries: list[data.Directive],
+    recurrence_engine: RecurrenceEngine,
+    start_date: date,
+    end_date: date,
+) -> Optional[tuple[PaymentSplit, date]]:
+    """Compute amortization split for the next payment.
+
+    Finds the last posted transaction for this schedule, calculates the next
+    amortization date, gets the current balance, and computes the split.
+
+    Args:
+        schedule: Schedule with amortization config
+        ledger_entries: Existing ledger entries
+        recurrence_engine: Recurrence engine for generating dates
+        start_date: Start of date range
+        end_date: End of date range
+
+    Returns:
+        Tuple of (PaymentSplit, amortization_date) or None if unable to compute
+    """
+    if not schedule.amortization:
+        return None
+
+    principal_account = _get_principal_account(schedule)
+    if not principal_account:
+        logger.debug("Schedule %s: no principal account found", schedule.id)
+        return None
+
+    # Find the last transaction with this schedule_id
+    last_txn = _find_last_schedule_transaction(ledger_entries, schedule.id)
+
+    # Determine the date to start calculating the next amortization from
+    if last_txn:
+        # Get the amortization date from the last transaction (if available)
+        last_amort_date = last_txn.meta.get("amortization_linked_date")
+        if last_amort_date:
+            try:
+                last_amort_date = date.fromisoformat(last_amort_date)
+            except (ValueError, TypeError):
+                last_amort_date = last_txn.date
+        else:
+            last_amort_date = last_txn.date
+    else:
+        # No previous transaction, use start_date
+        last_amort_date = start_date - timedelta(days=1)
+
+    # Calculate next amortization date
+    next_amort_dates = recurrence_engine.generate(schedule, last_amort_date + timedelta(days=1), end_date)
+    if not next_amort_dates:
+        logger.debug("Schedule %s: no future amortization dates", schedule.id)
+        return None
+
+    next_amort_date = next_amort_dates[0]
+
+    # Get current balance from ledger
+    liability_balances = build_liability_balance_index(ledger_entries, {principal_account})
+    if principal_account not in liability_balances:
+        logger.debug("Schedule %s: no balance found for account %s", schedule.id, principal_account)
+        return None
+
+    balance, balance_date = liability_balances[principal_account]
+    if balance <= Decimal("0"):
+        logger.debug("Schedule %s: balance is zero or negative", schedule.id)
+        return None
+
+    # Compute split for the next amortization date
+    try:
+        splits = compute_stateful_splits(
+            monthly_payment=schedule.amortization.monthly_payment,
+            annual_rate=schedule.amortization.annual_rate,
+            compounding=schedule.amortization.compounding.value,
+            starting_balance=balance,
+            starting_date=balance_date,
+            occurrence_dates=[next_amort_date],
+            extra_principal=schedule.amortization.extra_principal or Decimal("0"),
+        )
+        if next_amort_date in splits:
+            return (splits[next_amort_date], next_amort_date)
+        else:
+            logger.debug("Schedule %s: could not compute split for %s", schedule.id, next_amort_date)
+            return None
+    except Exception as e:
+        logger.error("Schedule %s: error computing amortization split: %s", schedule.id, e)
+        return None
 
 
 def _generate_expected_occurrences(
@@ -530,6 +676,8 @@ def _enrich_transaction(
     schedule: Schedule,
     expected_date: date,
     score: float,
+    amortization_split: Optional[PaymentSplit] = None,
+    split_lookup_date: Optional[date] = None,
 ) -> data.Transaction:
     """
     Enrich transaction with schedule metadata, tags, and postings.
@@ -539,6 +687,8 @@ def _enrich_transaction(
         schedule: Matching schedule
         expected_date: Expected occurrence date
         score: Match confidence score
+        amortization_split: Optional PaymentSplit for amortization schedules
+        split_lookup_date: Date used to look up the amortization split (for debugging)
 
     Returns:
         Modified transaction with schedule enrichment
@@ -554,6 +704,18 @@ def _enrich_transaction(
         if key != "schedule_id":  # Already added
             new_meta[key] = value
 
+    # Add amortization metadata if present
+    if amortization_split is not None:
+        new_meta["amortization_principal"] = str(amortization_split.principal)
+        new_meta["amortization_interest"] = str(amortization_split.interest)
+        new_meta["amortization_balance_after"] = str(amortization_split.remaining_balance)
+        # Add the date that was used for split lookup (for debugging date mapping)
+        if split_lookup_date is not None:
+            new_meta["amortization_linked_date"] = split_lookup_date.isoformat()
+        # Only add payment_number for static mode (when it's non-zero)
+        if amortization_split.payment_number > 0:
+            new_meta["amortization_payment_number"] = str(amortization_split.payment_number)
+
     # Merge tags (frozensets are immutable, use union)
     new_tags = transaction.tags
     if schedule.transaction.tags:
@@ -565,7 +727,7 @@ def _enrich_transaction(
 
     # Handle postings
     if schedule.transaction.postings:
-        new_postings = _apply_schedule_postings(transaction, schedule)
+        new_postings = _apply_schedule_postings(transaction, schedule, amortization_split)
     else:
         new_postings = transaction.postings
 
@@ -581,16 +743,19 @@ def _enrich_transaction(
 def _apply_schedule_postings(
     transaction: data.Transaction,
     schedule: Schedule,
+    amortization_split: Optional[PaymentSplit] = None,
 ) -> list[data.Posting]:
     """
     Apply schedule posting template to transaction.
 
     If posting has amount=null, use imported amount.
+    If posting has role=interest/principal and amortization_split is provided, use computed amounts.
     Otherwise use schedule amount.
 
     Args:
         transaction: Original transaction
         schedule: Schedule with posting template
+        amortization_split: Optional PaymentSplit for amortization schedules
 
     Returns:
         List of postings
@@ -603,18 +768,48 @@ def _apply_schedule_postings(
     if transaction.postings:
         original_amount = transaction.postings[0].units
 
+    currency = original_amount.currency if original_amount else "USD"
+
     new_postings = []
     for posting_template in schedule.transaction.postings:
-        if posting_template.amount is None:
-            # Use imported amount (or None for second+ postings)
-            if posting_template.account == transaction.postings[0].account:
+        # Determine posting amount
+        if amortization_split is not None:
+            # Role-aware amount mapping for amortization
+            if posting_template.role == "interest":
+                posting_amount = amount.Amount(amortization_split.interest, currency)
+            elif posting_template.role == "principal":
+                posting_amount = amount.Amount(amortization_split.principal, currency)
+            elif posting_template.role == "payment":
+                # Payment posting uses the imported bank amount
+                posting_amount = original_amount
+            elif posting_template.role == "escrow":
+                # Escrow has explicit amount from template
+                if posting_template.amount is not None:
+                    posting_amount = amount.Amount(
+                        Decimal(str(posting_template.amount)), currency
+                    )
+                else:
+                    posting_amount = None
+            elif posting_template.amount is not None:
+                # Explicit amount from template (no role, or non-amortization role)
+                posting_amount = amount.Amount(Decimal(str(posting_template.amount)), currency)
+            elif posting_template.account == transaction.postings[0].account:
+                # No amount, matches imported account → use imported amount
                 posting_amount = original_amount
             else:
+                # No amount, doesn't match imported account → let beancount balance
                 posting_amount = None
         else:
-            # Use schedule amount
-            currency = original_amount.currency if original_amount else "USD"
-            posting_amount = amount.Amount(Decimal(str(posting_template.amount)), currency)
+            # No amortization split - use original logic
+            if posting_template.amount is None:
+                # Use imported amount (or None for second+ postings)
+                if posting_template.account == transaction.postings[0].account:
+                    posting_amount = original_amount
+                else:
+                    posting_amount = None
+            else:
+                # Use schedule amount
+                posting_amount = amount.Amount(Decimal(str(posting_template.amount)), currency)
 
         # Build posting metadata (for comments)
         posting_meta = None

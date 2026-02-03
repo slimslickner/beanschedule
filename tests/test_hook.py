@@ -4,7 +4,7 @@ from datetime import date
 from decimal import Decimal
 from unittest.mock import MagicMock, patch
 
-from beancount.core import data
+from beancount.core import amount, data
 
 from beanschedule.hook import schedule_hook
 from beanschedule.schema import ScheduleFile
@@ -727,3 +727,240 @@ class TestLedgerTransactionMatching:
         # The imported transaction should be matched
         matched_txn = result[0][1][0]
         assert matched_txn.meta["schedule_id"] == "rent"
+
+
+class TestAmortizationEnrichment:
+    """Tests for amortization integration in the beangulp hook."""
+
+    def test_stateful_amortization_enrichment(
+        self, sample_transaction, sample_schedule, global_config
+    ):
+        """Test stateful amortization enrichment using ledger balance."""
+        from decimal import Decimal
+
+        from beanschedule.schema import AmortizationConfig
+        from beanschedule.types import CompoundingFrequency
+        from tests.conftest import make_posting_template
+
+        # Create schedule with stateful amortization (balance_from_ledger: True)
+        amort_config = AmortizationConfig(
+            annual_rate=Decimal("0.0675"),
+            monthly_payment=Decimal("1995.68"),
+            balance_from_ledger=True,
+            compounding=CompoundingFrequency.MONTHLY,
+        )
+
+        # Create posting templates with roles
+        postings = [
+            make_posting_template("Assets:Bank:Checking", None, role="payment"),
+            make_posting_template("Expenses:Housing:Interest", None, role="interest"),
+            make_posting_template("Liabilities:Mortgage", None, role="principal"),
+        ]
+
+        schedule = sample_schedule(
+            id="mortgage",
+            payee_pattern="MORTGAGE BANK",
+            amount=Decimal("-1995.68"),
+            postings=postings,
+        )
+        schedule.amortization = amort_config
+
+        # Create ledger entry: initial loan disbursement
+        loan_init = data.Transaction(
+            meta={"filename": "ledger.beancount", "lineno": 1},
+            date=date(2024, 1, 1),
+            flag="*",  # Cleared flag (P also works, but * is clearer)
+            payee="Lender",
+            narration="Loan disbursement",
+            tags=frozenset(),
+            links=frozenset(),
+            postings=[
+                data.Posting(
+                    account="Assets:Bank:Checking",
+                    units=amount.Amount(Decimal("300000"), "USD"),
+                    cost=None,
+                    price=None,
+                    flag=None,
+                    meta=None,
+                ),
+                data.Posting(
+                    account="Liabilities:Mortgage",
+                    units=amount.Amount(Decimal("-300000"), "USD"),
+                    cost=None,
+                    price=None,
+                    flag=None,
+                    meta=None,
+                ),
+            ],
+        )
+
+        # Create imported transaction for first payment (Feb 15, for Feb 1 amortization)
+        imported_txn = sample_transaction(
+            date(2024, 2, 15),
+            "MORTGAGE BANK",
+            "Assets:Bank:Checking",
+            Decimal("-1995.68"),
+        )
+
+        extracted_entries = [
+            ("bank.csv", [imported_txn], "Assets:Bank:Checking", None),
+        ]
+
+        schedule_file = ScheduleFile(schedules=[schedule], config=global_config)
+
+        with patch("beanschedule.hook.load_schedules_file", return_value=schedule_file):
+            result = schedule_hook(extracted_entries, existing_entries=[loan_init])
+
+        # Find the enriched transaction
+        enriched_txn = result[0][1][0]
+
+        # Verify amortization metadata is present
+        assert "amortization_principal" in enriched_txn.meta
+        assert "amortization_interest" in enriched_txn.meta
+        assert "amortization_balance_after" in enriched_txn.meta
+        assert "amortization_linked_date" in enriched_txn.meta
+
+        # Verify the split is reasonable (stateful mode, second month)
+        principal = Decimal(enriched_txn.meta["amortization_principal"])
+        interest = Decimal(enriched_txn.meta["amortization_interest"])
+
+        # Second payment should have slightly less interest than first
+        assert principal > Decimal("0")
+        assert interest > Decimal("1600")  # Still mostly interest
+        total = principal + interest
+        assert total == Decimal("1995.68")  # Should equal monthly payment
+
+    def test_amortization_with_escrow(
+        self, sample_transaction, sample_schedule, global_config
+    ):
+        """Test amortization with explicit escrow postings."""
+        from decimal import Decimal
+
+        from beanschedule.schema import AmortizationConfig
+        from beanschedule.types import CompoundingFrequency
+        from tests.conftest import make_posting_template
+
+        amort_config = AmortizationConfig(
+            annual_rate=Decimal("0.0675"),
+            monthly_payment=Decimal("1995.68"),
+            balance_from_ledger=True,
+            compounding=CompoundingFrequency.MONTHLY,
+        )
+
+        # Postings including escrow with explicit amount
+        postings = [
+            make_posting_template("Assets:Bank:Checking", None, role="payment"),
+            make_posting_template("Expenses:Housing:Interest", None, role="interest"),
+            make_posting_template("Liabilities:Mortgage", None, role="principal"),
+            make_posting_template("Expenses:Housing:Insurance", Decimal("150"), role="escrow"),
+        ]
+
+        schedule = sample_schedule(
+            id="mortgage",
+            payee_pattern="MORTGAGE BANK",
+            amount=Decimal("-2145.68"),
+            postings=postings,
+        )
+        schedule.amortization = amort_config
+
+        # Create ledger entry: initial loan
+        loan_init = data.Transaction(
+            meta={"filename": "ledger.beancount", "lineno": 1},
+            date=date(2024, 1, 1),
+            flag="*",
+            payee="Lender",
+            narration="Loan disbursement",
+            tags=frozenset(),
+            links=frozenset(),
+            postings=[
+                data.Posting(
+                    account="Assets:Bank:Checking",
+                    units=amount.Amount(Decimal("300000"), "USD"),
+                    cost=None,
+                    price=None,
+                    flag=None,
+                    meta=None,
+                ),
+                data.Posting(
+                    account="Liabilities:Mortgage",
+                    units=amount.Amount(Decimal("-300000"), "USD"),
+                    cost=None,
+                    price=None,
+                    flag=None,
+                    meta=None,
+                ),
+            ],
+        )
+
+        imported_txn = sample_transaction(
+            date(2024, 2, 15),
+            "MORTGAGE BANK",
+            "Assets:Bank:Checking",
+            Decimal("-2145.68"),
+        )
+
+        extracted_entries = [
+            ("bank.csv", [imported_txn], "Assets:Bank:Checking", None),
+        ]
+
+        schedule_file = ScheduleFile(schedules=[schedule], config=global_config)
+
+        with patch("beanschedule.hook.load_schedules_file", return_value=schedule_file):
+            result = schedule_hook(extracted_entries, existing_entries=[loan_init])
+
+        enriched_txn = result[0][1][0]
+
+        # Verify escrow posting has explicit amount
+        escrow_posting = next(
+            (p for p in enriched_txn.postings if p.account == "Expenses:Housing:Insurance"),
+            None,
+        )
+        assert escrow_posting is not None
+        assert escrow_posting.units.number == Decimal("150")
+
+        # Verify P/I postings still have computed amounts
+        interest_posting = next(p for p in enriched_txn.postings if p.account == "Expenses:Housing:Interest")
+        principal_posting = next(p for p in enriched_txn.postings if p.account == "Liabilities:Mortgage")
+
+        assert interest_posting.units.number > Decimal("0")
+        assert principal_posting.units.number > Decimal("0")
+
+    def test_no_amortization_unchanged(
+        self, sample_transaction, sample_schedule, global_config
+    ):
+        """Regression test: non-amortization schedules are unchanged."""
+        # Create regular schedule without amortization
+        schedule = sample_schedule(
+            id="rent",
+            payee_pattern="LANDLORD",
+            amount=Decimal("-1500.00"),
+            postings=None,  # No postings, simple enrichment
+        )
+
+        imported_txn = sample_transaction(
+            date(2024, 1, 15),
+            "LANDLORD",
+            "Assets:Bank:Checking",
+            Decimal("-1500.00"),
+        )
+
+        extracted_entries = [
+            ("bank.csv", [imported_txn], "Assets:Bank:Checking", None),
+        ]
+
+        schedule_file = ScheduleFile(schedules=[schedule], config=global_config)
+
+        with patch("beanschedule.hook.load_schedules_file", return_value=schedule_file):
+            result = schedule_hook(extracted_entries)
+
+        enriched_txn = result[0][1][0]
+
+        # Should NOT have amortization metadata
+        assert "amortization_principal" not in enriched_txn.meta
+        assert "amortization_interest" not in enriched_txn.meta
+        assert "amortization_balance_after" not in enriched_txn.meta
+
+        # Should have standard schedule metadata
+        assert enriched_txn.meta["schedule_id"] == "rent"
+        assert "schedule_matched_date" in enriched_txn.meta
+        assert "schedule_confidence" in enriched_txn.meta

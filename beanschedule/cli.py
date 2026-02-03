@@ -733,8 +733,8 @@ def amortize(
                 )
                 sys.exit(1)
 
-            from .amortization import compute_stateful_splits
-            from .plugins.schedules import _build_liability_balance_index, _get_principal_account
+            from .amortization import build_liability_balance_index, compute_stateful_splits
+            from .plugins.schedules import _get_principal_account
 
             entries, load_errors, _options = beancount_loader.load_file(ledger_path)
             for err in load_errors:
@@ -748,7 +748,7 @@ def amortize(
                 )
                 sys.exit(1)
 
-            balances = _build_liability_balance_index(entries, {principal_account})
+            balances = build_liability_balance_index(entries, {principal_account})
             if principal_account not in balances:
                 click.echo(
                     f"Error: No cleared transactions found for {principal_account}",

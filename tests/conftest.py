@@ -154,12 +154,14 @@ def make_posting_template(
     account: str,
     amount: Decimal = None,
     narration: str = None,
+    role: str | None = None,
 ) -> Posting:
     """Create a transaction posting template."""
     return Posting(
         account=account,
         amount=amount,
         narration=narration,
+        role=role,
     )
 
 

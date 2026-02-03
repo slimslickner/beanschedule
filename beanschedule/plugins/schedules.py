@@ -153,8 +153,10 @@ def schedules(entries, options_map, config_file=None):
             if principal_account:
                 stateful_accounts.add(principal_account)
 
+    from beanschedule.amortization import build_liability_balance_index
+
     liability_balances = (
-        _build_liability_balance_index(entries, stateful_accounts) if stateful_accounts else {}
+        build_liability_balance_index(entries, stateful_accounts) if stateful_accounts else {}
     )
 
     # ── per-schedule forecast generation ──────────────────────────────────
@@ -166,6 +168,43 @@ def schedules(entries, options_map, config_file=None):
         try:
             # Generate occurrence dates within the forecast window
             occurrences = engine.generate(schedule, forecast_start, forecast_end)
+
+            # Determine forecast dates: use payment_day_of_month if set (for amortization)
+            forecast_dates = occurrences
+            amort_occurrences = None
+            if schedule.amortization and schedule.amortization.payment_day_of_month:
+                from dateutil.relativedelta import relativedelta
+
+                # Generate amortization dates based on payment day of month
+                amort_occurrences = []
+                current = forecast_start
+                try:
+                    if current.day <= schedule.amortization.payment_day_of_month:
+                        current = current.replace(day=schedule.amortization.payment_day_of_month)
+                    else:
+                        current = (current + relativedelta(months=1)).replace(day=schedule.amortization.payment_day_of_month)
+                except ValueError:
+                    # Day doesn't exist in this month
+                    import calendar
+                    last_day = calendar.monthrange(current.year, current.month)[1]
+                    current = current.replace(day=last_day)
+
+                while current <= forecast_end:
+                    if current >= forecast_start:
+                        amort_occurrences.append(current)
+                    try:
+                        current = (current + relativedelta(months=1)).replace(day=schedule.amortization.payment_day_of_month)
+                    except ValueError:
+                        import calendar
+                        last_day = calendar.monthrange(current.year, current.month)[1]
+                        current = (current + relativedelta(months=1)).replace(day=last_day)
+
+                logger.debug(
+                    "Loan %s: Using custom amortization payment day (day %d)",
+                    schedule.id,
+                    schedule.amortization.payment_day_of_month,
+                )
+                forecast_dates = amort_occurrences
 
             # Pre-compute stateful P/I splits when applicable
             amort_splits = None
@@ -184,13 +223,17 @@ def schedules(entries, options_map, config_file=None):
                                 principal_account,
                                 (today - balance_date).days,
                             )
+
+                        # Use amort_occurrences if available (payment_day_of_month), else use regular occurrences
+                        split_dates = amort_occurrences if amort_occurrences else occurrences
+
                         amort_splits = compute_stateful_splits(
                             monthly_payment=schedule.amortization.monthly_payment,  # type: ignore[arg-type]
                             annual_rate=schedule.amortization.annual_rate,
                             compounding=schedule.amortization.compounding.value,
                             starting_balance=balance,
                             starting_date=balance_date,
-                            occurrence_dates=occurrences,
+                            occurrence_dates=split_dates,
                             extra_principal=schedule.amortization.extra_principal or Decimal("0"),
                         )
                     else:
@@ -209,7 +252,7 @@ def schedules(entries, options_map, config_file=None):
                     continue
 
             # Create forecast transaction for each occurrence
-            for occurrence_date in occurrences:
+            for occurrence_date in forecast_dates:
                 # In stateful mode, skip dates beyond loan payoff
                 if amort_splits is not None and occurrence_date not in amort_splits:
                     continue
@@ -219,7 +262,7 @@ def schedules(entries, options_map, config_file=None):
                 )
                 forecast_entries.append(forecast_txn)
 
-            logger.debug("Generated %d forecast(s) for %s", len(occurrences), schedule.id)
+            logger.debug("Generated %d forecast(s) for %s", len(forecast_dates), schedule.id)
 
         except Exception as e:
             error_msg = f"Failed to generate forecasts for {schedule.id}: {e}"
@@ -267,94 +310,6 @@ def _get_principal_account(schedule) -> str | None:
         if posting.role == "principal":
             return posting.account
     return None
-
-
-def _build_liability_balance_index(
-    entries, accounts: set[str]
-) -> dict[str, tuple[Decimal, "date"]]:
-    """Compute (remaining_balance, most_recent_date) for each tracked liability account.
-
-    Uses beancount's realization engine to correctly compute account balances,
-    which respects pad directives, balances, and all internal beancount mechanisms.
-    Only cleared (``*``) transactions are considered — forecast (``#``) and
-    placeholder (``!``) entries are ignored so the plugin does not count its
-    own predictions as actuals.
-
-    The beancount balance for a liability is negative (credit-normal).  We
-    negate it so the returned ``remaining_balance`` is the positive amount
-    still owed.
-
-    Args:
-        entries: Full list of beancount entries (already in memory).
-        accounts: Set of account names to track.
-
-    Returns:
-        Dict mapping account name → (remaining_balance, most_recent_date).
-        Accounts with no cleared postings are absent.
-    """
-    if not accounts:
-        return {}
-
-    # Filter entries to exclude forecast (#) and placeholder (!) transactions
-    # We include both cleared (*) and pending (P) transactions for balance
-    # computation. Pending transactions often represent the initial loan
-    # disbursement which establishes the starting liability balance.
-    filtered_entries = [
-        entry
-        for entry in entries
-        if not isinstance(entry, data.Transaction) or entry.flag in ("*", "P")
-    ]
-
-    # Use beancount's realization engine to get correct balances
-    # This handles pad directives, balance assertions, and all beancount internals
-    real_root = realization.realize(filtered_entries)
-
-    result: dict[str, tuple[Decimal, date]] = {}
-
-    for account_name in accounts:
-        # Navigate to the account in the realization tree
-        real_account = realization.get(real_root, account_name)
-        if real_account is None:
-            continue
-
-        # Get the balance as an Inventory
-        balance_inventory = real_account.balance
-
-        # Extract the amount (assume single-currency for now)
-        if balance_inventory.is_empty():
-            continue
-
-        # Get the first (and should be only) position's units
-        # For liabilities, balance is negative (credit-normal)
-        balance = Decimal("0")
-        currency = None
-        for pos in balance_inventory:
-            if pos.units is not None:
-                balance = pos.units.number
-                currency = pos.units.currency
-                break
-
-        # Skip if no valid balance or wrong currency
-        if currency is None or balance == 0:
-            continue
-
-        # Find the most recent cleared posting date for this account
-        latest_date: date | None = None
-        for entry in entries:
-            if not isinstance(entry, data.Transaction):
-                continue
-            if entry.flag != "*":
-                continue
-            for posting in entry.postings:
-                if posting.account == account_name:
-                    if latest_date is None or entry.date > latest_date:
-                        latest_date = entry.date
-
-        if latest_date is not None:
-            # Negate to get positive remaining balance (what the user "owes")
-            result[account_name] = (-balance, latest_date)
-
-    return result
 
 
 def _create_forecast_transaction(schedule, occurrence_date, global_config, amort_splits=None):
