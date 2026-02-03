@@ -1,241 +1,170 @@
 # Beanschedule Roadmap
 
-Pre-release checklist and performance optimization opportunities before open sourcing.
+Roadmap for open-sourcing beanschedule with focus on code quality, documentation, and release readiness.
 
 ---
 
-## Status Overview
+## Current Status
 
-**Current Version**: v1.1.0 (Stable)
-**Next Milestone**: v1.2.0 (Polish & Advanced Features)
-**Vision**: v2.0.0+ (Advanced Capabilities)
+| Metric | Value | Target |
+|--------|-------|--------|
+| **Version** | v1.2.0 | v1.3.0 (Open Source Release) |
+| **Test Coverage** | 86% | 90%+ |
+| **Type Hints** | ~90% | 100% |
+| **Docstrings** | ~85% | 100% |
 
-| Item | Status | Version |
-|------|--------|---------|
-| Core matching & enrichment | ✅ Complete | v1.0 |
-| Pattern discovery (detect) | ✅ Complete | v1.1 |
-| Loan amortization (basic) | ✅ Complete | v1.1 |
-| Stateful amortization | ✅ Complete | v1.2 |
-| Amortization overrides (static) | ⚠️ Experimental | v1.1 |
-| Performance optimization | ✅ 80%+ speedup achieved | v1.0-v1.1 |
-| Quality & testing | ✅ 86% coverage | v1.0-v1.1 |
-| Error handling improvements | 🔄 Planned | v1.2 |
-| Dry-run mode | 🔄 Planned | v1.2 |
+### What's Working
 
----
-
-## Completed Features (v1.0.0 - Core)
-
-### Matching & Enrichment
-
-- [x] Hook signature alignment with beangulp (accepting `existing_entries` directly)
-- [x] Support for checking schedules against existing ledger entries
-- [x] Placeholder generation format (always 4-tuple for beangulp compatibility)
-- [x] Flexible recurrence patterns: MONTHLY, WEEKLY, YEARLY, INTERVAL, BIMONTHLY
-- [x] Smart amount matching: exact, tolerance, range-based
-- [x] Regex and fuzzy payee matching
-
-### Code Quality & Performance
-
-- [x] Lazy matching optimization (80%+ speedup verified)
-- [x] Payee pattern compilation & caching (40-50% additional speedup)
-- [x] Fix logging to use deferred formatting (not f-strings)
-- [x] Resolve ruff linting errors (91/99 violations fixed)
-- [x] Type hints completion (100% coverage)
-- [x] Comprehensive docstrings for all modules
-
-### Testing
-
-- [x] Unit tests for core matching logic (28/28 passing)
-- [x] Lazy matching tested and verified (80%+ speedup confirmed)
-- [x] Removed dead code (unused fixtures)
+- Core matching & enrichment with 80%+ performance optimization
+- Pattern discovery (`beanschedule detect`)
+- Loan amortization (static and stateful modes)
+- CLI commands: `validate`, `list`, `show`, `generate`, `create`, `detect`, `amortize`, `init`
+- 86% test coverage across all modules
 
 ---
 
-## Completed Features (v1.1.0 - Pattern Discovery)
+## Open Source Release Checklist
 
-### New CLI Commands
+### Critical (Blocking Release)
 
-- [x] **`beanschedule create`** - Interactive schedule creation from ledger transaction
-  - All 5 recurrence frequency types (MONTHLY, WEEKLY, YEARLY, INTERVAL, BIMONTHLY)
-  - Match criteria customization with sensible defaults
-  - YAML preview and confirmation workflow
+| Task | Status | Notes |
+|------|--------|-------|
+| Fix README URLs | ❌ | Change `yourusername` → `slimslickner` |
+| Fix README Python version | ❌ | Says "3.9+" but requires 3.11+ |
+| Remove dead README links | ❌ | `docs/` directory doesn't exist |
+| Create CONTRIBUTING.md | ❌ | Referenced but missing |
+| Create CHANGELOG.md | ❌ | Referenced in pyproject.toml |
+| Create CODE_OF_CONDUCT.md | ❌ | Standard for open source |
+| Create SECURITY.md | ❌ | Security policy |
+| Add GitHub Actions CI | ❌ | `.github/workflows/` is empty |
+| Move ruff to dev deps | ❌ | Currently in runtime dependencies |
+| Remove dead code | ❌ | `_match_ledger_transactions()` in hook.py |
 
-- [x] **`beanschedule detect`** - Auto-detect recurring transaction patterns
-  - Hierarchical transaction grouping (account → fuzzy payee → amount tolerance)
-  - Gap analysis with median/mean/std dev calculation
-  - Frequency detection: weekly, bi-weekly, monthly, quarterly, yearly
-  - Confidence scoring based on coverage (50%) + regularity (30%) + sample size (20%)
-  - Descriptive schedule IDs combining payee + frequency
-  - Full account names in output (no truncation)
-  - Integration with `beanschedule create` via command suggestions
-  - 38 comprehensive unit tests with 90% code coverage
+### High Priority (Should Fix Before Release)
 
-- [x] **`beanschedule show`** - Display schedule details and next transactions
-  - Shows recurrence pattern and match account
-  - Displays next N scheduled transaction dates (default: 5)
+| Task | Status | Notes |
+|------|--------|-------|
+| Create `constants.py` | ❌ | Extract 15+ magic strings |
+| Extract `slugify` to utils.py | ❌ | Circular import risk in detector.py |
+| Add issue templates | ❌ | Bug report, feature request |
+| Add PR template | ❌ | Standard checklist |
+| Consolidate duplicate code | ❌ | `_generate_bimonthly` == `_generate_monthly_on_days` |
+| Add helper `load_schedules_from_path()` | ❌ | Reduce CLI duplication |
 
-- [x] Other commands: `list`, `validate`, `generate`, `init`
+### Medium Priority (Polish)
 
-### Testing & Quality
-
-- [x] Pattern detection tests (38/38 passing)
-  - Transaction grouping (7 tests)
-  - Gap analysis (4 tests)
-  - Frequency detection (6 tests)
-  - Confidence scoring (4 tests)
-  - Full detection pipeline (7 tests)
-  - Edge cases (5 tests)
-- [x] Integration tests using real examples (11+ tests)
-- [x] Code coverage: 86% total
-
-### Amortization Features
-
-- [x] **Basic amortization schedules** ⭐⭐⭐⭐⭐
-  - Automatic principal/interest split calculation using PMT formula
-  - Support for fixed payment loans (mortgages, auto loans, student loans)
-  - Configuration: principal, annual_rate, term_months, start_date, extra_principal
-  - Explicit `role` fields for postings (payment, interest, principal, escrow)
-  - Amortization metadata in forecast transactions (payment_number, balance_after, etc.)
-  - Mixed amortization + fixed amounts (e.g., P+I+Escrow for mortgages)
-  - CLI command: `beanschedule amortize` with table/csv/json output formats
-  - 19 comprehensive unit tests with 97% coverage
-  - Full documentation: AMORTIZATION.md, CLI_AMORTIZE.md, AMORTIZATION_WITH_ESCROW.md
-
-- [x] **Explicit posting roles** ✅
-  - Removed magic keyword matching for amortization postings
-  - Required `role` field: payment, interest, principal, escrow
-  - Clear validation errors when roles are missing
-  - Backward incompatible but clearer and more maintainable
-  - Documentation: POSTING_ROLES.md
-
-- [x] **Amortization overrides (experimental)** ⚠️
-  - Schema and basic structure implemented
-  - Allows date-based parameter changes mid-loan
-  - Override fields: principal, annual_rate, term_months, extra_principal
-  - 7 schema validation tests passing
-  - **Known limitation**: Payment number calculation needs refinement
-  - **Status**: Experimental - use for planning, verify manually
-  - Documentation: AMORTIZATION_OVERRIDES.md
+| Task | Status | Notes |
+|------|--------|-------|
+| Split cli.py into submodules | ❌ | 1,733 lines - too large |
+| Make tests deterministic | ❌ | Inject `today` instead of `date.today()` |
+| Add edge case tests | ❌ | Leap year, empty inputs, boundaries |
+| Add regex complexity validation | ❌ | Prevent ReDoS attacks |
+| Fix type hint gaps | ❌ | ~10% missing |
 
 ---
 
-## Completed Features (v1.2.0 - Stateful Amortization)
+## Code Quality Issues
 
-### Stateful Amortization
+### Magic Strings to Extract
 
-- [x] **`balance_from_ledger` mode** ⭐⭐⭐⭐⭐
-  - Reads remaining loan balance from the liability account at plugin runtime
-  - Cleared (`*`) and pending (`P`) transactions counted — forecast (`#`) and placeholder (`!`) entries excluded
-  - Uses beancount's `realization.realize()` for correct balance computation (respects pad directives, balance assertions)
-  - Walks forward from observed balance using the fixed monthly payment and interest rate
-  - Compounding: MONTHLY (`balance × rate / 12`) or DAILY (`balance × rate / 365 × actual_days`)
-  - Extra principal support per period
-  - Negative-amortization detection with warning log
-  - Forecast stops automatically once balance reaches zero
-  - Stale-balance warning when most recent cleared posting is >60 days old
-  - Configuration: `annual_rate`, `monthly_payment`, `compounding`, `extra_principal`
-  - 5 plugin integration tests + 8 schema validation tests
+Create `beanschedule/constants.py`:
 
-### Cleanup
+```python
+# Synthetic filepaths
+SYNTHETIC_SCHEDULES_FILEPATH = "<schedules>"
 
-- [x] **Removed `plugins/forecast.py`** — dead code; standalone narration-pattern plugin that was never integrated or tested
+# Config files
+CONFIG_FILENAME = "_config.yaml"
 
-### Bug Fixes
+# Date handling
+DATE_BUFFER_DAYS = 7
+MONTHS_PER_YEAR = 12
+DAYS_PER_YEAR = 365
 
-- [x] **Fixed 3 amount-tolerance matcher tests** — tests were passing vacuously after `match.amount` deprecation; updated to supply postings so tolerance logic is actually exercised
-- [x] **Forwarded `postings` kwarg through `make_schedule` fixture** — was silently swallowed by `**kwargs`
-- [x] **Fixed `balance_from_ledger` for pending initial disbursements** — initial loan disbursements often use `P` (pending) flag; balance computation now includes both `*` and `P` transactions using beancount's `realization.realize()` instead of manual posting summation
+# Frequency detection thresholds (days)
+WEEKLY_GAP_RANGE = (6, 8)
+BIWEEKLY_GAP_RANGE = (12, 16)
+MONTHLY_GAP_RANGE = (25, 35)
+QUARTERLY_GAP_RANGE = (85, 95)
+YEARLY_GAP_RANGE = (355, 375)
+
+# Default values
+DEFAULT_MISSING_PREFIX = "[MISSING]"
+DEFAULT_DATE_WINDOW_DAYS = 3
+```
+
+### Dead Code to Remove
+
+| File | Function/Code | Reason |
+|------|---------------|--------|
+| `hook.py:448-525` | `_match_ledger_transactions()` | Never called, duplicates `_match_ledger_transactions_lazy()` |
+| `recurrence.py:157-181` | `_generate_bimonthly()` | Identical to `_generate_monthly_on_days()` |
+
+### Duplicate Code to Consolidate
+
+**CLI schedule loading** (appears 5+ times):
+```python
+# Extract to loader.py
+def load_schedules_from_path(path: Path) -> Optional[ScheduleFile]:
+    """Load schedules from file or directory path."""
+    if path.is_file():
+        return load_schedules_file(path)
+    elif path.is_dir():
+        return load_schedules_from_directory(path)
+    return None
+```
+
+### Architecture Improvements
+
+**Split `cli.py` (1,733 lines) into:**
+- `cli/commands.py` - Click command definitions
+- `cli/formatters.py` - Output formatting (table, CSV, JSON)
+- `cli/builders.py` - Schedule construction helpers
+
+**Fix circular import:**
+- Move `slugify()` from `cli.py` to `utils.py`
+- `detector.py:686` imports from cli at runtime
 
 ---
 
-## In Progress / Next Up
+## Test Improvements
 
-### v1.2.0 - Polish & Advanced Features
+### Missing Edge Case Tests
 
-#### High Priority
+| Module | Test Cases Needed |
+|--------|-------------------|
+| `recurrence.py` | Leap year (Feb 29), DST transitions, end_date == start_date |
+| `matcher.py` | Empty payee strings, None posting units, negative date window |
+| `loader.py` | Circular imports, deeply nested directories, symlinks |
+| `detector.py` | Single transaction groups, all same-day transactions |
 
-- [x] **Stateful amortization replaces override-based approach** ✅
-  - **Problem (original)**: Payment number calculation broke when overriding principal/start_date
-  - **Solution**: `balance_from_ledger` mode reads balance directly from ledger — no override math needed
-  - **Tests**: 3 static-override integration tests remain skipped (orthogonal, low priority)
-  - See Completed Features (v1.2.0) for full details
+### Test Quality Issues
 
-- [x] **FIX: Posting amount inheritance** 🐛 ✅
-  - **Problem**: If all postings have `amount: null`, they all get assigned `0` in forecast transactions
-  - **Solution Implemented**:
-    - Mandate at least one posting with explicit amount
-    - At most one posting can have `null` amount (becomes balancing posting)
-    - Validation errors if multiple nulls or all nulls
-  - **Additional improvement**: Deprecated `match.amount` field
-    - Expected amount now derived from posting for the matched account
-    - Eliminates redundancy (DRY principle)
-    - `match.amount` kept for backward compatibility but marked deprecated
-  - **Impact**: Forecast transactions now show correct amounts, cleaner schema
+| Issue | Location | Fix |
+|-------|----------|-----|
+| Time-dependent tests | `hook.py:660` | Inject `today` parameter instead of `date.today()` |
+| Deprecated fixture | `conftest.py:119` | `make_match_criteria` uses deprecated `amount` field |
+| Missing assertions | `test_hook.py` | Some tests only check no exception raised |
 
-- [x] Error handling improvements ✅
-  - [x] Specific exception handling in schedule loader (yaml.YAMLError, ValueError, TypeError, re-raise unexpected)
-  - [x] Specific exception handling in config loader (yaml.YAMLError, ValueError, TypeError, KeyError)
-  - [x] Specific exception handling in completion function (ValueError, OSError, yaml.YAMLError, pydantic.ValidationError)
-  - [x] Fixed f-string logging to use deferred formatting (%s style)
-  - [x] Added date range validation (start_date must be <= end_date)
-  - [x] Added amount tolerance validation (non-negative check)
+---
 
-- [ ] Dry-run mode (`--dry-run` flag for testing without committing)
+## Documentation Fixes
 
-#### Medium Priority
+### README.md Issues
 
-- [ ] One-time/ad-hoc schedules ⭐⭐⭐⭐
-  - Add `ONCE` frequency type for non-recurring schedules
-  - Match exactly one expected occurrence on `start_date`
-  - Perfect for: planned purchases, upcoming one-time expenses, split transactions
-  - Use case: Record transaction notes before import (e.g., Amazon purchase split across 3 accounts)
-  - **Impact**: Enables pre-planning of complex one-time transactions with splits
+| Line | Issue | Fix |
+|------|-------|-----|
+| 6, 583-584 | Wrong username | `yourusername` → `slimslickner` |
+| 552-557 | Dead links | Remove `docs/` references or create directory |
+| 561 | Wrong Python version | "3.9+" → "3.11+" |
+| 571 | Missing file | Create CONTRIBUTING.md |
 
-- [ ] CLI: Quick schedule creation walkthrough ⭐⭐⭐⭐
-  - `beanschedule quick` - Interactive guided schedule creation
-  - Ask questions: date, payee, narration, amount, account, split postings, frequency (including ONCE)
-  - Tab completion for account fields (reads from ledger to suggest accounts)
-  - Support narration field for transaction description
-  - Generate and save schedule YAML from answers
-  - One-time schedules saved to: `schedules/_one_time/<date>_<autogenerated_name>.yaml`
-  - Alternative faster workflow to `beanschedule create` (which requires existing ledger transaction)
-  - **Impact**: Drastically simplifies creating one-time and recurring schedules from scratch
+### Files to Create
 
-- [ ] Edge case testing
-  - [ ] Leap year handling in recurrence
-  - [ ] DST transitions
-  - [ ] Schedules with no transactions in ledger
-
-- [ ] CSV export for matched transactions
-
-- [ ] Interactive mode for confirming fuzzy matches above threshold
-
-- [ ] Performance: Skip unnecessary ledger matching (5-10% speedup)
-  - Logic: If no transactions in ledger have `schedule_id` metadata, skip ledger matching
-
-### v1.3.0 - Enhanced Flexibility
-
-- [ ] Remove account matching limitation
-  - Allow schedules to match from any account (not just the configured one)
-  - Add optional `match.account` field (if present, enforce; if absent, match any account)
-
-- [ ] Conditional schedule instances (skip if conditions not met)
-  - Skip generating a scheduled instance if conditions are not met
-  - Use cases: skip transfer if credit card balance is zero
-
-- [x] **Amortization Calendars** ⭐⭐⭐⭐⭐ (v1.1.0 - Complete)
-  - Basic amortization implemented and working
-  - See completed features section above for details
-
-- [ ] **Advanced Amortization Features**
-  - [x] Variable compounding frequencies (DAILY, MONTHLY) — shipped in stateful mode
-  - [x] Ledger-based balance queries — shipped as `balance_from_ledger` mode
-  - [ ] Adjustable-rate mortgages (ARM) support
-  - [ ] Balloon payment schedules
-  - [ ] Interest-only periods followed by amortization
-
-- [ ] Schedule statistics command (coverage report, match rates over time)
+1. **CONTRIBUTING.md** - Development setup, PR guidelines, code style
+2. **CHANGELOG.md** - Version history (use Keep a Changelog format)
+3. **CODE_OF_CONDUCT.md** - Contributor Covenant
+4. **SECURITY.md** - Security policy and reporting
 
 ---
 
@@ -243,67 +172,58 @@ Pre-release checklist and performance optimization opportunities before open sou
 
 ### Completed
 
-**Lazy Matching Strategy** (80%+ speedup)
+| Optimization | Impact | Status |
+|--------------|--------|--------|
+| Lazy matching (date index) | 80%+ speedup | ✅ |
+| Regex pattern caching | 40-50% speedup | ✅ |
+| Fuzzy match caching | 10-20% speedup | ✅ |
 
-- Built date→transaction index from ledger once
-- For each schedule occurrence, only check transactions within `date_window_days`
-- Reduced comparisons from 14k*43 to ~300-500*43
-
-**Payee Pattern Compilation** (40-50% speedup)
-
-- Added regex pattern caching in `TransactionMatcher.__init__`
-- Lazy compilation on first use with cache reuse
-- Fuzzy match result caching keyed by (payee, pattern) tuples
-
-**Performance Baseline** (M2 MacBook Pro, 14,874 ledger entries, 43 schedules)
-
-- Before lazy matching: ~45 seconds
-- After lazy matching: ~5-10 seconds
-- Target after remaining optimizations: ~2-3 seconds
+**Baseline** (M2 MacBook, 14,874 entries, 43 schedules): ~5-10 seconds
 
 ### Remaining Opportunities
 
-| Item | Impact | Effort | Status |
-|------|--------|--------|--------|
-| Skip ledger matching when no `schedule_id` | 5-10% | Trivial | ⏳ v1.2 |
-| Bulk transaction filtering (filter by account) | 20-30% | Medium | ⏳ v1.3 |
-| Recurrence caching | 10-15% | Low | ⏳ v1.3+ |
-| Batch scoring (vectorized operations) | 15-25% | Medium-High | ⏳ v2.0 |
-| Parallel processing | 2-3x | High | ⏳ v2.0 |
-| Incremental mode | Minimal | Medium | ⏳ v2.0 |
-
-**Current Bottleneck**: Payee pattern matching and fuzzy matching via `SequenceMatcher` (takes ~1-2s of the 5-10s total)
+| Optimization | Impact | Effort | Priority |
+|--------------|--------|--------|----------|
+| Skip ledger matching when no `schedule_id` | 5-10% | Trivial | High |
+| Recurrence result caching | 10-15% | Low | Medium |
+| Bulk transaction filtering by account | 20-30% | Medium | Medium |
+| Parallel processing | 2-3x | High | Future |
 
 ---
 
-## Testing & Quality Status
+## Feature Roadmap
 
-### Code Coverage: 86%
+### v1.3.0 - Open Source Release
 
-| Component | Status | Coverage |
-|-----------|--------|----------|
-| Matcher | ✅ | 28/28 tests passing |
-| Detector | ✅ | 38/38 tests passing, 90% coverage |
-| Schema | ✅ | 34/34 tests passing |
-| Hook | ✅ | 15/15 tests passing |
-| Integration | ✅ | 11+ examples tested |
+Focus: Code quality, documentation, CI/CD
 
-### Remaining Test Gaps
+- [ ] All critical release checklist items
+- [ ] All high priority code quality fixes
+- [ ] GitHub Actions CI pipeline
+- [ ] PyPI package registration
 
-- [ ] Performance benchmarks (with/without optimizations)
-- [ ] Regression testing for schedule formats
-- [ ] CLI command tests
-- [ ] Recurrence generation edge cases
-- [ ] Loader validation
+### v1.4.0 - Polish
 
-### Pre-Release Quality Checklist
+- [ ] Dry-run mode (`--dry-run` flag)
+- [ ] One-time/ad-hoc schedules (`ONCE` frequency)
+- [ ] `beanschedule quick` - guided schedule creation
+- [ ] CSV export for matched transactions
+- [ ] Interactive fuzzy match confirmation
 
-- [x] Type hints: 100% coverage
-- [x] Docstrings: All modules documented
-- [x] Logging: Deferred formatting throughout
-- [x] Linting: 91/99 violations resolved (ruff)
-- [ ] CI/CD: GitHub Actions pipeline
-- [ ] Code coverage reporting: codecov integration
+### v1.5.0 - Enhanced Flexibility
+
+- [ ] Optional account matching (match any account if not specified)
+- [ ] Conditional schedule instances (skip based on conditions)
+- [ ] Schedule statistics command (coverage report, match rates)
+- [ ] Advanced amortization (ARM, balloon payments, interest-only periods)
+
+### v2.0.0+ - Future Vision
+
+- [ ] Multi-currency support
+- [ ] Parallel processing for independent schedules
+- [ ] Plugin system for custom matchers
+- [ ] Incremental/watch mode
+- [ ] Integration with other accounting tools
 
 ---
 
@@ -311,92 +231,72 @@ Pre-release checklist and performance optimization opportunities before open sou
 
 ### Current
 
-1. **Ledger must fit in memory** - Not suitable for extremely large ledgers (100k+ entries)
-2. **No multi-currency support** - Assumes all amounts in schedule currency
+1. **Ledger must fit in memory** - Not suitable for 100k+ entries
+2. **No multi-currency support** - All amounts in schedule currency
 3. **Regex patterns only** - No glob patterns for payees
-4. **Date matching only on exact date** - No "Nth weekday of month" rules
-5. **No transaction dependencies** - Can't express "this payment depends on that income"
-6. **Static amortization overrides are experimental** - For mid-loan changes, use stateful mode (`balance_from_ledger: true`) instead
+4. **No transaction dependencies** - Can't express "this depends on that"
+5. **Static amortization overrides are experimental** - Use stateful mode instead
 
 ### By Design
 
-1. No automatic posting generation beyond templates
-2. No integration with beancount plugins directly (hook-based only)
-3. Schedules are YAML (not Python) for simplicity and distribution
+1. Schedules are YAML (not Python) for simplicity
+2. No automatic posting generation beyond templates
+3. Hook-based integration (not direct beancount plugin)
 
 ---
 
-## Before Open Source Release
+## Completed Features
 
-### Required
+<details>
+<summary>v1.0.0 - Core (Click to expand)</summary>
 
-- [ ] MIT License badge in README ✅ (already present)
-- [ ] CONTRIBUTING.md with development setup
-- [ ] CODE_OF_CONDUCT.md
-- [ ] CHANGELOG.md tracking all changes
-- [ ] Security policy (SECURITY.md)
-- [ ] GitHub issue templates
-- [ ] Pull request template
+- Hook signature alignment with beangulp
+- Support for checking schedules against existing ledger entries
+- Placeholder generation (4-tuple beangulp format)
+- Flexible recurrence: MONTHLY, WEEKLY, YEARLY, INTERVAL, BIMONTHLY
+- Smart amount matching: exact, tolerance, range-based
+- Regex and fuzzy payee matching
+- Lazy matching optimization (80%+ speedup)
+- Payee pattern compilation & caching
+- Unit tests for core matching (28/28 passing)
 
-### Highly Recommended
+</details>
 
-- [ ] PyPI package registration (currently local-only)
-- [ ] GitHub Actions for automated testing
-- [ ] Code coverage reporting (codecov)
-- [ ] Release automation (semantic-release)
-- [ ] Example configurations for common use cases
+<details>
+<summary>v1.1.0 - Pattern Discovery (Click to expand)</summary>
 
-### Nice-to-Have
+- `beanschedule create` - Interactive schedule creation
+- `beanschedule detect` - Auto-detect recurring patterns
+- `beanschedule show` - Display schedule details
+- Commands: `list`, `validate`, `generate`, `init`
+- Basic amortization schedules (PMT formula)
+- Explicit `role` fields for postings
+- Pattern detection tests (38/38 passing)
+- Integration tests (11+ examples)
 
-- [ ] Discord/community discussion space
-- [ ] Blog post explaining the tool
-- [ ] Video demo
+</details>
 
----
+<details>
+<summary>v1.2.0 - Stateful Amortization (Click to expand)</summary>
 
-## Documentation Roadmap
+- `balance_from_ledger` mode for amortization
+- Compounding: MONTHLY and DAILY
+- Cleared + pending transaction balance computation
+- Negative amortization detection
+- Stale-balance warnings
+- Removed dead `plugins/forecast.py`
+- Fixed amount-tolerance matcher tests
+- Fixed `make_schedule` fixture kwargs
 
-### Completed
-
-- [x] README with quick start and feature overview
-- [x] Example schedules in examples/ directory
-- [x] Inline code documentation and docstrings
-
-### Planned
-
-- [ ] API documentation (Sphinx/mkdocs)
-- [ ] Schedule YAML schema documentation with examples
-- [ ] CLI command reference
-- [ ] Getting started guide (with workflow)
-- [ ] Troubleshooting guide (common matching failures)
-- [ ] Migration guide (upgrading between versions)
-- [ ] Architecture decision records (ADRs)
-
----
-
-## Future Vision (v2.0.0+)
-
-### Advanced Features
-
-- [ ] Multi-currency support
-- [ ] Advanced recurrence rules (nth weekday, complex patterns)
-- [ ] Parallel processing for independent schedules (2-3x speedup)
-- [ ] Incremental/watch mode for continuous monitoring
-- [ ] Split schedules (one schedule → multiple postings based on rules)
-
-### Extensibility
-
-- [ ] Plugin system for custom matchers
-- [ ] Custom pattern detection algorithms
-- [ ] Integration with other accounting tools
+</details>
 
 ---
 
 ## Questions for Users (Post-Release)
 
-1. What's your ledger size? (to prioritize performance work)
-2. What matching scenarios fail most often? (to improve fuzzy logic)
+1. What's your ledger size? (prioritize performance work)
+2. What matching scenarios fail most often? (improve fuzzy logic)
 3. Would you use bulk export/review features?
 4. Interest in dry-run / preview before commit?
 5. Multi-currency ledgers? (common request?)
-6. How do you currently bootstrap schedules? (manual YAML or would you use `generate`/`detect`?)
+6. How do you bootstrap schedules? (manual YAML or detect?)
