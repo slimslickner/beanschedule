@@ -135,8 +135,10 @@ def schedules(entries, options_map, config_file=None):
     forecast_end = today + timedelta(days=365)
 
     logger.info(
-        f"Generating forecasts from {forecast_start} to {forecast_end} "
-        f"({len(schedule_file.schedules)} schedule(s))"
+        "Generating forecasts from %s to %s (%d schedule(s))",
+        forecast_start,
+        forecast_end,
+        len(schedule_file.schedules),
     )
 
     # 3. Generate forecast transactions
@@ -221,10 +223,10 @@ def schedules(entries, options_map, config_file=None):
 
         except Exception as e:
             error_msg = f"Failed to generate forecasts for {schedule.id}: {e}"
-            logger.error(error_msg)
+            logger.error("%s", error_msg)
             errors.append(error_msg)
 
-    logger.info(f"Generated {len(forecast_entries)} forecast transaction(s)")
+    logger.info("Generated %d forecast transaction(s)", len(forecast_entries))
 
     # 4. Sort and return
     forecast_entries.sort(key=data.entry_sortkey)

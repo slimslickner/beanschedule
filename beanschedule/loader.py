@@ -64,7 +64,7 @@ def find_schedules_location() -> Optional[tuple[str, Path]]:
         config_schedules_file = config_dir / "schedules.yaml"
         if config_schedules_file.is_file():
             return ("file", config_schedules_file)
-    except Exception as e:
+    except (OSError, ValueError) as e:
         logger.debug("Error checking config parent directory: %s", e)
 
     return None
@@ -147,9 +147,12 @@ def load_schedule_from_file(filepath: Path) -> Optional[Schedule]:
     except yaml.YAMLError as e:
         logger.error("YAML parsing error in '%s': %s", filepath, e)
         return None
-    except Exception as e:
-        logger.error("Failed to load schedule from '%s': %s", filepath, e)
+    except (ValueError, TypeError) as e:
+        logger.error("Invalid schedule data in '%s': %s", filepath, e)
         return None
+    except Exception as e:
+        logger.error("Unexpected error loading '%s': %s", filepath, e)
+        raise
 
 
 def load_schedules_from_directory(dirpath: Path) -> Optional[ScheduleFile]:
@@ -183,7 +186,7 @@ def load_schedules_from_directory(dirpath: Path) -> Optional[ScheduleFile]:
             if config_data is not None:
                 config = GlobalConfig(**config_data)
                 logger.debug("Loaded global config from: %s", config_path)
-        except Exception as e:
+        except (yaml.YAMLError, ValueError, TypeError, KeyError) as e:
             logger.warning("Failed to load config from '%s', using defaults: %s", config_path, e)
 
     # Load all schedule files

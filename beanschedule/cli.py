@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any
 
 import click
+import pydantic
 import yaml
 from beancount import loader as beancount_loader
 from beancount.core import data
@@ -52,8 +53,7 @@ def complete_schedule_id(ctx, _, incomplete):
         # Return matching schedule IDs, sorted
         schedule_ids = sorted([s.id for s in schedule_file.schedules])
         return [sid for sid in schedule_ids if sid.startswith(incomplete)]
-    except Exception:
-        # Silently fail - don't break completion
+    except (ValueError, OSError, yaml.YAMLError, pydantic.ValidationError):
         return []
 
 
@@ -422,6 +422,10 @@ def generate(schedule_id: str, start_date, end_date, schedules_path: str):
     path_obj = Path(schedules_path)
     start = start_date.date()
     end = end_date.date()
+
+    if start > end:
+        click.echo("Error: Start date must be before or equal to end date", err=True)
+        sys.exit(1)
 
     try:
         # Load schedules
@@ -1174,7 +1178,13 @@ def create(ledger_path: str, target_date, output_path: str | None, schedules_dir
             default="0.00",
             type=str,
         )
-        amount_tolerance = Decimal(tolerance_str)
+        try:
+            amount_tolerance = Decimal(tolerance_str)
+            if amount_tolerance < 0:
+                raise ValueError("Tolerance cannot be negative")
+        except ValueError as e:
+            click.echo(f"Error: {e}", err=True)
+            sys.exit(1)
         date_window_days = click.prompt(
             "Date window in days (±)",
             default=3,

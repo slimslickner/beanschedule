@@ -173,10 +173,13 @@ Pre-release checklist and performance optimization opportunities before open sou
     - `match.amount` kept for backward compatibility but marked deprecated
   - **Impact**: Forecast transactions now show correct amounts, cleaner schema
 
-- [ ] Error handling improvements
-  - [ ] Graceful handling of invalid schedule YAML syntax
-  - [ ] Better error messages for misconfigured matching criteria
-  - [ ] Validation of recurrence rules at load time
+- [x] Error handling improvements ✅
+  - [x] Specific exception handling in schedule loader (yaml.YAMLError, ValueError, TypeError, re-raise unexpected)
+  - [x] Specific exception handling in config loader (yaml.YAMLError, ValueError, TypeError, KeyError)
+  - [x] Specific exception handling in completion function (ValueError, OSError, yaml.YAMLError, pydantic.ValidationError)
+  - [x] Fixed f-string logging to use deferred formatting (%s style)
+  - [x] Added date range validation (start_date must be <= end_date)
+  - [x] Added amount tolerance validation (non-negative check)
 
 - [ ] Dry-run mode (`--dry-run` flag for testing without committing)
 
