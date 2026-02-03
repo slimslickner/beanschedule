@@ -644,18 +644,37 @@ def show(
     is_flag=True,
     help="Show only summary statistics, not full table",
 )
+@click.option(
+    "--ledger",
+    "-l",
+    "ledger_path",
+    type=click.Path(exists=True),
+    default=None,
+    help="Path to Beancount ledger file (required for stateful amortization)",
+)
+@click.option(
+    "--horizon",
+    type=int,
+    default=None,
+    help="Forecast horizon in months for stateful mode (default: 12)",
+)
 def amortize(
     schedule_id: str,
     schedules_path: str,
     output_format: str,
     limit: int | None,
     summary_only: bool,
+    ledger_path: str | None,
+    horizon: int | None,
 ):
     """Display amortization schedule for a loan.
 
     SCHEDULE_ID: The ID of the schedule with amortization configuration
 
-    Shows a detailed amortization table with payment number, date, payment amount,
+    Supports both static mode (original loan terms) and stateful mode
+    (balance read from ledger via --ledger). Stateful schedules require --ledger.
+
+    Shows a detailed amortization table with date, payment amount,
     principal, interest, and remaining balance for each payment.
 
     Examples:
@@ -663,9 +682,9 @@ def amortize(
         beanschedule amortize auto-loan --limit 12
         beanschedule amortize student-loan --format csv > schedule.csv
         beanschedule amortize mortgage-payment --summary-only
+        beanschedule amortize mortgage-payment -l ledger.beancount
+        beanschedule amortize mortgage-payment -l ledger.beancount --horizon 24
     """
-    from .amortization import AmortizationSchedule
-
     path_obj = Path(schedules_path)
 
     try:
@@ -701,78 +720,178 @@ def amortize(
             click.echo("    start_date: 2024-01-01", err=True)
             sys.exit(1)
 
-        # Create amortization schedule
-        amort = AmortizationSchedule(
-            principal=schedule.amortization.principal,
-            annual_rate=schedule.amortization.annual_rate,
-            term_months=schedule.amortization.term_months,
-            start_date=schedule.amortization.start_date,
-            extra_principal=schedule.amortization.extra_principal,
-        )
+        # ── stateful mode: read balance from ledger ──────────────────────────
+        if schedule.amortization.balance_from_ledger:
+            if not ledger_path:
+                click.echo(
+                    "Error: --ledger is required for stateful amortization schedules",
+                    err=True,
+                )
+                sys.exit(1)
 
-        # Generate full schedule
-        full_schedule = amort.generate_full_schedule()
+            from .amortization import compute_stateful_splits
+            from .plugins.schedules import _build_liability_balance_index, _get_principal_account
 
-        # Apply limit if specified
-        if limit:
-            display_schedule = full_schedule[:limit]
-        else:
-            display_schedule = full_schedule
+            entries, load_errors, _options = beancount_loader.load_file(ledger_path)
+            for err in load_errors:
+                logger.warning("Ledger load warning: %s", err)
 
-        # Calculate summary statistics
-        total_interest = sum(split.interest for split in full_schedule)
-        total_principal = sum(split.principal for split in full_schedule)
-        total_paid = sum(split.total_payment for split in full_schedule)
+            principal_account = _get_principal_account(schedule)
+            if not principal_account:
+                click.echo(
+                    f"Error: No posting with role='principal' in schedule '{schedule_id}'",
+                    err=True,
+                )
+                sys.exit(1)
 
-        # Show summary
-        if output_format == "table" or summary_only:
-            click.echo(f"Schedule: {schedule.id}")
-            click.echo(f"Loan Amount: ${schedule.amortization.principal:,.2f}")
-            click.echo(f"Interest Rate: {schedule.amortization.annual_rate * 100:.3f}%")
-            click.echo(
-                f"Term: {schedule.amortization.term_months} months ({schedule.amortization.term_months // 12} years)"
+            balances = _build_liability_balance_index(entries, {principal_account})
+            if principal_account not in balances:
+                click.echo(
+                    f"Error: No cleared transactions found for {principal_account}",
+                    err=True,
+                )
+                sys.exit(1)
+
+            balance, balance_date = balances[principal_account]
+            if balance <= Decimal("0"):
+                click.echo(
+                    f"Error: Balance for {principal_account} is zero or negative ({balance})",
+                    err=True,
+                )
+                sys.exit(1)
+
+            today = date.today()
+            horizon_months = horizon or 12
+            forecast_end = today + relativedelta(months=horizon_months)
+            engine = RecurrenceEngine()
+            occurrences = engine.generate(schedule, today, forecast_end)
+
+            splits_dict = compute_stateful_splits(
+                monthly_payment=schedule.amortization.monthly_payment,
+                annual_rate=schedule.amortization.annual_rate,
+                compounding=schedule.amortization.compounding.value,
+                starting_balance=balance,
+                starting_date=balance_date,
+                occurrence_dates=occurrences,
+                extra_principal=schedule.amortization.extra_principal or Decimal("0"),
             )
-            click.echo(f"Monthly Payment: ${amort.payment:,.2f}")
-            if schedule.amortization.extra_principal:
-                click.echo(f"Extra Principal: ${schedule.amortization.extra_principal:,.2f}/month")
+
+            all_dated_splits = sorted(splits_dict.items())
+
+            summary_info = {
+                "schedule_id": schedule.id,
+                "mode": "stateful",
+                "liability_account": principal_account,
+                "balance_date": str(balance_date),
+                "starting_balance": float(balance),
+                "annual_rate": float(schedule.amortization.annual_rate),
+                "monthly_payment": float(schedule.amortization.monthly_payment),
+                "compounding": schedule.amortization.compounding.value,
+            }
+
+            if output_format == "table" or summary_only:
+                click.echo(f"Schedule: {schedule.id}")
+                click.echo("Mode: Stateful (balance from ledger)")
+                click.echo(f"Liability Account: {principal_account}")
+                click.echo(f"Balance as of {balance_date}: ${balance:,.2f}")
+                click.echo(
+                    f"Interest Rate: {schedule.amortization.annual_rate * 100:.3f}% "
+                    f"({schedule.amortization.compounding.value})"
+                )
+                click.echo(f"Monthly Payment: ${schedule.amortization.monthly_payment:,.2f}")
+                if schedule.amortization.extra_principal:
+                    click.echo(
+                        f"Extra Principal: ${schedule.amortization.extra_principal:,.2f}/month"
+                    )
+                click.echo(
+                    f"Forecast Horizon: {horizon_months} months ({len(all_dated_splits)} payments)"
+                )
+                if all_dated_splits and all_dated_splits[-1][1].remaining_balance == Decimal("0"):
+                    click.echo("Loan pays off within forecast horizon")
+
+        # ── static mode: derive from original loan terms ─────────────────────
+        else:
+            from .amortization import AmortizationSchedule
+
+            amort = AmortizationSchedule(
+                principal=schedule.amortization.principal,
+                annual_rate=schedule.amortization.annual_rate,
+                term_months=schedule.amortization.term_months,
+                start_date=schedule.amortization.start_date,
+                extra_principal=schedule.amortization.extra_principal,
+            )
+
+            full_schedule = amort.generate_full_schedule()
+            start_date = schedule.amortization.start_date
+
+            all_dated_splits = [
+                (start_date + relativedelta(months=split.payment_number - 1), split)
+                for split in full_schedule
+            ]
+
+            summary_info = {
+                "schedule_id": schedule.id,
+                "mode": "static",
+                "principal": float(schedule.amortization.principal),
+                "annual_rate": float(schedule.amortization.annual_rate),
+                "term_months": schedule.amortization.term_months,
+                "monthly_payment": float(amort.payment),
+            }
+
+            if output_format == "table" or summary_only:
+                click.echo(f"Schedule: {schedule.id}")
+                click.echo(f"Loan Amount: ${schedule.amortization.principal:,.2f}")
+                click.echo(f"Interest Rate: {schedule.amortization.annual_rate * 100:.3f}%")
+                click.echo(
+                    f"Term: {schedule.amortization.term_months} months "
+                    f"({schedule.amortization.term_months // 12} years)"
+                )
+                click.echo(f"Monthly Payment: ${amort.payment:,.2f}")
+                if schedule.amortization.extra_principal:
+                    click.echo(
+                        f"Extra Principal: ${schedule.amortization.extra_principal:,.2f}/month"
+                    )
+
+        # ── shared: totals, limit, output ─────────────────────────────────────
+        total_interest = sum(s.interest for _, s in all_dated_splits)
+        total_principal = sum(s.principal for _, s in all_dated_splits)
+        total_paid = sum(s.total_payment for _, s in all_dated_splits)
+
+        summary_info["total_interest"] = float(total_interest)
+        summary_info["total_principal"] = float(total_principal)
+        summary_info["total_paid"] = float(total_paid)
+
+        if output_format == "table" or summary_only:
             click.echo(f"\nTotal Interest: ${total_interest:,.2f}")
             click.echo(f"Total Principal: ${total_principal:,.2f}")
             click.echo(f"Total Paid: ${total_paid:,.2f}")
-            click.echo(f"Interest/Principal Ratio: {(total_interest / total_principal * 100):.1f}%")
+            if total_principal > 0:
+                click.echo(
+                    f"Interest/Principal Ratio: {(total_interest / total_principal * 100):.1f}%"
+                )
             click.echo()
 
         if summary_only:
             return
 
-        # Output based on format
+        display_splits = all_dated_splits[:limit] if limit else all_dated_splits
+
         if output_format == "table":
-            _print_amortization_table(display_schedule, schedule.amortization.start_date)
-            if limit and len(full_schedule) > limit:
-                click.echo(f"\n... {len(full_schedule) - limit} more payments")
-                click.echo(f"\nFinal payment #{len(full_schedule)}:")
-                final = full_schedule[-1]
+            _print_amortization_table(display_splits)
+            if limit and len(all_dated_splits) > limit:
+                click.echo(f"\n... {len(all_dated_splits) - limit} more payments")
+                click.echo(f"\nFinal payment #{len(all_dated_splits)}:")
+                _, final = all_dated_splits[-1]
                 click.echo(f"  Payment: ${final.total_payment:,.2f}")
                 click.echo(f"  Principal: ${final.principal:,.2f}")
                 click.echo(f"  Interest: ${final.interest:,.2f}")
                 click.echo(f"  Balance: ${final.remaining_balance:,.2f}")
 
         elif output_format == "csv":
-            _print_amortization_csv(display_schedule, schedule.amortization.start_date)
+            _print_amortization_csv(display_splits)
 
         elif output_format == "json":
-            _print_amortization_json(
-                display_schedule,
-                schedule.amortization.start_date,
-                {
-                    "schedule_id": schedule.id,
-                    "principal": float(schedule.amortization.principal),
-                    "annual_rate": float(schedule.amortization.annual_rate),
-                    "term_months": schedule.amortization.term_months,
-                    "monthly_payment": float(amort.payment),
-                    "total_interest": float(total_interest),
-                    "total_paid": float(total_paid),
-                },
-            )
+            _print_amortization_json(display_splits, summary_info)
 
     except Exception as e:
         click.echo(f"Error: {e}", err=True)
@@ -781,22 +900,21 @@ def amortize(
         sys.exit(1)
 
 
-def _print_amortization_table(schedule_splits, start_date):
-    """Print amortization schedule as formatted table."""
-    from dateutil.relativedelta import relativedelta
+def _print_amortization_table(dated_splits):
+    """Print amortization schedule as formatted table.
 
-    # Print header
+    Args:
+        dated_splits: List of (date, PaymentSplit) tuples, sorted by date.
+    """
     header = (
         f"{'#':>4} {'Date':>12} {'Payment':>12} {'Principal':>12} {'Interest':>12} {'Balance':>14}"
     )
     click.echo(header)
     click.echo("-" * len(header))
 
-    # Print each payment
-    for split in schedule_splits:
-        payment_date = start_date + relativedelta(months=split.payment_number - 1)
+    for idx, (payment_date, split) in enumerate(dated_splits, 1):
         row = (
-            f"{split.payment_number:>4} "
+            f"{idx:>4} "
             f"{payment_date.strftime('%Y-%m-%d'):>12} "
             f"${split.total_payment:>11,.2f} "
             f"${split.principal:>11,.2f} "
@@ -806,20 +924,19 @@ def _print_amortization_table(schedule_splits, start_date):
         click.echo(row)
 
 
-def _print_amortization_csv(schedule_splits, start_date):
-    """Print amortization schedule as CSV."""
-    from dateutil.relativedelta import relativedelta
-    import csv as csv_module
-    import sys
+def _print_amortization_csv(dated_splits):
+    """Print amortization schedule as CSV.
 
-    writer = csv_module.writer(sys.stdout)
-    writer.writerow(["Payment_Number", "Date", "Payment", "Principal", "Interest", "Balance"])
+    Args:
+        dated_splits: List of (date, PaymentSplit) tuples, sorted by date.
+    """
+    writer = csv.writer(sys.stdout)
+    writer.writerow(["#", "Date", "Payment", "Principal", "Interest", "Balance"])
 
-    for split in schedule_splits:
-        payment_date = start_date + relativedelta(months=split.payment_number - 1)
+    for idx, (payment_date, split) in enumerate(dated_splits, 1):
         writer.writerow(
             [
-                split.payment_number,
+                idx,
                 payment_date.strftime("%Y-%m-%d"),
                 f"{split.total_payment:.2f}",
                 f"{split.principal:.2f}",
@@ -829,17 +946,18 @@ def _print_amortization_csv(schedule_splits, start_date):
         )
 
 
-def _print_amortization_json(schedule_splits, start_date, summary_info):
-    """Print amortization schedule as JSON."""
-    from dateutil.relativedelta import relativedelta
-    import json as json_module
+def _print_amortization_json(dated_splits, summary_info):
+    """Print amortization schedule as JSON.
 
+    Args:
+        dated_splits: List of (date, PaymentSplit) tuples, sorted by date.
+        summary_info: Dict of summary metadata to include at top of JSON output.
+    """
     payments = []
-    for split in schedule_splits:
-        payment_date = start_date + relativedelta(months=split.payment_number - 1)
+    for idx, (payment_date, split) in enumerate(dated_splits, 1):
         payments.append(
             {
-                "payment_number": split.payment_number,
+                "number": idx,
                 "date": payment_date.strftime("%Y-%m-%d"),
                 "payment": float(split.total_payment),
                 "principal": float(split.principal),
@@ -853,7 +971,7 @@ def _print_amortization_json(schedule_splits, start_date, summary_info):
         "payments": payments,
     }
 
-    click.echo(json_module.dumps(output, indent=2))
+    click.echo(json.dumps(output, indent=2))
 
 
 @main.command()

@@ -17,6 +17,7 @@ Beanschedule is a [beangulp](https://github.com/beancount/beangulp) hook that in
 - **Forecast Generation** - Generate future transactions for budgeting and visualization (Beancount plugin)
 - **Missing Transaction Detection** - Create placeholder transactions for expected payments that didn't occur
 - **Flexible Recurrence Patterns** - Monthly, bi-monthly, weekly, bi-weekly, yearly, and custom intervals
+- **Loan Amortization** - Automatic principal/interest splits with static or ledger-driven balance modes
 - **Smart Amount Matching** - Fixed amounts with tolerance, range matching, or null amounts
 - **Beangulp Integration** - Drop-in hook for your existing import workflow
 - **CLI Tools** - Validate, test, debug, and auto-discover schedules with built-in commands
@@ -350,6 +351,59 @@ postings:
   - account: Assets:Retirement:401k
     amount: 320.00
 ```
+
+### Loan Amortization
+
+Beanschedule automatically splits loan payments into principal and interest. Two modes are available:
+
+**Static mode** — derives the full schedule from original loan terms:
+
+```yaml
+id: mortgage-payment
+# ... match, recurrence, etc.
+amortization:
+  principal: 300000.00
+  annual_rate: 0.0675
+  term_months: 360
+  start_date: 2024-01-01
+transaction:
+  postings:
+    - account: Assets:Bank:Checking
+      amount: null
+      role: payment
+    - account: Liabilities:Mortgage
+      amount: null
+      role: principal
+    - account: Expenses:Housing:Interest
+      amount: null
+      role: interest
+```
+
+**Stateful mode** — reads the current balance from your liability account in the ledger and forecasts forward. Recommended for loans where you make extra payments, had pauses, or refinanced:
+
+```yaml
+id: student-loan
+# ... match, recurrence, etc.
+amortization:
+  balance_from_ledger: true
+  annual_rate: 0.06
+  monthly_payment: 200.00
+  compounding: DAILY          # DAILY or MONTHLY
+  extra_principal: 50.00      # optional
+transaction:
+  postings:
+    - account: Assets:Bank:Checking
+      amount: null
+      role: payment
+    - account: Liabilities:StudentLoan
+      amount: null
+      role: principal
+    - account: Expenses:Education:Interest
+      amount: null
+      role: interest
+```
+
+Stateful mode only counts cleared (`*`) transactions when computing the balance — forecast (`#`) and placeholder (`!`) entries are excluded so the plugin doesn't count its own predictions as actuals.
 
 ### Range-Based Amount Matching
 

@@ -736,7 +736,7 @@ schedules:
         )
 
         assert result.exit_code == 0
-        assert "Payment_Number,Date,Payment,Principal,Interest,Balance" in result.output
+        assert "#,Date,Payment,Principal,Interest,Balance" in result.output
         assert "1,2024-01-01," in result.output
 
     def test_amortize_json_format(self, cli_runner, tmp_path):

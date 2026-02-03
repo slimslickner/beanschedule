@@ -4,7 +4,7 @@ from datetime import date
 from decimal import Decimal
 
 from beanschedule.matcher import TransactionMatcher
-from beanschedule.schema import GlobalConfig
+from beanschedule.schema import GlobalConfig, Posting
 
 
 class TestTransactionMatcher:
@@ -175,8 +175,11 @@ class TestAmountMatching:
         )
 
         schedule = sample_schedule(
-            amount=Decimal("-1500.00"),
             amount_tolerance=Decimal("5.00"),
+            postings=[
+                Posting(account="Assets:Bank:Checking", amount=Decimal("-1500.00")),
+                Posting(account="Expenses:Housing:Rent", amount=Decimal("1500.00")),
+            ],
         )
 
         # Within tolerance should score > 0
@@ -195,8 +198,11 @@ class TestAmountMatching:
         )
 
         schedule = sample_schedule(
-            amount=Decimal("-1500.00"),
             amount_tolerance=Decimal("5.00"),
+            postings=[
+                Posting(account="Assets:Bank:Checking", amount=Decimal("-1500.00")),
+                Posting(account="Expenses:Housing:Rent", amount=Decimal("1500.00")),
+            ],
         )
 
         # Outside tolerance should score 0.0
@@ -259,8 +265,11 @@ class TestAmountMatching:
         )
 
         schedule = sample_schedule(
-            amount=Decimal("-1500.00"),
             amount_tolerance=Decimal("0.00"),
+            postings=[
+                Posting(account="Assets:Bank:Checking", amount=Decimal("-1500.00")),
+                Posting(account="Expenses:Housing:Rent", amount=Decimal("1500.00")),
+            ],
         )
 
         # Zero tolerance, off by 0.01 should score 0.0

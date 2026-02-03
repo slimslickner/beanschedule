@@ -43,4 +43,11 @@ WEEKDAY_MAP = {
 }
 
 
+class CompoundingFrequency(str, Enum):
+    """Interest compounding frequency for loan amortization."""
+
+    MONTHLY = "MONTHLY"
+    DAILY = "DAILY"
+
+
 FlagType = Literal["*", "!", "P", "A", "S", "R", "C", "U", "?"]

@@ -14,6 +14,9 @@ Pre-release checklist and performance optimization opportunities before open sou
 |------|--------|---------|
 | Core matching & enrichment | ✅ Complete | v1.0 |
 | Pattern discovery (detect) | ✅ Complete | v1.1 |
+| Loan amortization (basic) | ✅ Complete | v1.1 |
+| Stateful amortization | ✅ Complete | v1.2 |
+| Amortization overrides (static) | ⚠️ Experimental | v1.1 |
 | Performance optimization | ✅ 80%+ speedup achieved | v1.0-v1.1 |
 | Quality & testing | ✅ 86% coverage | v1.0-v1.1 |
 | Error handling improvements | 🔄 Planned | v1.2 |
@@ -86,6 +89,64 @@ Pre-release checklist and performance optimization opportunities before open sou
 - [x] Integration tests using real examples (11+ tests)
 - [x] Code coverage: 86% total
 
+### Amortization Features
+
+- [x] **Basic amortization schedules** ⭐⭐⭐⭐⭐
+  - Automatic principal/interest split calculation using PMT formula
+  - Support for fixed payment loans (mortgages, auto loans, student loans)
+  - Configuration: principal, annual_rate, term_months, start_date, extra_principal
+  - Explicit `role` fields for postings (payment, interest, principal, escrow)
+  - Amortization metadata in forecast transactions (payment_number, balance_after, etc.)
+  - Mixed amortization + fixed amounts (e.g., P+I+Escrow for mortgages)
+  - CLI command: `beanschedule amortize` with table/csv/json output formats
+  - 19 comprehensive unit tests with 97% coverage
+  - Full documentation: AMORTIZATION.md, CLI_AMORTIZE.md, AMORTIZATION_WITH_ESCROW.md
+
+- [x] **Explicit posting roles** ✅
+  - Removed magic keyword matching for amortization postings
+  - Required `role` field: payment, interest, principal, escrow
+  - Clear validation errors when roles are missing
+  - Backward incompatible but clearer and more maintainable
+  - Documentation: POSTING_ROLES.md
+
+- [x] **Amortization overrides (experimental)** ⚠️
+  - Schema and basic structure implemented
+  - Allows date-based parameter changes mid-loan
+  - Override fields: principal, annual_rate, term_months, extra_principal
+  - 7 schema validation tests passing
+  - **Known limitation**: Payment number calculation needs refinement
+  - **Status**: Experimental - use for planning, verify manually
+  - Documentation: AMORTIZATION_OVERRIDES.md
+
+---
+
+## Completed Features (v1.2.0 - Stateful Amortization)
+
+### Stateful Amortization
+
+- [x] **`balance_from_ledger` mode** ⭐⭐⭐⭐⭐
+  - Reads remaining loan balance from the liability account at plugin runtime
+  - Cleared (`*`) and pending (`P`) transactions counted — forecast (`#`) and placeholder (`!`) entries excluded
+  - Uses beancount's `realization.realize()` for correct balance computation (respects pad directives, balance assertions)
+  - Walks forward from observed balance using the fixed monthly payment and interest rate
+  - Compounding: MONTHLY (`balance × rate / 12`) or DAILY (`balance × rate / 365 × actual_days`)
+  - Extra principal support per period
+  - Negative-amortization detection with warning log
+  - Forecast stops automatically once balance reaches zero
+  - Stale-balance warning when most recent cleared posting is >60 days old
+  - Configuration: `annual_rate`, `monthly_payment`, `compounding`, `extra_principal`
+  - 5 plugin integration tests + 8 schema validation tests
+
+### Cleanup
+
+- [x] **Removed `plugins/forecast.py`** — dead code; standalone narration-pattern plugin that was never integrated or tested
+
+### Bug Fixes
+
+- [x] **Fixed 3 amount-tolerance matcher tests** — tests were passing vacuously after `match.amount` deprecation; updated to supply postings so tolerance logic is actually exercised
+- [x] **Forwarded `postings` kwarg through `make_schedule` fixture** — was silently swallowed by `**kwargs`
+- [x] **Fixed `balance_from_ledger` for pending initial disbursements** — initial loan disbursements often use `P` (pending) flag; balance computation now includes both `*` and `P` transactions using beancount's `realization.realize()` instead of manual posting summation
+
 ---
 
 ## In Progress / Next Up
@@ -93,6 +154,12 @@ Pre-release checklist and performance optimization opportunities before open sou
 ### v1.2.0 - Polish & Advanced Features
 
 #### High Priority
+
+- [x] **Stateful amortization replaces override-based approach** ✅
+  - **Problem (original)**: Payment number calculation broke when overriding principal/start_date
+  - **Solution**: `balance_from_ledger` mode reads balance directly from ledger — no override math needed
+  - **Tests**: 3 static-override integration tests remain skipped (orthogonal, low priority)
+  - See Completed Features (v1.2.0) for full details
 
 - [x] **FIX: Posting amount inheritance** 🐛 ✅
   - **Problem**: If all postings have `amount: null`, they all get assigned `0` in forecast transactions
@@ -154,28 +221,16 @@ Pre-release checklist and performance optimization opportunities before open sou
   - Skip generating a scheduled instance if conditions are not met
   - Use cases: skip transfer if credit card balance is zero
 
-- [ ] **Amortization Calendars** ⭐⭐⭐⭐⭐
-  - Add support for amortization schedules (mortgages, loans, leases)
-  - Dynamic posting values that change over time (principal vs interest)
-  - Configuration fields:
-    - `loan_amount`: Total loan principal
-    - `interest_rate`: Annual interest rate (APR)
-    - `compounding_frequency`: How often interest compounds (DAILY, MONTHLY, ANNUALLY)
-      - Student loans: typically DAILY compounding
-      - Mortgages: typically MONTHLY compounding
-      - Some loans: ANNUALLY
-    - `payment_frequency`: Handled by existing recurrence rules (MONTHLY, BIWEEKLY, etc.)
-    - `term_months` or `term_payments`: Loan term (in months or number of payments)
-    - `start_date`: First payment date (via recurrence.start_date)
-  - Auto-calculate each payment's principal/interest split using amortization formula
-  - Formula accounts for compounding frequency between payments
-  - Generate postings with calculated amounts:
-    - `Expenses:House:Mortgage-Interest: <calculated interest>`
-    - `Liabilities:Mortgage: <calculated principal>`
-    - `Assets:Checking: <-total payment>`
-  - **Use cases**: Mortgages, car loans, student loans, equipment leases
-  - **Impact**: Enables accurate forecasting of loan amortization schedules without manual calculation
-  - **Note**: Compounding frequency matters! Daily vs monthly compounding affects amortization significantly
+- [x] **Amortization Calendars** ⭐⭐⭐⭐⭐ (v1.1.0 - Complete)
+  - Basic amortization implemented and working
+  - See completed features section above for details
+
+- [ ] **Advanced Amortization Features**
+  - [x] Variable compounding frequencies (DAILY, MONTHLY) — shipped in stateful mode
+  - [x] Ledger-based balance queries — shipped as `balance_from_ledger` mode
+  - [ ] Adjustable-rate mortgages (ARM) support
+  - [ ] Balloon payment schedules
+  - [ ] Interest-only periods followed by amortization
 
 - [ ] Schedule statistics command (coverage report, match rates over time)
 
@@ -258,6 +313,7 @@ Pre-release checklist and performance optimization opportunities before open sou
 3. **Regex patterns only** - No glob patterns for payees
 4. **Date matching only on exact date** - No "Nth weekday of month" rules
 5. **No transaction dependencies** - Can't express "this payment depends on that income"
+6. **Static amortization overrides are experimental** - For mid-loan changes, use stateful mode (`balance_from_ledger: true`) instead
 
 ### By Design
 

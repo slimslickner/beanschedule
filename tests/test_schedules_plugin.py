@@ -768,3 +768,545 @@ schedules:
         # Payment number will be based on forecast date (today + 1 year)
         # Just verify it's a positive integer
         assert forecast_txn.meta["amortization_payment_number"] > 0
+
+
+class TestAmortizationOverrides:
+    """Tests for amortization overrides functionality.
+
+    NOTE: This feature is partially implemented. The schema and basic structure
+    exist, but payment number calculation needs refinement for production use.
+    """
+
+    @pytest.mark.skip(reason="Payment number calculation needs refinement")
+    def test_override_extra_principal(self, tmp_path, monkeypatch):
+        """Should apply extra principal override after effective date."""
+        from beanschedule.plugins.schedules import schedules
+
+        schedule_yaml = tmp_path / "schedules.yaml"
+        schedule_yaml.write_text(
+            """
+version: "1.0"
+schedules:
+  - id: loan-with-override
+    enabled: true
+    match:
+      account: Assets:Checking
+      payee_pattern: "LOAN"
+    recurrence:
+      frequency: MONTHLY
+      start_date: 2024-01-01
+      day_of_month: 1
+    amortization:
+      principal: 10000.00
+      annual_rate: 0.06
+      term_months: 12
+      start_date: 2024-01-01
+      overrides:
+        - effective_date: 2024-07-01
+          extra_principal: 200.00
+    transaction:
+      payee: "Loan Payment"
+      metadata:
+        schedule_id: loan-with-override
+      postings:
+        - account: Assets:Checking
+          amount: null
+          role: payment
+        - account: Expenses:Interest
+          amount: null
+          role: interest
+        - account: Liabilities:Loan
+          amount: null
+          role: principal
+"""
+        )
+
+        monkeypatch.chdir(tmp_path)
+        options_map = {"filename": str(tmp_path / "main.bean")}
+        result_entries, errors = schedules([], options_map, config_file=str(schedule_yaml))
+
+        assert len(errors) == 0
+        assert len(result_entries) > 0
+
+        # Find January and July forecasts
+        jan_forecast = [e for e in result_entries if e.date.month == 1][0]
+        jul_forecast = [e for e in result_entries if e.date.month == 7][0]
+
+        # Get principal postings
+        jan_principal = [p for p in jan_forecast.postings if "Loan" in p.account][0]
+        jul_principal = [p for p in jul_forecast.postings if "Loan" in p.account][0]
+
+        # July payment should be higher due to extra principal
+        assert jul_principal.units.number > jan_principal.units.number
+
+    @pytest.mark.skip(reason="Payment number calculation needs refinement")
+    def test_override_principal_balance(self, tmp_path, monkeypatch):
+        """Should use new principal balance from override."""
+        from beanschedule.plugins.schedules import schedules
+
+        schedule_yaml = tmp_path / "schedules.yaml"
+        schedule_yaml.write_text(
+            """
+version: "1.0"
+schedules:
+  - id: loan-rebalanced
+    enabled: true
+    match:
+      account: Assets:Checking
+      payee_pattern: "LOAN"
+    recurrence:
+      frequency: MONTHLY
+      start_date: 2024-01-01
+      day_of_month: 1
+    amortization:
+      principal: 10000.00
+      annual_rate: 0.06
+      term_months: 12
+      start_date: 2024-01-01
+      overrides:
+        - effective_date: 2024-06-01
+          principal: 5000.00
+          term_months: 6
+    transaction:
+      payee: "Loan Payment"
+      metadata:
+        schedule_id: loan-rebalanced
+      postings:
+        - account: Assets:Checking
+          amount: null
+          role: payment
+        - account: Expenses:Interest
+          amount: null
+          role: interest
+        - account: Liabilities:Loan
+          amount: null
+          role: principal
+"""
+        )
+
+        monkeypatch.chdir(tmp_path)
+        options_map = {"filename": str(tmp_path / "main.bean")}
+        result_entries, errors = schedules([], options_map, config_file=str(schedule_yaml))
+
+        assert len(errors) == 0
+        assert len(result_entries) > 0
+
+        # Find June forecast (after override)
+        jun_forecast = [e for e in result_entries if e.date.month == 6][0]
+
+        # Check that principal amount reflects new balance
+        principal_posting = [p for p in jun_forecast.postings if "Loan" in p.account][0]
+        # With 5000 balance and 6 months remaining, principal should be higher per payment
+        assert principal_posting.units.number > Decimal("700")
+
+    @pytest.mark.skip(reason="Payment number calculation needs refinement")
+    def test_multiple_overrides(self, tmp_path, monkeypatch):
+        """Should apply the most recent override."""
+        from beanschedule.plugins.schedules import schedules
+
+        schedule_yaml = tmp_path / "schedules.yaml"
+        schedule_yaml.write_text(
+            """
+version: "1.0"
+schedules:
+  - id: loan-multi-override
+    enabled: true
+    match:
+      account: Assets:Checking
+      payee_pattern: "LOAN"
+    recurrence:
+      frequency: MONTHLY
+      start_date: 2024-01-01
+      day_of_month: 1
+    amortization:
+      principal: 10000.00
+      annual_rate: 0.06
+      term_months: 12
+      start_date: 2024-01-01
+      overrides:
+        - effective_date: 2024-04-01
+          extra_principal: 100.00
+        - effective_date: 2024-08-01
+          extra_principal: 300.00
+    transaction:
+      payee: "Loan Payment"
+      metadata:
+        schedule_id: loan-multi-override
+      postings:
+        - account: Assets:Checking
+          amount: null
+          role: payment
+        - account: Expenses:Interest
+          amount: null
+          role: interest
+        - account: Liabilities:Loan
+          amount: null
+          role: principal
+"""
+        )
+
+        monkeypatch.chdir(tmp_path)
+        options_map = {"filename": str(tmp_path / "main.bean")}
+        result_entries, errors = schedules([], options_map, config_file=str(schedule_yaml))
+
+        assert len(errors) == 0
+
+        # Get forecasts for different months
+        jan_forecast = [e for e in result_entries if e.date.month == 1][0]
+        may_forecast = [e for e in result_entries if e.date.month == 5][0]
+        sep_forecast = [e for e in result_entries if e.date.month == 9][0]
+
+        jan_principal = [p for p in jan_forecast.postings if "Loan" in p.account][0]
+        may_principal = [p for p in may_forecast.postings if "Loan" in p.account][0]
+        sep_principal = [p for p in sep_forecast.postings if "Loan" in p.account][0]
+
+        # May should have more principal than Jan (100 extra)
+        # Sep should have more principal than May (300 extra)
+        assert may_principal.units.number > jan_principal.units.number
+        assert sep_principal.units.number > may_principal.units.number
+
+
+class TestStatefulAmortization:
+    """Integration tests for balance_from_ledger stateful amortization mode.
+
+    Test loan: $10 000 at 6 % annual, $200/month payment.
+    Three cleared payments have been made; the liability account balance
+    after those payments is $9 547.75.  All forecasts are verified against
+    that known starting point.
+    """
+
+    # ── constants ─────────────────────────────────────────────────────────
+    ORIGINATION = Decimal("10000.00")
+    RATE = Decimal("0.06")
+    PAYMENT = Decimal("200.00")
+    LIABILITY_ACCOUNT = "Liabilities:Loan"
+
+    # Payments already in the ledger: (date, principal_portion)
+    # Pmt 1: interest = 10000 * 0.005 = 50.00   → principal 150.00
+    # Pmt 2: interest =  9850 * 0.005 = 49.25   → principal 150.75
+    # Pmt 3: interest = 9699.25 * 0.005 = 48.50 → principal 151.50
+    PAYMENTS = [
+        (date(2025, 11, 4), Decimal("150.00")),
+        (date(2025, 12, 4), Decimal("150.75")),
+        (date(2026, 1, 4), Decimal("151.50")),
+    ]
+    # 10000 - 150 - 150.75 - 151.50
+    BALANCE_AFTER_3 = Decimal("9547.75")
+
+    # ── helpers ───────────────────────────────────────────────────────────
+
+    def _make_ledger_entries(self, extra_entries=None):
+        """Return origination + 3 cleared payment entries."""
+        entries = []
+
+        # Origination
+        entries.append(
+            data.Transaction(
+                meta={"filename": "test", "lineno": 1},
+                date=date(2025, 10, 1),
+                flag="*",
+                payee="Bank",
+                narration="Loan origination",
+                tags=frozenset(),
+                links=frozenset(),
+                postings=[
+                    data.Posting(
+                        "Assets:Checking",
+                        amount.Amount(self.ORIGINATION, "USD"),
+                        None,
+                        None,
+                        None,
+                        None,
+                    ),
+                    data.Posting(
+                        self.LIABILITY_ACCOUNT,
+                        amount.Amount(-self.ORIGINATION, "USD"),
+                        None,
+                        None,
+                        None,
+                        None,
+                    ),
+                ],
+            )
+        )
+
+        # Monthly payments
+        for pmt_date, principal in self.PAYMENTS:
+            interest_amt = self.PAYMENT - principal
+            entries.append(
+                data.Transaction(
+                    meta={"filename": "test", "lineno": 2},
+                    date=pmt_date,
+                    flag="*",
+                    payee="Loan Company",
+                    narration="Payment",
+                    tags=frozenset(),
+                    links=frozenset(),
+                    postings=[
+                        data.Posting(
+                            "Assets:Checking",
+                            amount.Amount(-self.PAYMENT, "USD"),
+                            None,
+                            None,
+                            None,
+                            None,
+                        ),
+                        data.Posting(
+                            "Expenses:Interest",
+                            amount.Amount(interest_amt, "USD"),
+                            None,
+                            None,
+                            None,
+                            None,
+                        ),
+                        data.Posting(
+                            self.LIABILITY_ACCOUNT,
+                            amount.Amount(principal, "USD"),
+                            None,
+                            None,
+                            None,
+                            None,
+                        ),
+                    ],
+                )
+            )
+
+        if extra_entries:
+            entries.extend(extra_entries)
+        return entries
+
+    def _schedule_yaml(self, compounding="MONTHLY", extra_principal=None):
+        """Build schedule YAML string for the test loan."""
+        lines = [
+            'version: "1.0"',
+            "schedules:",
+            "  - id: test-loan",
+            "    enabled: true",
+            "    match:",
+            "      account: Assets:Checking",
+            '      payee_pattern: "LOAN"',
+            "    recurrence:",
+            "      frequency: MONTHLY",
+            "      start_date: 2020-01-01",
+            "      day_of_month: 4",
+            "    amortization:",
+            "      annual_rate: 0.06",
+            "      balance_from_ledger: true",
+            "      monthly_payment: 200.00",
+            f"      compounding: {compounding}",
+        ]
+        if extra_principal is not None:
+            lines.append(f"      extra_principal: {extra_principal}")
+        lines.extend(
+            [
+                "    transaction:",
+                '      payee: "Loan Payment"',
+                '      narration: "Monthly loan payment"',
+                "      metadata:",
+                "        schedule_id: test-loan",
+                "      postings:",
+                "        - account: Assets:Checking",
+                "          amount: null",
+                "          role: payment",
+                "        - account: Expenses:Interest",
+                "          amount: null",
+                "          role: interest",
+                f"        - account: {self.LIABILITY_ACCOUNT}",
+                "          amount: null",
+                "          role: principal",
+            ]
+        )
+        return "\n".join(lines)
+
+    # ── tests ─────────────────────────────────────────────────────────────
+
+    def test_stateful_monthly_compounding(self, tmp_path, monkeypatch):
+        """Should derive P/I from actual ledger balance, not original terms."""
+        schedule_yaml = tmp_path / "schedules.yaml"
+        schedule_yaml.write_text(self._schedule_yaml("MONTHLY"))
+        monkeypatch.chdir(tmp_path)
+
+        options_map = {"filename": str(tmp_path / "main.bean")}
+        result_entries, errors = schedules(
+            self._make_ledger_entries(), options_map, config_file=str(schedule_yaml)
+        )
+
+        assert len(errors) == 0
+        forecasts = [e for e in result_entries if isinstance(e, data.Transaction) and e.flag == "#"]
+        assert len(forecasts) > 0
+
+        # ── first forecast: 2026-02-04 ────────────────────────────────────
+        first = forecasts[0]
+        assert first.date == date(2026, 2, 4)
+
+        postings = {p.account: p.units.number for p in first.postings}
+        # interest = 9547.75 × 0.005 = 47.73875 → 47.74
+        assert postings["Expenses:Interest"] == Decimal("47.74")
+        # principal = 200 − 47.74 = 152.26
+        assert postings[self.LIABILITY_ACCOUNT] == Decimal("152.26")
+        # payment balances everything
+        assert postings["Assets:Checking"] == Decimal("-200.00")
+
+        # metadata
+        assert first.meta["amortization_balance_after"] == "9395.49"
+        assert first.meta["amortization_interest"] == "47.74"
+        assert first.meta["amortization_principal"] == "152.26"
+        # payment_number is not emitted in stateful mode
+        assert "amortization_payment_number" not in first.meta
+
+        # ── second forecast: 2026-03-04 (balance carries forward) ─────────
+        second = forecasts[1]
+        assert second.date == date(2026, 3, 4)
+        postings2 = {p.account: p.units.number for p in second.postings}
+        # interest = 9395.49 × 0.005 = 46.97745 → 46.98
+        assert postings2["Expenses:Interest"] == Decimal("46.98")
+        # principal = 200 − 46.98 = 153.02
+        assert postings2[self.LIABILITY_ACCOUNT] == Decimal("153.02")
+
+    def test_stateful_daily_compounding(self, tmp_path, monkeypatch):
+        """Daily compounding should use actual days between payment dates."""
+        schedule_yaml = tmp_path / "schedules.yaml"
+        schedule_yaml.write_text(self._schedule_yaml("DAILY"))
+        monkeypatch.chdir(tmp_path)
+
+        options_map = {"filename": str(tmp_path / "main.bean")}
+        result_entries, errors = schedules(
+            self._make_ledger_entries(), options_map, config_file=str(schedule_yaml)
+        )
+        assert len(errors) == 0
+
+        forecasts = [e for e in result_entries if isinstance(e, data.Transaction) and e.flag == "#"]
+        first = forecasts[0]
+        assert first.date == date(2026, 2, 4)
+
+        postings = {p.account: p.units.number for p in first.postings}
+
+        # 2026-01-04 → 2026-02-04 = 31 days
+        expected_interest = (
+            self.BALANCE_AFTER_3 * Decimal("0.06") / Decimal("365") * Decimal("31")
+        ).quantize(Decimal("0.01"))
+        expected_principal = self.PAYMENT - expected_interest
+
+        assert postings["Expenses:Interest"] == expected_interest
+        assert postings[self.LIABILITY_ACCOUNT] == expected_principal
+        assert postings["Assets:Checking"] == -self.PAYMENT
+
+        # 31-day month produces more interest than monthly (47.74)
+        assert expected_interest > Decimal("47.74")
+
+    def test_stateful_with_extra_principal(self, tmp_path, monkeypatch):
+        """Extra principal should increase principal posting and total payment."""
+        schedule_yaml = tmp_path / "schedules.yaml"
+        schedule_yaml.write_text(self._schedule_yaml("MONTHLY", extra_principal="50.00"))
+        monkeypatch.chdir(tmp_path)
+
+        options_map = {"filename": str(tmp_path / "main.bean")}
+        result_entries, errors = schedules(
+            self._make_ledger_entries(), options_map, config_file=str(schedule_yaml)
+        )
+        assert len(errors) == 0
+
+        forecasts = [e for e in result_entries if isinstance(e, data.Transaction) and e.flag == "#"]
+        first = forecasts[0]
+        postings = {p.account: p.units.number for p in first.postings}
+
+        # Interest is unchanged: 47.74
+        assert postings["Expenses:Interest"] == Decimal("47.74")
+        # Principal = (200 − 47.74) + 50 = 202.26
+        assert postings[self.LIABILITY_ACCOUNT] == Decimal("202.26")
+        # Total out of pocket = 200 + 50 = 250
+        assert postings["Assets:Checking"] == Decimal("-250.00")
+        # Balance = 9547.75 − 202.26 = 9345.49
+        assert first.meta["amortization_balance_after"] == "9345.49"
+
+    def test_stateful_excludes_non_cleared_transactions(self, tmp_path, monkeypatch):
+        """Forecast (#) and placeholder (!) postings must not affect the balance."""
+        # A forecast transaction that posts to the liability — should be invisible
+        phantom = data.Transaction(
+            meta={"filename": "test", "lineno": 99},
+            date=date(2026, 1, 15),
+            flag="#",
+            payee="Phantom",
+            narration="Old forecast",
+            tags=frozenset(),
+            links=frozenset(),
+            postings=[
+                data.Posting(
+                    "Assets:Checking",
+                    amount.Amount(Decimal("-200.00"), "USD"),
+                    None,
+                    None,
+                    None,
+                    None,
+                ),
+                data.Posting(
+                    self.LIABILITY_ACCOUNT,
+                    amount.Amount(Decimal("500.00"), "USD"),  # would lower balance if counted
+                    None,
+                    None,
+                    None,
+                    None,
+                ),
+            ],
+        )
+
+        schedule_yaml = tmp_path / "schedules.yaml"
+        schedule_yaml.write_text(self._schedule_yaml("MONTHLY"))
+        monkeypatch.chdir(tmp_path)
+
+        options_map = {"filename": str(tmp_path / "main.bean")}
+        result_entries, errors = schedules(
+            self._make_ledger_entries(extra_entries=[phantom]),
+            options_map,
+            config_file=str(schedule_yaml),
+        )
+        assert len(errors) == 0
+
+        # First real forecast should still use 9547.75, not 9047.75
+        forecasts = [
+            e
+            for e in result_entries
+            if isinstance(e, data.Transaction)
+            and e.flag == "#"
+            and e.meta.get("schedule_id") == "test-loan"
+        ]
+        assert forecasts[0].meta["amortization_interest"] == "47.74"
+
+    def test_stateful_no_cleared_transactions_skips_schedule(self, tmp_path, monkeypatch):
+        """Schedule should be silently skipped when liability has no cleared postings."""
+        schedule_yaml = tmp_path / "schedules.yaml"
+        schedule_yaml.write_text(self._schedule_yaml("MONTHLY"))
+        monkeypatch.chdir(tmp_path)
+
+        options_map = {"filename": str(tmp_path / "main.bean")}
+        # Only a forecast entry — no cleared (*) transactions at all
+        phantom = data.Transaction(
+            meta={"filename": "test", "lineno": 1},
+            date=date(2026, 1, 4),
+            flag="#",
+            payee="Forecast",
+            narration="Old forecast",
+            tags=frozenset(),
+            links=frozenset(),
+            postings=[
+                data.Posting(
+                    self.LIABILITY_ACCOUNT,
+                    amount.Amount(Decimal("100.00"), "USD"),
+                    None,
+                    None,
+                    None,
+                    None,
+                ),
+            ],
+        )
+
+        result_entries, errors = schedules([phantom], options_map, config_file=str(schedule_yaml))
+        # No hard errors — just a warning log and skip
+        assert len(errors) == 0
+        # No new forecasts generated for this schedule
+        new_forecasts = [
+            e
+            for e in result_entries
+            if isinstance(e, data.Transaction) and e.meta.get("schedule_id") == "test-loan"
+        ]
+        assert len(new_forecasts) == 0

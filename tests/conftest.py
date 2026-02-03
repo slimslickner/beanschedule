@@ -221,6 +221,7 @@ def make_schedule(
         payee=kwargs.get("payee", payee_pattern),
         narration=kwargs.get("narration", "Test transaction"),
         schedule_id=id,
+        postings=kwargs.get("postings"),
     )
 
     missing_txn = MissingTransactionConfig(

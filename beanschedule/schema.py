@@ -5,9 +5,9 @@ from decimal import Decimal
 from pathlib import Path
 from typing import Any, Optional
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from .types import DayOfWeek, FlagType, FrequencyType
+from .types import CompoundingFrequency, DayOfWeek, FlagType, FrequencyType
 
 # Constants for validation
 MIN_DAY_OF_MONTH = 1
@@ -183,33 +183,129 @@ class MissingTransactionConfig(BaseModel):
     narration_prefix: str = Field("[MISSING]", description="Prefix for narration")
 
 
+class AmortizationOverride(BaseModel):
+    """Override amortization parameters starting from a specific date.
+
+    Allows adjusting loan parameters mid-term (e.g., starting extra payments,
+    updating balance after lump sum payment, changing rate after refinance).
+
+    Example:
+        overrides:
+          - effective_date: 2029-01-01
+            principal: 285432.18
+            extra_principal: 500.00
+    """
+
+    effective_date: date = Field(..., description="Date when override becomes effective")
+    principal: Optional[Decimal] = Field(None, description="New principal balance")
+    annual_rate: Optional[Decimal] = Field(None, description="New annual interest rate")
+    term_months: Optional[int] = Field(None, description="New remaining term in months")
+    extra_principal: Optional[Decimal] = Field(None, description="New extra principal amount")
+
+    @field_validator("principal")
+    @classmethod
+    def validate_principal_positive(cls, v: Optional[Decimal]) -> Optional[Decimal]:
+        """Ensure principal is positive if provided."""
+        if v is not None and v <= 0:
+            raise ValueError("principal must be positive")
+        return v
+
+    @field_validator("annual_rate")
+    @classmethod
+    def validate_rate_nonnegative(cls, v: Optional[Decimal]) -> Optional[Decimal]:
+        """Ensure annual_rate is non-negative if provided."""
+        if v is not None and v < 0:
+            raise ValueError("annual_rate must be non-negative")
+        return v
+
+    @field_validator("term_months")
+    @classmethod
+    def validate_term_positive(cls, v: Optional[int]) -> Optional[int]:
+        """Ensure term_months is positive if provided."""
+        if v is not None and v <= 0:
+            raise ValueError("term_months must be positive")
+        return v
+
+    @field_validator("extra_principal")
+    @classmethod
+    def validate_extra_principal_nonnegative(cls, v: Optional[Decimal]) -> Optional[Decimal]:
+        """Ensure extra_principal is non-negative if provided."""
+        if v is not None and v < 0:
+            raise ValueError("extra_principal must be non-negative")
+        return v
+
+
 class AmortizationConfig(BaseModel):
     """Loan amortization configuration for automatic principal/interest split.
 
-    When configured, the schedule will automatically calculate principal and
-    interest components for each payment based on loan parameters.
+    Two modes, selected by ``balance_from_ledger``:
 
-    Example:
+    **Static mode** (default) — PMT is derived from original loan terms.
+      Required: principal, annual_rate, term_months, start_date.
+
+    **Stateful mode** (balance_from_ledger: true) — balance is read from the
+      liability account in the ledger at runtime; only the current fixed payment
+      and rate are needed.  Original loan terms are not required.
+      Required: annual_rate, monthly_payment.
+
+    Static example::
+
         amortization:
           principal: 300000.00
           annual_rate: 0.0675
           term_months: 360
           start_date: 2024-01-01
+
+    Stateful example::
+
+        amortization:
+          annual_rate: 0.04875
+          balance_from_ledger: true
+          monthly_payment: 1931.67
+          compounding: MONTHLY          # or DAILY
+          extra_principal: 200.00       # optional
     """
 
-    principal: Decimal = Field(..., description="Initial loan principal amount")
+    # ── shared ────────────────────────────────────────────────────────────
     annual_rate: Decimal = Field(..., description="Annual interest rate (e.g., 0.0675 for 6.75%)")
-    term_months: int = Field(..., description="Loan term in months")
-    start_date: date = Field(..., description="First payment date")
     extra_principal: Optional[Decimal] = Field(
         None, description="Optional extra principal payment per period"
     )
+    overrides: Optional[list[AmortizationOverride]] = Field(
+        None, description="Date-based parameter overrides for mid-loan changes"
+    )
+
+    # ── static mode ───────────────────────────────────────────────────────
+    principal: Optional[Decimal] = Field(
+        None, description="Initial loan principal (required for static mode)"
+    )
+    term_months: Optional[int] = Field(
+        None, description="Loan term in months (required for static mode)"
+    )
+    start_date: Optional[date] = Field(
+        None, description="First payment date (required for static mode)"
+    )
+
+    # ── stateful mode ─────────────────────────────────────────────────────
+    balance_from_ledger: bool = Field(
+        False,
+        description="Read starting balance from the liability account in the ledger",
+    )
+    monthly_payment: Optional[Decimal] = Field(
+        None, description="Fixed P&I payment amount (required for stateful mode)"
+    )
+    compounding: CompoundingFrequency = Field(
+        CompoundingFrequency.MONTHLY,
+        description="Interest compounding frequency (MONTHLY or DAILY)",
+    )
+
+    # ── validators ────────────────────────────────────────────────────────
 
     @field_validator("principal")
     @classmethod
-    def validate_principal_positive(cls, v: Decimal) -> Decimal:
-        """Ensure principal is positive."""
-        if v <= 0:
+    def validate_principal_positive(cls, v: Optional[Decimal]) -> Optional[Decimal]:
+        """Ensure principal is positive if provided."""
+        if v is not None and v <= 0:
             raise ValueError("principal must be positive")
         return v
 
@@ -223,9 +319,9 @@ class AmortizationConfig(BaseModel):
 
     @field_validator("term_months")
     @classmethod
-    def validate_term_positive(cls, v: int) -> int:
-        """Ensure term_months is positive."""
-        if v <= 0:
+    def validate_term_positive(cls, v: Optional[int]) -> Optional[int]:
+        """Ensure term_months is positive if provided."""
+        if v is not None and v <= 0:
             raise ValueError("term_months must be positive")
         return v
 
@@ -236,6 +332,35 @@ class AmortizationConfig(BaseModel):
         if v is not None and v < 0:
             raise ValueError("extra_principal must be non-negative")
         return v
+
+    @field_validator("monthly_payment")
+    @classmethod
+    def validate_monthly_payment_positive(cls, v: Optional[Decimal]) -> Optional[Decimal]:
+        """Ensure monthly_payment is positive if provided."""
+        if v is not None and v <= 0:
+            raise ValueError("monthly_payment must be positive")
+        return v
+
+    @model_validator(mode="after")
+    def validate_mode_fields(self) -> "AmortizationConfig":
+        """Enforce required fields based on selected mode."""
+        if self.balance_from_ledger:
+            if self.monthly_payment is None:
+                raise ValueError("monthly_payment is required when balance_from_ledger is true")
+        else:
+            if self.principal is None:
+                raise ValueError(
+                    "principal is required when balance_from_ledger is false (static mode)"
+                )
+            if self.term_months is None:
+                raise ValueError(
+                    "term_months is required when balance_from_ledger is false (static mode)"
+                )
+            if self.start_date is None:
+                raise ValueError(
+                    "start_date is required when balance_from_ledger is false (static mode)"
+                )
+        return self
 
 
 class Schedule(BaseModel):
