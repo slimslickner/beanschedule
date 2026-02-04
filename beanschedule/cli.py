@@ -767,8 +767,20 @@ def amortize(
             today = date.today()
             horizon_months = horizon or 12
             forecast_end = today + relativedelta(months=horizon_months)
+
+            # Determine occurrence dates: use payment_day_of_month if set, otherwise use transaction recurrence
             engine = RecurrenceEngine()
-            occurrences = engine.generate(schedule, today, forecast_end)
+            if schedule.amortization.payment_day_of_month:
+                # Create a temporary schedule with payment_day_of_month as the recurrence day
+                # This ensures the recurrence engine generates dates on actual payment dates
+                from copy import deepcopy
+
+                amort_schedule = deepcopy(schedule)
+                amort_schedule.recurrence.day_of_month = schedule.amortization.payment_day_of_month
+                occurrences = engine.generate(amort_schedule, today, forecast_end)
+            else:
+                # Use transaction recurrence dates
+                occurrences = engine.generate(schedule, today, forecast_end)
 
             splits_dict = compute_stateful_splits(
                 monthly_payment=schedule.amortization.monthly_payment,
