@@ -6,6 +6,7 @@ from datetime import date, datetime
 from dateutil.rrule import MONTHLY, WEEKLY, YEARLY, rrule
 from dateutil.rrule import MO, TU, WE, TH, FR, SA, SU
 
+from . import constants
 from .schema import RecurrenceRule, Schedule
 from .types import WEEKDAY_MAP, FrequencyType
 
@@ -295,7 +296,7 @@ class RecurrenceEngine:
                 MONTHLY,
                 dtstart=datetime.combine(start_date, datetime.min.time()),
                 until=datetime.combine(end_date, datetime.max.time()),
-                bymonthday=-1,  # -1 means last day of month
+                bymonthday=constants.LAST_DAY_OF_MONTH_INDICATOR,  # Last day of month
             ),
         )
 

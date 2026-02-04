@@ -3,7 +3,7 @@
 [![PyPI version](https://badge.fury.io/py/beanschedule.svg)](https://pypi.org/project/beanschedule/)
 [![Python Support](https://img.shields.io/pypi/pyversions/beanschedule.svg)](https://pypi.org/project/beanschedule/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Tests](https://github.com/yourusername/beanschedule/workflows/tests/badge.svg)](https://github.com/yourusername/beanschedule/actions)
+[![Tests](https://github.com/slimslickner/beanschedule/workflows/tests/badge.svg)](https://github.com/slimslickner/beanschedule/actions)
 
 **Scheduled transaction framework for Beancount** - automatically match, enrich, and track recurring transactions.
 
@@ -547,18 +547,10 @@ See the [examples/](examples/) directory for:
 - Sample `example.beancount` ledger
 - Detailed README with usage tips
 
-Additional documentation:
-
-- **Installation Guide** - [docs/installation.md](docs/installation.md)
-- **Quick Start** - [docs/quickstart.md](docs/quickstart.md)
-- **User Guide** - [docs/user-guide.md](docs/user-guide.md)
-- **Schedule Format Reference** - [docs/schedule-format.md](docs/schedule-format.md)
-- **Recurrence Patterns** - [docs/recurrence-patterns.md](docs/recurrence-patterns.md)
-- **Troubleshooting** - [docs/troubleshooting.md](docs/troubleshooting.md)
 
 ## Requirements
 
-- Python 3.9+
+- Python 3.11+
 - beancount >= 3.2.0
 - beangulp >= 0.2.0
 - pyyaml >= 6.0
@@ -580,8 +572,8 @@ Built for the [Beancount](https://github.com/beancount/beancount) plain text acc
 
 ## Support
 
-- **Issues**: [GitHub Issues](https://github.com/yourusername/beanschedule/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/yourusername/beanschedule/discussions)
+- **Issues**: [GitHub Issues](https://github.com/slimslickner/beanschedule/issues)
+- **Discussions**: [GitHub Discussions](https://github.com/slimslickner/beanschedule/discussions)
 - **Email**: Contact the maintainers
 
 ---

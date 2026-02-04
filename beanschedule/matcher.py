@@ -9,6 +9,7 @@ from typing import Optional
 
 from beancount.core import data
 
+from . import constants
 from .schema import GlobalConfig, Schedule
 
 logger = logging.getLogger(__name__)
@@ -63,7 +64,7 @@ class TransactionMatcher:
         date_score = self._date_score(transaction, schedule, expected_date)
 
         # Weighted combination
-        total_score = (payee_score * 0.4) + (amount_score * 0.4) + (date_score * 0.2)
+        total_score = (payee_score * constants.PAYEE_SCORE_WEIGHT) + (amount_score * constants.AMOUNT_SCORE_WEIGHT) + (date_score * constants.DATE_SCORE_WEIGHT)
 
         logger.debug(
             "Match score for %s vs %s: %.2f (payee=%.2f, amount=%.2f, date=%.2f)",
@@ -109,8 +110,7 @@ class TransactionMatcher:
 
     def _is_regex_pattern(self, pattern: str) -> bool:
         """Detect if pattern is likely a regex."""
-        regex_indicators = ["|", ".*", ".+", "\\", "[", "]", "(", ")", "^", "$"]
-        return any(indicator in pattern for indicator in regex_indicators)
+        return any(indicator in pattern for indicator in constants.REGEX_INDICATORS)
 
     def _regex_match(self, payee: str, pattern: str) -> float:
         """

@@ -15,6 +15,7 @@ from typing import Optional
 
 from beancount.core import data
 
+from . import constants
 from .types import DayOfWeek, FrequencyType
 
 logger = logging.getLogger(__name__)
@@ -186,10 +187,10 @@ class RecurrenceDetector:
 
     def __init__(
         self,
-        fuzzy_threshold: float = 0.85,
-        amount_tolerance_pct: float = 0.05,
-        min_occurrences: int = 3,
-        min_confidence: float = 0.60,
+        fuzzy_threshold: float = constants.DETECTOR_FUZZY_THRESHOLD,
+        amount_tolerance_pct: float = constants.DETECTOR_AMOUNT_TOLERANCE_PCT,
+        min_occurrences: int = constants.DETECTOR_MIN_OCCURRENCES,
+        min_confidence: float = constants.DETECTOR_MIN_CONFIDENCE,
     ):
         """Initialize detector with configurable thresholds.
 
@@ -467,7 +468,7 @@ class RecurrenceDetector:
 
         # Try to match to known frequencies
         # Weekly (7 days)
-        if 6 <= median_gap <= 8:
+        if constants.WEEKLY_GAP_RANGE[0] <= median_gap <= constants.WEEKLY_GAP_RANGE[1]:
             day_of_week = self._get_most_common_weekday(group.dates)
             return FrequencyDetection(
                 frequency=FrequencyType.WEEKLY,
@@ -477,7 +478,7 @@ class RecurrenceDetector:
             )
 
         # Bi-weekly (14 days)
-        if 12 <= median_gap <= 16:
+        if constants.BIWEEKLY_GAP_RANGE[0] <= median_gap <= constants.BIWEEKLY_GAP_RANGE[1]:
             day_of_week = self._get_most_common_weekday(group.dates)
             return FrequencyDetection(
                 frequency=FrequencyType.WEEKLY,
@@ -487,7 +488,7 @@ class RecurrenceDetector:
             )
 
         # Monthly (28-32 days)
-        if 25 <= median_gap <= 35:
+        if constants.MONTHLY_GAP_RANGE[0] <= median_gap <= constants.MONTHLY_GAP_RANGE[1]:
             day_of_month = self._get_most_common_day_of_month(group.dates)
             return FrequencyDetection(
                 frequency=FrequencyType.MONTHLY,
@@ -496,7 +497,7 @@ class RecurrenceDetector:
             )
 
         # Quarterly (88-92 days, ~3 months)
-        if 85 <= median_gap <= 95:
+        if constants.QUARTERLY_GAP_RANGE[0] <= median_gap <= constants.QUARTERLY_GAP_RANGE[1]:
             day_of_month = self._get_most_common_day_of_month(group.dates)
             return FrequencyDetection(
                 frequency=FrequencyType.INTERVAL,
@@ -506,7 +507,7 @@ class RecurrenceDetector:
             )
 
         # Yearly (360-370 days)
-        if 355 <= median_gap <= 375:
+        if constants.YEARLY_GAP_RANGE[0] <= median_gap <= constants.YEARLY_GAP_RANGE[1]:
             month, day = self._get_most_common_month_day(group.dates)
             return FrequencyDetection(
                 frequency=FrequencyType.YEARLY,
@@ -552,10 +553,10 @@ class RecurrenceDetector:
 
         # Sample size: penalize small sample sizes
         # 3 = 0.8, 5 = 0.9, 10+ = 1.0
-        sample_size_score = min(1.0, 0.7 + (group.count / 15.0))
+        sample_size_score = min(1.0, constants.SAMPLE_SIZE_INTERCEPT + (group.count / constants.SAMPLE_SIZE_DENOMINATOR))
 
         # Weighted combination
-        confidence = (coverage_score * 0.5) + (regularity_score * 0.3) + (sample_size_score * 0.2)
+        confidence = (coverage_score * constants.COVERAGE_WEIGHT) + (regularity_score * constants.REGULARITY_WEIGHT) + (sample_size_score * constants.SAMPLE_SIZE_WEIGHT)
 
         # Apply frequency detection penalty
         confidence *= 1.0 - frequency.confidence_penalty

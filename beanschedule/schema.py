@@ -7,13 +7,8 @@ from typing import Any, Optional
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from . import constants
 from .types import CompoundingFrequency, DayOfWeek, FlagType, FrequencyType
-
-# Constants for validation
-MIN_DAY_OF_MONTH = 1
-MAX_DAY_OF_MONTH = 31
-MIN_MONTH = 1
-MAX_MONTH = 12
 
 
 class MatchCriteria(BaseModel):
@@ -29,7 +24,7 @@ class MatchCriteria(BaseModel):
     amount_tolerance: Optional[Decimal] = Field(None, description="Amount tolerance (±)")
     amount_min: Optional[Decimal] = Field(None, description="Minimum amount for range")
     amount_max: Optional[Decimal] = Field(None, description="Maximum amount for range")
-    date_window_days: Optional[int] = Field(3, description="Date matching window (±days)")
+    date_window_days: Optional[int] = Field(constants.DEFAULT_DATE_WINDOW_DAYS, description="Date matching window (±days)")
 
     @field_validator("amount_tolerance")
     @classmethod
@@ -80,8 +75,8 @@ class RecurrenceRule(BaseModel):
     @classmethod
     def validate_day_of_month(cls, v: Optional[int]) -> Optional[int]:
         """Ensure day_of_month is in valid range."""
-        if v is not None and (v < MIN_DAY_OF_MONTH or v > MAX_DAY_OF_MONTH):
-            msg = f"day_of_month must be between {MIN_DAY_OF_MONTH} and {MAX_DAY_OF_MONTH}"
+        if v is not None and (v < constants.MIN_DAY_OF_MONTH or v > constants.MAX_DAY_OF_MONTH):
+            msg = f"day_of_month must be between {constants.MIN_DAY_OF_MONTH} and {constants.MAX_DAY_OF_MONTH}"
             raise ValueError(msg)
         return v
 
@@ -89,8 +84,8 @@ class RecurrenceRule(BaseModel):
     @classmethod
     def validate_month(cls, v: Optional[int]) -> Optional[int]:
         """Ensure month is in valid range."""
-        if v is not None and (v < MIN_MONTH or v > MAX_MONTH):
-            msg = f"month must be between {MIN_MONTH} and {MAX_MONTH}"
+        if v is not None and (v < constants.MIN_MONTH or v > constants.MAX_MONTH):
+            msg = f"month must be between {constants.MIN_MONTH} and {constants.MAX_MONTH}"
             raise ValueError(msg)
         return v
 
@@ -116,8 +111,8 @@ class RecurrenceRule(BaseModel):
         """Ensure days_of_month are in valid range."""
         if v is not None:
             for day in v:
-                if day < MIN_DAY_OF_MONTH or day > MAX_DAY_OF_MONTH:
-                    msg = f"days_of_month must be between {MIN_DAY_OF_MONTH} and {MAX_DAY_OF_MONTH}"
+                if day < constants.MIN_DAY_OF_MONTH or day > constants.MAX_DAY_OF_MONTH:
+                    msg = f"days_of_month must be between {constants.MIN_DAY_OF_MONTH} and {constants.MAX_DAY_OF_MONTH}"
                     raise ValueError(msg)
         return v
 
@@ -179,8 +174,8 @@ class MissingTransactionConfig(BaseModel):
     """Configuration for missing transactions."""
 
     create_placeholder: bool = Field(True, description="Create placeholder transaction")
-    flag: FlagType = Field("!", description="Transaction flag for placeholder")
-    narration_prefix: str = Field("[MISSING]", description="Prefix for narration")
+    flag: FlagType = Field(constants.DEFAULT_PLACEHOLDER_FLAG, description="Transaction flag for placeholder")
+    narration_prefix: str = Field(constants.DEFAULT_MISSING_PREFIX, description="Prefix for narration")
 
 
 class AmortizationOverride(BaseModel):
@@ -428,14 +423,14 @@ class Schedule(BaseModel):
 class GlobalConfig(BaseModel):
     """Global configuration for beanschedule."""
 
-    default_currency: str = Field("USD", description="Default currency for transactions")
-    fuzzy_match_threshold: float = Field(0.80, description="Fuzzy match threshold (0.0-1.0)")
-    default_date_window_days: int = Field(3, description="Default date window (±days)")
+    default_currency: str = Field(constants.DEFAULT_CURRENCY, description="Default currency for transactions")
+    fuzzy_match_threshold: float = Field(constants.DEFAULT_FUZZY_MATCH_THRESHOLD, description="Fuzzy match threshold (0.0-1.0)")
+    default_date_window_days: int = Field(constants.DEFAULT_DATE_WINDOW_DAYS, description="Default date window (±days)")
     default_amount_tolerance_percent: float = Field(
-        0.02,
+        constants.DEFAULT_AMOUNT_TOLERANCE_PERCENT,
         description="Default amount tolerance (%)",
     )
-    placeholder_flag: FlagType = Field("!", description="Flag for placeholder transactions")
+    placeholder_flag: FlagType = Field(constants.DEFAULT_PLACEHOLDER_FLAG, description="Flag for placeholder transactions")
 
     @field_validator("fuzzy_match_threshold")
     @classmethod
@@ -449,6 +444,6 @@ class GlobalConfig(BaseModel):
 class ScheduleFile(BaseModel):
     """Root schedule file structure."""
 
-    version: str = Field("1.0", description="Schedule file format version")
+    version: str = Field(constants.SCHEDULE_FILE_VERSION, description="Schedule file format version")
     schedules: list[Schedule] = Field(default_factory=list, description="List of schedules")
     config: GlobalConfig = Field(default_factory=GlobalConfig, description="Global configuration")

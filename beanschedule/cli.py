@@ -19,7 +19,7 @@ from beancount import loader as beancount_loader
 from beancount.core import data
 from dateutil.relativedelta import relativedelta
 
-from . import __version__
+from . import __version__, constants
 from .loader import load_schedules_file, load_schedules_from_directory
 from .recurrence import RecurrenceEngine
 from .types import DayOfWeek, FrequencyType
@@ -35,7 +35,7 @@ def complete_schedule_id(ctx, _, incomplete):
     Used for shell tab completion on schedule_id arguments.
     """
     # Try to get schedules-path from context, use default if not available or None
-    schedules_path = ctx.params.get("schedules_path") or "schedules"
+    schedules_path = ctx.params.get("schedules_path") or constants.DEFAULT_SCHEDULES_DIR
     path_obj = Path(schedules_path)
 
     try:

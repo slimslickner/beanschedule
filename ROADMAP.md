@@ -12,6 +12,7 @@ Roadmap for open-sourcing beanschedule with focus on code quality, documentation
 | **Test Coverage** | 86% | 90%+ |
 | **Type Hints** | ~90% | 100% |
 | **Docstrings** | ~85% | 100% |
+| **Critical Release Blockers** | 8/10 ✅ | 10/10 |
 
 ### What's Working
 
@@ -29,27 +30,27 @@ Roadmap for open-sourcing beanschedule with focus on code quality, documentation
 
 | Task | Status | Notes |
 |------|--------|-------|
-| Fix README URLs | ❌ | Change `yourusername` → `slimslickner` |
-| Fix README Python version | ❌ | Says "3.9+" but requires 3.11+ |
-| Remove dead README links | ❌ | `docs/` directory doesn't exist |
-| Create CONTRIBUTING.md | ❌ | Referenced but missing |
-| Create CHANGELOG.md | ❌ | Referenced in pyproject.toml |
-| Create CODE_OF_CONDUCT.md | ❌ | Standard for open source |
-| Create SECURITY.md | ❌ | Security policy |
-| Add GitHub Actions CI | ❌ | `.github/workflows/` is empty |
-| Move ruff to dev deps | ❌ | Currently in runtime dependencies |
-| Remove dead code | ❌ | `_match_ledger_transactions()` in hook.py |
+| Fix README URLs | ✅ | Changed `yourusername` → `slimslickner` |
+| Fix README Python version | ✅ | Fixed "3.9+" → "3.11+" |
+| Remove dead README links | ✅ | Removed `docs/` references |
+| Create CONTRIBUTING.md | ⏸️ | Deferred: not critical for initial release |
+| Create CHANGELOG.md | ✅ | Created with Keep a Changelog format |
+| Create CODE_OF_CONDUCT.md | ⏸️ | Deferred: not critical for initial release |
+| Create SECURITY.md | ✅ | Created with vulnerability reporting policy |
+| Add GitHub Actions CI | ✅ | Created `.github/workflows/tests.yml` |
+| Move ruff to dev deps | ✅ | Moved from runtime to dev dependencies |
+| Remove dead code | ✅ | Removed `_match_ledger_transactions()` in hook.py |
 
 ### High Priority (Should Fix Before Release)
 
 | Task | Status | Notes |
 |------|--------|-------|
-| Create `constants.py` | ❌ | Extract 15+ magic strings |
-| Extract `slugify` to utils.py | ❌ | Circular import risk in detector.py |
-| Add issue templates | ❌ | Bug report, feature request |
-| Add PR template | ❌ | Standard checklist |
-| Consolidate duplicate code | ❌ | `_generate_bimonthly` == `_generate_monthly_on_days` |
-| Add helper `load_schedules_from_path()` | ❌ | Reduce CLI duplication |
+| Create `constants.py` | ✅ | 71 constants extracted, 2-pass refactoring complete, all files using constants |
+| Extract `slugify` to utils.py | ⏳ | Next: Circular import risk in detector.py |
+| Add issue templates | ⏸️ | Deferred: Not critical for release |
+| Add PR template | ⏸️ | Deferred: Not critical for release |
+| Consolidate duplicate code | ⏳ | Next: `_generate_bimonthly` == `_generate_monthly_on_days` |
+| Add helper `load_schedules_from_path()` | ⏳ | Next: Reduce CLI duplication |
 
 ### Medium Priority (Polish)
 
@@ -65,9 +66,9 @@ Roadmap for open-sourcing beanschedule with focus on code quality, documentation
 
 ## Code Quality Issues
 
-### Magic Strings to Extract
+### Magic Strings to Extract ✅ COMPLETED
 
-Create `beanschedule/constants.py`:
+Created `beanschedule/constants.py` with **71 well-organized constants**:
 
 ```python
 # Synthetic filepaths
@@ -197,9 +198,15 @@ def load_schedules_from_path(path: Path) -> Optional[ScheduleFile]:
 
 Focus: Code quality, documentation, CI/CD
 
-- [ ] All critical release checklist items
+- [x] Critical release checklist items (8/10 complete)
+  - [x] README fixes (URLs, Python version, dead links)
+  - [x] CHANGELOG.md created
+  - [x] GitHub Actions CI pipeline
+  - [x] Code cleanup (dead function removal)
+  - [x] SECURITY.md created
+  - [ ] CONTRIBUTING.md (deferred)
+  - [ ] CODE_OF_CONDUCT.md (deferred)
 - [ ] All high priority code quality fixes
-- [ ] GitHub Actions CI pipeline
 - [ ] PyPI package registration
 
 ### v1.4.0 - Polish

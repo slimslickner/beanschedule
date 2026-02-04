@@ -8,6 +8,7 @@ from typing import Optional
 
 from beancount.core import amount, data
 
+from . import constants
 from .amortization import (
     AmortizationSchedule,
     PaymentSplit,
@@ -20,9 +21,6 @@ from .recurrence import RecurrenceEngine
 from .schema import Schedule
 
 logger = logging.getLogger(__name__)
-
-# Constants
-MIN_BEANGULP_TUPLE_SIZE = 2  # Minimum entries in beangulp tuple
 
 
 def schedule_hook(
@@ -212,7 +210,7 @@ def schedule_hook(
     if placeholders:
         # Add placeholders to a synthetic "schedules" file entry
         # Always use 4-element format (beangulp standard)
-        modified_entries_list.append(("<schedules>", placeholders, None, None))
+        modified_entries_list.append((constants.SYNTHETIC_SCHEDULES_SOURCE, placeholders, None, None))
 
         # Log prominent warning about missing scheduled transactions
         logger.warning("=" * 70)
@@ -222,8 +220,8 @@ def schedule_hook(
         )
         logger.warning("=" * 70)
         for placeholder in placeholders:
-            schedule_id = placeholder.meta.get("schedule_id", "unknown")
-            expected_date = placeholder.meta.get("schedule_expected_date", "unknown")
+            schedule_id = placeholder.meta.get(constants.META_SCHEDULE_ID, "unknown")
+            expected_date = placeholder.meta.get(constants.META_SCHEDULE_EXPECTED_DATE, "unknown")
             logger.warning("  • %s - %s (%s)", expected_date, placeholder.payee, schedule_id)
         logger.warning("=" * 70)
 
@@ -253,7 +251,7 @@ def _extract_date_range(
     # Extract dates from imported transactions
     for item in extracted_entries_list:
         # Handle both formats: (filepath, entries, account, importer) or (filepath, entries)
-        if len(item) >= MIN_BEANGULP_TUPLE_SIZE:
+        if len(item) >= constants.MIN_BEANGULP_TUPLE_SIZE:
             entries = item[1]
             for entry in entries:
                 if isinstance(entry, data.Transaction):
@@ -272,7 +270,7 @@ def _extract_date_range(
     max_date = max(dates)
 
     # Add buffer for edge cases
-    buffer = timedelta(days=7)
+    buffer = timedelta(days=constants.DATE_RANGE_BUFFER_DAYS)
     return (min_date - buffer, max_date + buffer)
 
 
@@ -301,7 +299,7 @@ def _find_last_schedule_transaction(
     for entry in reversed(ledger_entries):
         if not isinstance(entry, data.Transaction):
             continue
-        if entry.meta.get("schedule_id") == schedule_id:
+        if entry.meta.get(constants.META_SCHEDULE_ID) == schedule_id:
             return entry
     return None
 
@@ -342,7 +340,7 @@ def _compute_amortization_split(
     # Determine the date to start calculating the next amortization from
     if last_txn:
         # Get the amortization date from the last transaction (if available)
-        last_amort_date = last_txn.meta.get("amortization_linked_date")
+        last_amort_date = last_txn.meta.get(constants.META_AMORTIZATION_LINKED_DATE)
         if last_amort_date:
             try:
                 last_amort_date = date.fromisoformat(last_amort_date)
@@ -456,7 +454,7 @@ def _match_transaction(
         return None
 
     # Check for pre-existing schedule_id metadata
-    existing_schedule_id = transaction.meta.get("schedule_id")
+    existing_schedule_id = transaction.meta.get(constants.META_SCHEDULE_ID)
     if existing_schedule_id:
         # Try to find matching schedule in candidates
         matching_candidates = [
@@ -546,7 +544,7 @@ def _match_ledger_transactions_lazy(
         if not isinstance(entry, data.Transaction):
             continue
 
-        schedule_id = entry.meta.get("schedule_id")
+        schedule_id = entry.meta.get(constants.META_SCHEDULE_ID)
         if not schedule_id:
             continue
 
@@ -591,86 +589,6 @@ def _match_ledger_transactions_lazy(
     return matched
 
 
-def _match_ledger_transactions(
-    ledger_entries: list[data.Directive],
-    expected_occurrences: dict[str, list[tuple[Schedule, date]]],
-    enabled_schedules: list[Schedule],
-) -> set[tuple[str, date]]:
-    """
-    Match transactions already in the ledger to expected schedule occurrences.
-
-    Uses schedule_id metadata if present, otherwise doesn't match (those transactions
-    were already imported and shouldn't be re-matched).
-
-    Args:
-        ledger_entries: Existing ledger entries
-        expected_occurrences: Dict of account -> [(schedule, expected_date)]
-        enabled_schedules: List of enabled schedules for lookup
-
-    Returns:
-        Set of (schedule_id, expected_date) tuples for transactions already in ledger
-    """
-    matched = set()
-    schedule_id_map = {sched.id: sched for sched in enabled_schedules}
-
-    for entry in ledger_entries:
-        if not isinstance(entry, data.Transaction):
-            continue
-
-        # Only match if transaction has explicit schedule_id metadata
-        schedule_id = entry.meta.get("schedule_id")
-        if not schedule_id:
-            continue
-
-        # Check if this schedule_id exists
-        schedule = schedule_id_map.get(schedule_id)
-        if not schedule:
-            logger.debug("Ledger transaction has unknown schedule_id: %s", schedule_id)
-            continue
-
-        # Check if transaction's account matches the schedule's account
-        if not entry.postings:
-            continue
-
-        main_account = entry.postings[0].account
-        if main_account != schedule.match.account:
-            logger.debug(
-                "Ledger transaction account %s doesn't match schedule account %s",
-                main_account,
-                schedule.match.account,
-            )
-            continue
-
-        # Find expected occurrence for this schedule_id and date
-        # Allow some date flexibility (within the date window) for ledger transactions
-        date_window = schedule.match.date_window_days or 0
-        found = False
-
-        for sched, expected_date in expected_occurrences.get(main_account, []):
-            if sched.id == schedule_id:
-                # Check if dates match (with window tolerance)
-                days_diff = abs((entry.date - expected_date).days)
-                if days_diff <= date_window:
-                    matched.add((schedule_id, expected_date))
-                    logger.debug(
-                        "Matched ledger transaction %s to schedule %s (expected %s)",
-                        entry.date,
-                        schedule_id,
-                        expected_date,
-                    )
-                    found = True
-                    break
-
-        if not found:
-            logger.debug(
-                "Ledger transaction %s with schedule_id %s doesn't match any expected occurrence",
-                entry.date,
-                schedule_id,
-            )
-
-    return matched
-
-
 def _enrich_transaction(
     transaction: data.Transaction,
     schedule: Schedule,
@@ -695,26 +613,26 @@ def _enrich_transaction(
     """
     # Copy existing metadata and add schedule info
     new_meta = transaction.meta.copy()
-    new_meta["schedule_id"] = schedule.transaction.metadata["schedule_id"]
-    new_meta["schedule_matched_date"] = expected_date.isoformat()
-    new_meta["schedule_confidence"] = f"{score:.2f}"
+    new_meta[constants.META_SCHEDULE_ID] = schedule.transaction.metadata[constants.META_SCHEDULE_ID]
+    new_meta[constants.META_SCHEDULE_MATCHED_DATE] = expected_date.isoformat()
+    new_meta[constants.META_SCHEDULE_CONFIDENCE] = f"{score:.2f}"
 
     # Add any custom metadata from schedule
     for key, value in schedule.transaction.metadata.items():
-        if key != "schedule_id":  # Already added
+        if key != constants.META_SCHEDULE_ID:  # Already added
             new_meta[key] = value
 
     # Add amortization metadata if present
     if amortization_split is not None:
-        new_meta["amortization_principal"] = str(amortization_split.principal)
-        new_meta["amortization_interest"] = str(amortization_split.interest)
-        new_meta["amortization_balance_after"] = str(amortization_split.remaining_balance)
+        new_meta[constants.META_AMORTIZATION_PRINCIPAL] = str(amortization_split.principal)
+        new_meta[constants.META_AMORTIZATION_INTEREST] = str(amortization_split.interest)
+        new_meta[constants.META_AMORTIZATION_BALANCE_AFTER] = str(amortization_split.remaining_balance)
         # Add the date that was used for split lookup (for debugging date mapping)
         if split_lookup_date is not None:
-            new_meta["amortization_linked_date"] = split_lookup_date.isoformat()
+            new_meta[constants.META_AMORTIZATION_LINKED_DATE] = split_lookup_date.isoformat()
         # Only add payment_number for static mode (when it's non-zero)
         if amortization_split.payment_number > 0:
-            new_meta["amortization_payment_number"] = str(amortization_split.payment_number)
+            new_meta[constants.META_AMORTIZATION_PAYMENT_NUMBER] = str(amortization_split.payment_number)
 
     # Merge tags (frozensets are immutable, use union)
     new_tags = transaction.tags
@@ -768,7 +686,7 @@ def _apply_schedule_postings(
     if transaction.postings:
         original_amount = transaction.postings[0].units
 
-    currency = original_amount.currency if original_amount else "USD"
+    currency = original_amount.currency if original_amount else constants.DEFAULT_CURRENCY
 
     new_postings = []
     for posting_template in schedule.transaction.postings:
@@ -866,7 +784,7 @@ def _create_placeholders(
 
             # Only create placeholder for transactions that are overdue or imminent
             # Skip future transactions that aren't due yet
-            date_window = schedule.match.date_window_days or 3
+            date_window = schedule.match.date_window_days or constants.DEFAULT_DATE_WINDOW_DAYS
             if expected_date > today + timedelta(days=date_window):
                 continue
 
@@ -956,14 +874,14 @@ def _create_placeholder_transaction(
         Placeholder transaction
     """
     # Build metadata
-    meta = data.new_metadata("<schedules>", 0)
-    meta["schedule_id"] = schedule.transaction.metadata["schedule_id"]
-    meta["schedule_placeholder"] = "true"
-    meta["schedule_expected_date"] = expected_date.isoformat()
+    meta = data.new_metadata(constants.SYNTHETIC_SCHEDULES_SOURCE, 0)
+    meta[constants.META_SCHEDULE_ID] = schedule.transaction.metadata[constants.META_SCHEDULE_ID]
+    meta[constants.META_SCHEDULE_PLACEHOLDER] = constants.PLACEHOLDER_FLAG_TRUE
+    meta[constants.META_SCHEDULE_EXPECTED_DATE] = expected_date.isoformat()
 
     # Add custom metadata
     for key, value in schedule.transaction.metadata.items():
-        if key not in ["schedule_id"]:
+        if key not in [constants.META_SCHEDULE_ID]:
             meta[key] = value
 
     # Build narration with prefix
@@ -976,7 +894,7 @@ def _create_placeholder_transaction(
         postings = []
         for posting_template in schedule.transaction.postings:
             if posting_template.amount is not None:
-                posting_amount = amount.Amount(Decimal(str(posting_template.amount)), "USD")
+                posting_amount = amount.Amount(Decimal(str(posting_template.amount)), constants.DEFAULT_CURRENCY)
             else:
                 posting_amount = None
 

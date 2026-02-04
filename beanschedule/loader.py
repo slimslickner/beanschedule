@@ -7,6 +7,7 @@ from typing import Optional
 
 import yaml
 
+from . import constants
 from .schema import GlobalConfig, Schedule, ScheduleFile
 
 logger = logging.getLogger(__name__)
@@ -28,26 +29,26 @@ def find_schedules_location() -> Optional[tuple[str, Path]]:
         Tuple of ("dir", Path) or ("file", Path), or None if not found
     """
     # Check BEANSCHEDULE_DIR env var (new directory mode)
-    if env_dir := os.getenv("BEANSCHEDULE_DIR"):
+    if env_dir := os.getenv(constants.ENV_SCHEDULES_DIR):
         path = Path(env_dir)
         if path.is_dir():
             return ("dir", path)
         logger.warning("BEANSCHEDULE_DIR points to non-existent directory: %s", env_dir)
 
     # Check BEANSCHEDULE_FILE env var (existing file mode)
-    if env_file := os.getenv("BEANSCHEDULE_FILE"):
+    if env_file := os.getenv(constants.ENV_SCHEDULES_FILE):
         path = Path(env_file)
         if path.is_file():
             return ("file", path)
         logger.warning("BEANSCHEDULE_FILE points to non-existent file: %s", env_file)
 
     # Check current directory for schedules/ (directory mode)
-    cwd_dir = Path.cwd() / "schedules"
+    cwd_dir = Path.cwd() / constants.DEFAULT_SCHEDULES_DIR
     if cwd_dir.is_dir():
         return ("dir", cwd_dir)
 
     # Check current directory for schedules.yaml (file mode, backward compat)
-    cwd_file = Path.cwd() / "schedules.yaml"
+    cwd_file = Path.cwd() / constants.DEFAULT_SCHEDULES_FILE
     if cwd_file.is_file():
         return ("file", cwd_file)
 
@@ -56,12 +57,12 @@ def find_schedules_location() -> Optional[tuple[str, Path]]:
         config_dir = Path(__file__).parent.parent.parent
 
         # Check for schedules/ directory
-        config_schedules_dir = config_dir / "schedules"
+        config_schedules_dir = config_dir / constants.DEFAULT_SCHEDULES_DIR
         if config_schedules_dir.is_dir():
             return ("dir", config_schedules_dir)
 
         # Check for schedules.yaml file (backward compat)
-        config_schedules_file = config_dir / "schedules.yaml"
+        config_schedules_file = config_dir / constants.DEFAULT_SCHEDULES_FILE
         if config_schedules_file.is_file():
             return ("file", config_schedules_file)
     except (OSError, ValueError) as e:
@@ -175,7 +176,7 @@ def load_schedules_from_directory(dirpath: Path) -> Optional[ScheduleFile]:
     logger.info("Loading schedules from directory: %s", dirpath)
 
     # Load global config
-    config_path = dirpath / "_config.yaml"
+    config_path = dirpath / constants.CONFIG_FILENAME
     config = GlobalConfig()  # Default config
 
     if config_path.is_file():
@@ -191,11 +192,11 @@ def load_schedules_from_directory(dirpath: Path) -> Optional[ScheduleFile]:
 
     # Load all schedule files
     schedules = []
-    schedule_files = sorted(dirpath.glob("*.yaml"))
+    schedule_files = sorted(dirpath.glob(constants.SCHEDULE_FILE_PATTERN))
 
     for schedule_path in schedule_files:
         # Skip config file
-        if schedule_path.name == "_config.yaml":
+        if schedule_path.name == constants.CONFIG_FILENAME:
             continue
 
         # Skip hidden files
