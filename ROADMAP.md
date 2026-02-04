@@ -46,7 +46,7 @@ Roadmap for open-sourcing beanschedule with focus on code quality, documentation
 | Task | Status | Notes |
 |------|--------|-------|
 | Create `constants.py` | ✅ | 71 constants extracted, 2-pass refactoring complete, all files using constants |
-| Extract `slugify` to utils.py | ⏳ | Next: Circular import risk in detector.py |
+| Extract `slugify` to utils.py | ✅ | Circular import risk resolved by moving to utils.py |
 | Add issue templates | ⏸️ | Deferred: Not critical for release |
 | Add PR template | ⏸️ | Deferred: Not critical for release |
 | Consolidate duplicate code | ⏳ | Next: `_generate_bimonthly` == `_generate_monthly_on_days` |
@@ -104,6 +104,7 @@ DEFAULT_DATE_WINDOW_DAYS = 3
 ### Duplicate Code to Consolidate
 
 **CLI schedule loading** (appears 5+ times):
+
 ```python
 # Extract to loader.py
 def load_schedules_from_path(path: Path) -> Optional[ScheduleFile]:
@@ -118,11 +119,13 @@ def load_schedules_from_path(path: Path) -> Optional[ScheduleFile]:
 ### Architecture Improvements
 
 **Split `cli.py` (1,733 lines) into:**
+
 - `cli/commands.py` - Click command definitions
 - `cli/formatters.py` - Output formatting (table, CSV, JSON)
 - `cli/builders.py` - Schedule construction helpers
 
 **Fix circular import:**
+
 - Move `slugify()` from `cli.py` to `utils.py`
 - `detector.py:686` imports from cli at runtime
 

@@ -553,10 +553,16 @@ class RecurrenceDetector:
 
         # Sample size: penalize small sample sizes
         # 3 = 0.8, 5 = 0.9, 10+ = 1.0
-        sample_size_score = min(1.0, constants.SAMPLE_SIZE_INTERCEPT + (group.count / constants.SAMPLE_SIZE_DENOMINATOR))
+        sample_size_score = min(
+            1.0, constants.SAMPLE_SIZE_INTERCEPT + (group.count / constants.SAMPLE_SIZE_DENOMINATOR)
+        )
 
         # Weighted combination
-        confidence = (coverage_score * constants.COVERAGE_WEIGHT) + (regularity_score * constants.REGULARITY_WEIGHT) + (sample_size_score * constants.SAMPLE_SIZE_WEIGHT)
+        confidence = (
+            (coverage_score * constants.COVERAGE_WEIGHT)
+            + (regularity_score * constants.REGULARITY_WEIGHT)
+            + (sample_size_score * constants.SAMPLE_SIZE_WEIGHT)
+        )
 
         # Apply frequency detection penalty
         confidence *= 1.0 - frequency.confidence_penalty
@@ -684,7 +690,7 @@ class RecurrenceDetector:
             RecurringCandidate object.
         """
         # Generate schedule ID from payee + frequency for better naming
-        from .cli import slugify
+        from .utils import slugify
 
         payee_slug = slugify(group.payee_canonical)
         freq_name = frequency.formatted_name().lower().replace(" ", "-")
