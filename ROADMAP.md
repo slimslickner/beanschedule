@@ -56,7 +56,7 @@ Roadmap for open-sourcing beanschedule with focus on code quality, documentation
 
 | Task | Status | Notes |
 |------|--------|-------|
-| Split cli.py into submodules | ❌ | 1,733 lines - too large |
+| Split cli.py into submodules | ✅ | Split into cli/commands.py, cli/formatters.py, cli/builders.py |
 | Make tests deterministic | ❌ | Inject `today` instead of `date.today()` |
 | Add edge case tests | ❌ | Leap year, empty inputs, boundaries |
 | Add regex complexity validation | ❌ | Prevent ReDoS attacks |
@@ -223,9 +223,10 @@ Focus: Code quality, documentation, CI/CD
 ### v1.5.0 - Enhanced Flexibility
 
 - [ ] Optional account matching (match any account if not specified)
-- [ ] Conditional schedule instances (skip based on conditions)
 - [ ] Schedule statistics command (coverage report, match rates)
 - [ ] Advanced amortization (ARM, balloon payments, interest-only periods)
+
+**Note:** Skipping schedule instances can be done with a $0 transaction + `schedule_id` metadata (no feature needed)
 
 ### v2.0.0+ - Future Vision
 
