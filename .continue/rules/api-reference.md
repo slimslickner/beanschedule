@@ -1,3 +1,7 @@
+---
+description: Complete API reference for all beanschedule modules and classes
+---
+
 # API Reference
 
 ## Core Modules

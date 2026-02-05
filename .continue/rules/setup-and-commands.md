@@ -1,3 +1,7 @@
+---
+description: Development setup and common command reference for beanschedule
+---
+
 # Setup & Common Commands
 
 ## Initial Setup

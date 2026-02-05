@@ -1,3 +1,7 @@
+---
+description: High-level architecture and data flow for beanschedule
+---
+
 # Architecture Overview
 
 ## What is Beanschedule?

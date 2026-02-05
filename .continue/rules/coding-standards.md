@@ -1,3 +1,7 @@
+---
+description: Coding patterns, standards, and best practices for beanschedule
+---
+
 # Coding Standards & Patterns
 
 ## Code Quality Tools
