@@ -192,9 +192,11 @@ def generate(schedule_id: str, start_date, end_date, schedules_path: str):
             click.echo(f"Error: Schedule '{schedule_id}' not found", err=True)
             sys.exit(1)
 
-        # Generate occurrences
+        # Generate occurrences using shared utility (consistent with hook & plugin)
+        from beanschedule.utils import generate_schedule_occurrences
+
         engine = RecurrenceEngine()
-        occurrences = engine.generate(schedule, start, end)
+        occurrences = generate_schedule_occurrences(schedule, engine, start, end)
 
         # Print results
         click.echo(f"Schedule: {schedule.id}")
@@ -273,7 +275,13 @@ def show(  # noqa: PLR0912, PLR0915
             sys.exit(1)
 
         # Determine date range for occurrences
-        from_date = date.today() if from_date is None else from_date.date()  # noqa: DTZ011
+        # NOTE: For consistency with the plugin's duplicate prevention, we start from
+        # tomorrow if no explicit from_date is provided. This avoids showing forecasts
+        # for today, which might already have actual imported transactions.
+        today = date.today()  # noqa: DTZ011
+        from_date = (
+            today + timedelta(days=1) if from_date is None else from_date.date()
+        )
 
         to_date = (
             from_date + timedelta(days=count * 45)
@@ -281,9 +289,11 @@ def show(  # noqa: PLR0912, PLR0915
             else to_date.date()
         )
 
-        # Generate occurrences
+        # Generate occurrences using shared utility (consistent with hook & plugin)
+        from beanschedule.utils import generate_schedule_occurrences
+
         engine = RecurrenceEngine()
-        occurrences = engine.generate(schedule, from_date, to_date)
+        occurrences = generate_schedule_occurrences(schedule, engine, from_date, to_date)
 
         # Display schedule information
         status = "✓ enabled" if schedule.enabled else "✗ disabled"
@@ -498,12 +508,17 @@ def amortize(  # noqa: PLR0912, PLR0915, PLR0913
                 sys.exit(1)
 
             today = date.today()  # noqa: DTZ011
+            # NOTE: For consistency with the plugin's duplicate prevention, we start from
+            # tomorrow if no explicit from_date is provided. This avoids showing forecasts
+            # for today, which might already have actual imported transactions.
+            forecast_start = today + timedelta(days=1)
             horizon_months = horizon or 12
             forecast_end = today + relativedelta(months=horizon_months)
 
             # Determine occurrence dates: use payment_day_of_month if set, otherwise transaction
             # recurrence
             from copy import deepcopy  # noqa: PLC0415
+            from beanschedule.utils import generate_schedule_occurrences
 
             engine = RecurrenceEngine()
             if schedule.amortization.payment_day_of_month:
@@ -511,10 +526,14 @@ def amortize(  # noqa: PLR0912, PLR0915, PLR0913
                 # This ensures the recurrence engine generates dates on actual payment dates
                 amort_schedule = deepcopy(schedule)
                 amort_schedule.recurrence.day_of_month = schedule.amortization.payment_day_of_month
-                occurrences = engine.generate(amort_schedule, today, forecast_end)
+                occurrences = generate_schedule_occurrences(
+                    amort_schedule, engine, forecast_start, forecast_end
+                )
             else:
                 # Use transaction recurrence dates
-                occurrences = engine.generate(schedule, today, forecast_end)
+                occurrences = generate_schedule_occurrences(
+                    schedule, engine, forecast_start, forecast_end
+                )
 
             splits_dict = compute_stateful_splits(
                 monthly_payment=schedule.amortization.monthly_payment,
