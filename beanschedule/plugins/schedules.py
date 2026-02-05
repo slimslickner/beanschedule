@@ -61,20 +61,65 @@ __plugins__ = ("schedules",)
 def schedules(entries, options_map, config_file=None):
     """Generate forecast transactions from YAML schedule definitions.
 
+    This Beancount plugin generates forecast (#) transactions for scheduled events
+    (paychecks, loan payments, etc.) that haven't occurred yet. Unlike the hook
+    which runs during import and enriches actual transactions, this plugin runs
+    when reading the ledger and creates speculative future transactions.
+
+    Architecture & Design:
+    ════════════════════
+    The plugin operates independently from the hook but coordinates with it:
+
+    1. FORECAST GENERATION
+       - For each enabled schedule, generates expected occurrence dates (using
+         shared generate_schedule_occurrences() utility)
+       - Restricts to future dates (tomorrow + 365 days) to avoid duplicates
+       - Creates forecast transactions (flag="#") for each date
+
+    2. DUPLICATE AVOIDANCE (Key Fix)
+       - Filters out dates that already have actual transactions with matching
+         schedule_id using filter_occurrences_by_existing_transactions()
+       - Why: Hook may have matched a paycheck today; we don't want to forecast
+         for today if it already has an actual transaction
+
+    3. AMORTIZATION SUPPORT
+       - For loan schedules, computes principal/interest splits
+       - Supports both static (balance_from_ledger=False) and stateful
+         (balance_from_ledger=True) amortization modes
+
+    Hook & Plugin Interaction:
+    When you import on 2026-02-05 with a paycheck received today:
+      - Hook: Matches the 2026-02-05 paycheck, adds schedule_id metadata
+      - Plugin: Generates forecasts, but filters out 2026-02-05, generates 2026-02-20 (next occurrence)
+      - Result: No duplicate forecasts, only actual transaction appears on 2026-02-05
+
+    Processing steps:
+    1. Load YAML schedules (auto-discover or use provided path)
+    2. Determine forecast window (tomorrow to tomorrow + 365 days)
+    3. Build index of existing scheduled transactions (shared utility)
+    4. For each enabled schedule:
+       a. Generate expected occurrence dates using recurrence engine
+       b. Handle special cases (amortization, payment day of month overrides)
+       c. Filter dates that already have actual transactions
+       d. Create forecast transaction for each remaining date
+    5. Return combined entries (original + forecast)
+
     Args:
-        entries: Existing beancount entries
-        options_map: Beancount options
+        entries: Existing beancount entries (the full ledger being read)
+        options_map: Beancount options (includes filename for path resolution)
         config_file: Optional path to schedules.yaml (auto-discovers if not provided)
 
     Returns:
         Tuple of (entries + forecast_entries, errors)
+        - Entries include both original entries and new forecast transactions
+        - Errors is a list of error strings (empty if successful)
 
     Example:
-        ; Auto-discover schedules.yaml
+        ; Auto-discover schedules.yaml in ledger directory
         plugin "beanschedule.plugins.schedules"
 
-        ; Custom path
-        plugin "beanschedule.plugins.schedules" "config/schedules.yaml"
+        ; Custom path relative to ledger file
+        plugin "beanschedule.plugins.schedules" "schedules/payroll.yaml"
     """
     from beanschedule.loader import (
         find_schedules_location,
@@ -82,6 +127,10 @@ def schedules(entries, options_map, config_file=None):
         load_schedules_from_directory,
     )
     from beanschedule.recurrence import RecurrenceEngine
+    from beanschedule.utils import (
+        filter_occurrences_by_existing_transactions,
+        generate_schedule_occurrences,
+    )
 
     errors = []
 
@@ -130,6 +179,11 @@ def schedules(entries, options_map, config_file=None):
     # 2. Determine forecast horizon
     # Default: Tomorrow to 1 year from today
     # Can be configured via plugin options in future
+    #
+    # NOTE: We start from TOMORROW, not today, to avoid duplicating actual
+    # transactions that were just imported today. If a paycheck arrives today
+    # (2026-02-05), we want forecasts for future dates (2026-02-20, etc.),
+    # not a duplicate forecast for today.
     today = date.today()
     forecast_start = today + timedelta(days=1)  # Start from tomorrow, not today
     forecast_end = today + timedelta(days=365)
@@ -159,10 +213,6 @@ def schedules(entries, options_map, config_file=None):
         build_liability_balance_index(entries, stateful_accounts) if stateful_accounts else {}
     )
 
-    # Build index of existing transactions by schedule_id and date
-    # to avoid generating forecasts for dates that already have actual transactions
-    existing_scheduled_dates = _build_scheduled_transactions_index(entries)
-
     # ── per-schedule forecast generation ──────────────────────────────────
     for schedule in schedule_file.schedules:
         if not schedule.enabled:
@@ -171,7 +221,9 @@ def schedules(entries, options_map, config_file=None):
 
         try:
             # Generate occurrence dates within the forecast window
-            occurrences = engine.generate(schedule, forecast_start, forecast_end)
+            occurrences = generate_schedule_occurrences(
+                schedule, engine, forecast_start, forecast_end
+            )
 
             # Determine forecast dates: use payment_day_of_month if set (for amortization)
             forecast_dates = occurrences
@@ -186,10 +238,13 @@ def schedules(entries, options_map, config_file=None):
                     if current.day <= schedule.amortization.payment_day_of_month:
                         current = current.replace(day=schedule.amortization.payment_day_of_month)
                     else:
-                        current = (current + relativedelta(months=1)).replace(day=schedule.amortization.payment_day_of_month)
+                        current = (current + relativedelta(months=1)).replace(
+                            day=schedule.amortization.payment_day_of_month
+                        )
                 except ValueError:
                     # Day doesn't exist in this month
                     import calendar
+
                     last_day = calendar.monthrange(current.year, current.month)[1]
                     current = current.replace(day=last_day)
 
@@ -197,9 +252,12 @@ def schedules(entries, options_map, config_file=None):
                     if current >= forecast_start:
                         amort_occurrences.append(current)
                     try:
-                        current = (current + relativedelta(months=1)).replace(day=schedule.amortization.payment_day_of_month)
+                        current = (current + relativedelta(months=1)).replace(
+                            day=schedule.amortization.payment_day_of_month
+                        )
                     except ValueError:
                         import calendar
+
                         last_day = calendar.monthrange(current.year, current.month)[1]
                         current = (current + relativedelta(months=1)).replace(day=last_day)
 
@@ -211,18 +269,25 @@ def schedules(entries, options_map, config_file=None):
                 forecast_dates = amort_occurrences
 
             # Filter out dates that already have actual transactions with this schedule_id
-            filtered_dates = []
-            schedule_dates_with_txns = existing_scheduled_dates.get(schedule.id, set())
-            for occurrence_date in forecast_dates:
-                if occurrence_date not in schedule_dates_with_txns:
-                    filtered_dates.append(occurrence_date)
-                else:
-                    logger.debug(
-                        "Skipping forecast for %s on %s (actual transaction exists)",
-                        schedule.id,
-                        occurrence_date,
-                    )
-            forecast_dates = filtered_dates
+            #
+            # This is critical to prevent duplicates when the hook has already matched
+            # and enriched actual transactions. For example:
+            # - Hook matched paycheck-captech on 2026-02-05, added schedule_id metadata
+            # - Plugin generates 2026-02-05 in its forecast window
+            # - Without filtering: both actual + forecast appear (user sees duplicate)
+            # - With filtering: forecast is skipped, only actual appears
+            #
+            # Uses shared utility: filter_occurrences_by_existing_transactions()
+            original_count = len(forecast_dates)
+            forecast_dates = filter_occurrences_by_existing_transactions(
+                schedule.id, forecast_dates, entries
+            )
+            if len(forecast_dates) < original_count:
+                logger.debug(
+                    "Filtered %d occurrence(s) for %s (actual transaction exists)",
+                    original_count - len(forecast_dates),
+                    schedule.id,
+                )
 
             # Pre-compute stateful P/I splits when applicable
             amort_splits = None
@@ -579,33 +644,3 @@ def _create_forecast_transaction(schedule, occurrence_date, global_config, amort
     )
 
     return txn
-
-
-def _build_scheduled_transactions_index(entries) -> dict[str, set[date]]:
-    """Build an index of existing transactions by schedule_id and date.
-
-    This allows us to avoid generating forecast transactions for dates that
-    already have actual (non-forecast) transactions with the same schedule_id.
-
-    Args:
-        entries: List of beancount entries
-
-    Returns:
-        Dict mapping schedule_id -> set of dates with actual transactions
-    """
-    scheduled_dates = {}
-
-    for entry in entries:
-        if isinstance(entry, data.Transaction):
-            # Skip forecast transactions (those with # flag)
-            if entry.flag == "#":
-                continue
-
-            # Check if transaction has schedule_id metadata
-            schedule_id = entry.meta.get("schedule_id")
-            if schedule_id:
-                if schedule_id not in scheduled_dates:
-                    scheduled_dates[schedule_id] = set()
-                scheduled_dates[schedule_id].add(entry.date)
-
-    return scheduled_dates

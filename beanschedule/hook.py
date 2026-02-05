@@ -19,6 +19,11 @@ from .loader import get_enabled_schedules, load_schedules_file
 from .matcher import TransactionMatcher
 from .recurrence import RecurrenceEngine
 from .schema import Schedule
+from .utils import (
+    build_date_index,
+    generate_all_schedule_occurrences,
+    generate_schedule_occurrences,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -34,14 +39,42 @@ def schedule_hook(
     enrich them with posting templates and metadata, and create placeholders for expected
     but missing scheduled transactions.
 
+    Architecture & Design:
+    ═════════════════════
+    The hook runs during beangulp import and has three main responsibilities:
+
+    1. TRANSACTION MATCHING
+       - Generates expected occurrence dates for each schedule (using shared
+         generate_all_schedule_occurrences() utility)
+       - Searches for imported transactions matching those dates
+       - Uses fuzzy matching to account for slight date/payee variations
+       - Marked matches get schedule_id metadata attached
+
+    2. TRANSACTION ENRICHMENT
+       - Adds schedule_id, tags, and posting templates to matched transactions
+       - Computes amortization splits if applicable
+       - Enriches with confidence scores and other metadata
+
+    3. PLACEHOLDER CREATION
+       - For each expected occurrence that has no actual transaction, creates
+         a placeholder transaction (with flag "!") to highlight missing data
+       - Prevents the same placeholder from being created multiple times
+
+    Interaction with Plugin:
+    The hook and plugin work independently but complementarily:
+    - Hook: Matches & enriches actual imported transactions, creates placeholders
+    - Plugin: Generates forecast transactions for future dates
+    - Coordination: Both use schedule_id metadata to track which dates are covered
+
     Processing steps:
     1. Load schedules from schedules.yaml or schedules/ directory
     2. Extract date range from all imported and existing ledger transactions
-    3. Generate expected occurrence dates for each schedule in range
-    4. Match imported transactions to schedules using fuzzy scoring algorithm
-    5. Enrich matched transactions with schedule metadata, tags, and postings
-    6. Create placeholder transactions for expected but unmatched schedule occurrences
-    7. Return modified entries list in beangulp format
+    3. Generate expected occurrence dates for each schedule (shared utility)
+    4. Build date index for efficient O(1) lookups (shared utility)
+    5. Match imported transactions to schedules using fuzzy scoring algorithm
+    6. Enrich matched transactions with schedule metadata, tags, and postings
+    7. Create placeholder transactions for expected but unmatched schedule occurrences
+    8. Return modified entries list in beangulp format
 
     Args:
         extracted_entries_list: List of 4-tuples (filepath, entries, account, importer)
@@ -100,7 +133,7 @@ def schedule_hook(
 
     # Step 3: Generate expected dates for each schedule
     recurrence_engine = RecurrenceEngine()
-    expected_occurrences = _generate_expected_occurrences(
+    expected_occurrences = generate_all_schedule_occurrences(
         enabled_schedules,
         recurrence_engine,
         start_date,
@@ -114,7 +147,7 @@ def schedule_hook(
     matched_details = []  # Track matched transactions for summary
 
     # Build date index for lazy matching (O(n) once vs O(n*m) per lookup)
-    date_index = _build_date_index(ledger_entries) if ledger_entries else {}
+    date_index = build_date_index(ledger_entries) if ledger_entries else {}
 
     # First, match any transactions already in the ledger (to avoid false missing warnings)
     if ledger_entries:
@@ -172,7 +205,9 @@ def schedule_hook(
                                 amort_split.remaining_balance,
                             )
                         else:
-                            logger.debug("  Amortization: could not compute split for %s", schedule.id)
+                            logger.debug(
+                                "  Amortization: could not compute split for %s", schedule.id
+                            )
                     # Enrich transaction
                     enriched_txn = _enrich_transaction(
                         entry, schedule, expected_date, score, amort_split, split_lookup_date
@@ -210,7 +245,9 @@ def schedule_hook(
     if placeholders:
         # Add placeholders to a synthetic "schedules" file entry
         # Always use 4-element format (beangulp standard)
-        modified_entries_list.append((constants.SYNTHETIC_SCHEDULES_SOURCE, placeholders, None, None))
+        modified_entries_list.append(
+            (constants.SYNTHETIC_SCHEDULES_SOURCE, placeholders, None, None)
+        )
 
         # Log prominent warning about missing scheduled transactions
         logger.warning("=" * 70)
@@ -353,7 +390,9 @@ def _compute_amortization_split(
         last_amort_date = start_date - timedelta(days=1)
 
     # Calculate next amortization date
-    next_amort_dates = recurrence_engine.generate(schedule, last_amort_date + timedelta(days=1), end_date)
+    next_amort_dates = recurrence_engine.generate(
+        schedule, last_amort_date + timedelta(days=1), end_date
+    )
     if not next_amort_dates:
         logger.debug("Schedule %s: no future amortization dates", schedule.id)
         return None
@@ -385,43 +424,13 @@ def _compute_amortization_split(
         if next_amort_date in splits:
             return (splits[next_amort_date], next_amort_date)
         else:
-            logger.debug("Schedule %s: could not compute split for %s", schedule.id, next_amort_date)
+            logger.debug(
+                "Schedule %s: could not compute split for %s", schedule.id, next_amort_date
+            )
             return None
     except Exception as e:
         logger.error("Schedule %s: error computing amortization split: %s", schedule.id, e)
         return None
-
-
-def _generate_expected_occurrences(
-    schedules: list[Schedule],
-    recurrence_engine: RecurrenceEngine,
-    start_date: date,
-    end_date: date,
-) -> dict[str, list[tuple[Schedule, date]]]:
-    """
-    Generate expected occurrences for all schedules.
-
-    Args:
-        schedules: List of enabled schedules
-        recurrence_engine: RecurrenceEngine instance
-        start_date: Start of date range
-        end_date: End of date range
-
-    Returns:
-        Dict mapping account to list of (schedule, expected_date) tuples
-    """
-    # Group by account for efficient matching
-    occurrences_by_account = defaultdict(list)
-
-    for schedule in schedules:
-        expected_dates = recurrence_engine.generate(schedule, start_date, end_date)
-
-        for expected_date in expected_dates:
-            occurrences_by_account[schedule.match.account].append((schedule, expected_date))
-
-        logger.debug("Schedule %s: %d expected occurrences", schedule.id, len(expected_dates))
-
-    return occurrences_by_account
 
 
 def _match_transaction(
@@ -484,37 +493,6 @@ def _match_transaction(
 
     # Fall back to fuzzy matching
     return matcher.find_best_match(transaction, candidates)
-
-
-def _build_date_index(
-    ledger_entries: Optional[list[data.Directive]],
-) -> dict[date, list[data.Transaction]]:
-    """
-    Build an index mapping dates to transactions for fast lookups.
-
-    Speeds up lazy matching by allowing O(1) lookup instead of scanning all entries.
-
-    Args:
-        ledger_entries: Existing ledger entries
-
-    Returns:
-        Dict mapping date -> List of transactions on that date
-    """
-    index = defaultdict(list)
-
-    if not ledger_entries:
-        return index
-
-    for entry in ledger_entries:
-        if isinstance(entry, data.Transaction):
-            index[entry.date].append(entry)
-
-    logger.debug(
-        "Built date index with %d unique dates from %d entries",
-        len(index),
-        len(ledger_entries),
-    )
-    return index
 
 
 def _match_ledger_transactions_lazy(
@@ -626,13 +604,17 @@ def _enrich_transaction(
     if amortization_split is not None:
         new_meta[constants.META_AMORTIZATION_PRINCIPAL] = str(amortization_split.principal)
         new_meta[constants.META_AMORTIZATION_INTEREST] = str(amortization_split.interest)
-        new_meta[constants.META_AMORTIZATION_BALANCE_AFTER] = str(amortization_split.remaining_balance)
+        new_meta[constants.META_AMORTIZATION_BALANCE_AFTER] = str(
+            amortization_split.remaining_balance
+        )
         # Add the date that was used for split lookup (for debugging date mapping)
         if split_lookup_date is not None:
             new_meta[constants.META_AMORTIZATION_LINKED_DATE] = split_lookup_date.isoformat()
         # Only add payment_number for static mode (when it's non-zero)
         if amortization_split.payment_number > 0:
-            new_meta[constants.META_AMORTIZATION_PAYMENT_NUMBER] = str(amortization_split.payment_number)
+            new_meta[constants.META_AMORTIZATION_PAYMENT_NUMBER] = str(
+                amortization_split.payment_number
+            )
 
     # Merge tags (frozensets are immutable, use union)
     new_tags = transaction.tags
@@ -703,9 +685,7 @@ def _apply_schedule_postings(
             elif posting_template.role == "escrow":
                 # Escrow has explicit amount from template
                 if posting_template.amount is not None:
-                    posting_amount = amount.Amount(
-                        Decimal(str(posting_template.amount)), currency
-                    )
+                    posting_amount = amount.Amount(Decimal(str(posting_template.amount)), currency)
                 else:
                     posting_amount = None
             elif posting_template.amount is not None:
@@ -894,7 +874,9 @@ def _create_placeholder_transaction(
         postings = []
         for posting_template in schedule.transaction.postings:
             if posting_template.amount is not None:
-                posting_amount = amount.Amount(Decimal(str(posting_template.amount)), constants.DEFAULT_CURRENCY)
+                posting_amount = amount.Amount(
+                    Decimal(str(posting_template.amount)), constants.DEFAULT_CURRENCY
+                )
             else:
                 posting_amount = None
 
