@@ -546,12 +546,15 @@ def _create_forecast_transaction(schedule, occurrence_date, global_config, amort
         postings.append(posting)
 
     # Create transaction with # flag (forecast)
+    # Default narration to empty string if not specified (required by Beancount)
+    narration = schedule.transaction.narration or ""
+
     txn = data.Transaction(
         meta=meta,
         date=occurrence_date,
         flag="#",  # Forecast flag
         payee=schedule.transaction.payee,
-        narration=schedule.transaction.narration,
+        narration=narration,
         tags=frozenset(schedule.transaction.tags or []),
         links=frozenset(schedule.transaction.links or []),
         postings=postings,
