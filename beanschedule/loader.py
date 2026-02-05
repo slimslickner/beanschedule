@@ -98,6 +98,25 @@ def find_schedules_file() -> Optional[Path]:
     return None
 
 
+def load_schedules_from_path(path: Path) -> Optional[ScheduleFile]:
+    """Load schedules from a file or directory path.
+
+    Routes to load_schedules_file() or load_schedules_from_directory()
+    based on whether path is a file or directory.
+
+    Args:
+        path: Path to a schedules file or directory
+
+    Returns:
+        ScheduleFile if path is a valid file or directory, None otherwise
+    """
+    if path.is_file():
+        return load_schedules_file(path)
+    if path.is_dir():
+        return load_schedules_from_directory(path)
+    return None
+
+
 def load_schedule_from_file(filepath: Path) -> Optional[Schedule]:
     """
     Load a single schedule from an individual YAML file.

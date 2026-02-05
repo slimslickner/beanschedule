@@ -20,7 +20,7 @@ from beancount.core import data
 from dateutil.relativedelta import relativedelta
 
 from . import __version__, constants
-from .loader import load_schedules_file, load_schedules_from_directory
+from .loader import load_schedules_from_path
 from .recurrence import RecurrenceEngine
 from .types import DayOfWeek, FrequencyType
 from .utils import slugify
@@ -41,13 +41,7 @@ def complete_schedule_id(ctx, _, incomplete):
 
     try:
         # Load schedules silently for completion
-        if path_obj.is_file():
-            schedule_file = load_schedules_file(path_obj)
-        elif path_obj.is_dir():
-            schedule_file = load_schedules_from_directory(path_obj)
-        else:
-            return []
-
+        schedule_file = load_schedules_from_path(path_obj)
         if schedule_file is None:
             return []
 
@@ -219,16 +213,9 @@ def validate(path: str):
 
     try:
         # Try loading as file or directory
-        if path_obj.is_file():
-            schedule_file = load_schedules_file(path_obj)
-        elif path_obj.is_dir():
-            schedule_file = load_schedules_from_directory(path_obj)
-        else:
-            click.echo(f"Error: Path is neither a file nor a directory: {path_obj}", err=True)
-            sys.exit(1)
-
+        schedule_file = load_schedules_from_path(path_obj)
         if schedule_file is None:
-            click.echo("Error: No schedules loaded", err=True)
+            click.echo(f"Error: Path is neither a file nor a directory: {path_obj}", err=True)
             sys.exit(1)
 
         # Count schedules
@@ -281,16 +268,9 @@ def list_schedules(path: str, output_format: str, enabled_only: bool):
 
     try:
         # Load schedules
-        if path_obj.is_file():
-            schedule_file = load_schedules_file(path_obj)
-        elif path_obj.is_dir():
-            schedule_file = load_schedules_from_directory(path_obj)
-        else:
-            click.echo(f"Error: Path is neither a file nor a directory: {path_obj}", err=True)
-            sys.exit(1)
-
+        schedule_file = load_schedules_from_path(path_obj)
         if schedule_file is None:
-            click.echo("Error: No schedules loaded", err=True)
+            click.echo(f"Error: Path is neither a file nor a directory: {path_obj}", err=True)
             sys.exit(1)
 
         # Filter schedules
@@ -409,16 +389,9 @@ def generate(schedule_id: str, start_date, end_date, schedules_path: str):
 
     try:
         # Load schedules
-        if path_obj.is_file():
-            schedule_file = load_schedules_file(path_obj)
-        elif path_obj.is_dir():
-            schedule_file = load_schedules_from_directory(path_obj)
-        else:
-            click.echo(f"Error: Path not found: {path_obj}", err=True)
-            sys.exit(1)
-
+        schedule_file = load_schedules_from_path(path_obj)
         if schedule_file is None:
-            click.echo("Error: No schedules loaded", err=True)
+            click.echo(f"Error: Path not found: {path_obj}", err=True)
             sys.exit(1)
 
         # Find schedule by ID
@@ -493,16 +466,9 @@ def show(
 
     try:
         # Load schedules
-        if path_obj.is_file():
-            schedule_file = load_schedules_file(path_obj)
-        elif path_obj.is_dir():
-            schedule_file = load_schedules_from_directory(path_obj)
-        else:
-            click.echo(f"Error: Path not found: {path_obj}", err=True)
-            sys.exit(1)
-
+        schedule_file = load_schedules_from_path(path_obj)
         if schedule_file is None:
-            click.echo("Error: No schedules loaded", err=True)
+            click.echo(f"Error: Path not found: {path_obj}", err=True)
             sys.exit(1)
 
         # Find schedule by ID
@@ -673,16 +639,9 @@ def amortize(
 
     try:
         # Load schedules
-        if path_obj.is_file():
-            schedule_file = load_schedules_file(path_obj)
-        elif path_obj.is_dir():
-            schedule_file = load_schedules_from_directory(path_obj)
-        else:
-            click.echo(f"Error: Path not found: {path_obj}", err=True)
-            sys.exit(1)
-
+        schedule_file = load_schedules_from_path(path_obj)
         if schedule_file is None:
-            click.echo("Error: No schedules loaded", err=True)
+            click.echo(f"Error: Path not found: {path_obj}", err=True)
             sys.exit(1)
 
         # Find schedule by ID

@@ -3,8 +3,7 @@
 import logging
 from datetime import date, datetime
 
-from dateutil.rrule import MONTHLY, WEEKLY, YEARLY, rrule
-from dateutil.rrule import MO, TU, WE, TH, FR, SA, SU
+from dateutil.rrule import FR, MO, MONTHLY, SA, SU, TH, TU, WE, WEEKLY, YEARLY, rrule
 
 from . import constants
 from .schema import RecurrenceRule, Schedule
@@ -48,7 +47,7 @@ class RecurrenceEngine:
             if recurrence.frequency == FrequencyType.INTERVAL:
                 return self._generate_interval(recurrence, effective_start, effective_end)
             if recurrence.frequency == FrequencyType.BIMONTHLY:
-                return self._generate_bimonthly(recurrence, effective_start, effective_end)
+                return self._generate_monthly_on_days(recurrence, effective_start, effective_end)
             if recurrence.frequency == FrequencyType.MONTHLY_ON_DAYS:
                 return self._generate_monthly_on_days(recurrence, effective_start, effective_end)
             if recurrence.frequency == FrequencyType.NTH_WEEKDAY:
@@ -154,32 +153,6 @@ class RecurrenceEngine:
         )
 
         return [d.date() for d in dates]
-
-    def _generate_bimonthly(
-        self,
-        recurrence: RecurrenceRule,
-        start_date: date,
-        end_date: date,
-    ) -> list[date]:
-        """Generate bi-monthly recurrence dates (multiple days per month)."""
-        if recurrence.days_of_month is None or len(recurrence.days_of_month) == 0:
-            logger.error("BIMONTHLY frequency requires days_of_month")
-            return []
-
-        all_dates = []
-        for day in recurrence.days_of_month:
-            dates = list(
-                rrule(
-                    MONTHLY,
-                    dtstart=datetime.combine(start_date, datetime.min.time()),
-                    until=datetime.combine(end_date, datetime.max.time()),
-                    bymonthday=day,
-                ),
-            )
-            all_dates.extend([d.date() for d in dates])
-
-        # Sort and remove duplicates
-        return sorted(set(all_dates))
 
     def _generate_monthly_on_days(
         self,
