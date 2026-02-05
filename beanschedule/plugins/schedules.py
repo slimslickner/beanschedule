@@ -128,10 +128,10 @@ def schedules(entries, options_map, config_file=None):
         return entries, errors
 
     # 2. Determine forecast horizon
-    # Default: Today + 1 year
+    # Default: Tomorrow to 1 year from today
     # Can be configured via plugin options in future
     today = date.today()
-    forecast_start = today
+    forecast_start = today + timedelta(days=1)  # Start from tomorrow, not today
     forecast_end = today + timedelta(days=365)
 
     logger.info(
@@ -158,6 +158,10 @@ def schedules(entries, options_map, config_file=None):
     liability_balances = (
         build_liability_balance_index(entries, stateful_accounts) if stateful_accounts else {}
     )
+
+    # Build index of existing transactions by schedule_id and date
+    # to avoid generating forecasts for dates that already have actual transactions
+    existing_scheduled_dates = _build_scheduled_transactions_index(entries)
 
     # ── per-schedule forecast generation ──────────────────────────────────
     for schedule in schedule_file.schedules:
@@ -205,6 +209,20 @@ def schedules(entries, options_map, config_file=None):
                     schedule.amortization.payment_day_of_month,
                 )
                 forecast_dates = amort_occurrences
+
+            # Filter out dates that already have actual transactions with this schedule_id
+            filtered_dates = []
+            schedule_dates_with_txns = existing_scheduled_dates.get(schedule.id, set())
+            for occurrence_date in forecast_dates:
+                if occurrence_date not in schedule_dates_with_txns:
+                    filtered_dates.append(occurrence_date)
+                else:
+                    logger.debug(
+                        "Skipping forecast for %s on %s (actual transaction exists)",
+                        schedule.id,
+                        occurrence_date,
+                    )
+            forecast_dates = filtered_dates
 
             # Pre-compute stateful P/I splits when applicable
             amort_splits = None
@@ -561,3 +579,33 @@ def _create_forecast_transaction(schedule, occurrence_date, global_config, amort
     )
 
     return txn
+
+
+def _build_scheduled_transactions_index(entries) -> dict[str, set[date]]:
+    """Build an index of existing transactions by schedule_id and date.
+
+    This allows us to avoid generating forecast transactions for dates that
+    already have actual (non-forecast) transactions with the same schedule_id.
+
+    Args:
+        entries: List of beancount entries
+
+    Returns:
+        Dict mapping schedule_id -> set of dates with actual transactions
+    """
+    scheduled_dates = {}
+
+    for entry in entries:
+        if isinstance(entry, data.Transaction):
+            # Skip forecast transactions (those with # flag)
+            if entry.flag == "#":
+                continue
+
+            # Check if transaction has schedule_id metadata
+            schedule_id = entry.meta.get("schedule_id")
+            if schedule_id:
+                if schedule_id not in scheduled_dates:
+                    scheduled_dates[schedule_id] = set()
+                scheduled_dates[schedule_id].add(entry.date)
+
+    return scheduled_dates
