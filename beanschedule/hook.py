@@ -256,7 +256,7 @@ def schedule_hook(
             len(placeholders),
         )
         logger.warning("=" * 70)
-        for placeholder in placeholders:
+        for placeholder in sorted(placeholders, key=lambda p: p.date):
             schedule_id = placeholder.meta.get(constants.META_SCHEDULE_ID, "unknown")
             expected_date = placeholder.meta.get(constants.META_SCHEDULE_EXPECTED_DATE, "unknown")
             logger.warning("  • %s - %s (%s)", expected_date, placeholder.payee, schedule_id)
