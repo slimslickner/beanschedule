@@ -1,7 +1,5 @@
 # Beanschedule
 
-[![PyPI version](https://badge.fury.io/py/beanschedule.svg)](https://pypi.org/project/beanschedule/)
-[![Python Support](https://img.shields.io/pypi/pyversions/beanschedule.svg)](https://pypi.org/project/beanschedule/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Tests](https://github.com/slimslickner/beanschedule/workflows/tests/badge.svg)](https://github.com/slimslickner/beanschedule/actions)
 
@@ -24,12 +22,6 @@ Beanschedule is a [beangulp](https://github.com/beancount/beangulp) hook that in
 - **Preserves ML Training Data** - Compatible with smart_importer for machine learning predictions
 
 ## Quick Start
-
-### Installation
-
-```bash
-pip install beanschedule
-```
 
 ### Getting Started (Recommended)
 
