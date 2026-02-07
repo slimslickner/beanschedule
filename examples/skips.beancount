@@ -1,0 +1,96 @@
+; Skip marker examples for beanschedule
+;
+; Skip markers are transactions in your ledger that tell beanschedule:
+; "This scheduled occurrence was intentionally skipped, don't warn me about it"
+;
+; Recognized by any of:
+; - #skipped tag
+; - schedule_skipped metadata key
+; - Flag 'S' (for Skipped) - less common, use #skipped instead
+;
+; The hook prevents placeholder creation when it finds a skip marker
+; with matching schedule_id metadata on the expected date.
+;
+; IMPORTANT: The posting must include an amount (e.g., 0 USD) for Beancount
+; to properly parse the transaction.
+
+; ============================================================================
+; EXAMPLE 1: Credit Card with $0 Balance
+; ============================================================================
+; Credit card statement with $0 balance — no transfer needed that month
+
+2026-02-15 * "Capital One" "[SKIPPED] $0 balance this month"
+  #skipped
+  schedule_id: "credit-card-payment"
+  schedule_skipped: "true"
+  Assets:Checking  0 USD
+
+; ============================================================================
+; EXAMPLE 2: Gym Membership Suspended
+; ============================================================================
+; Vacation in Europe — pausing gym membership for the month
+
+2026-07-15 * "24 Hour Fitness" "[SKIPPED] Traveling in Europe"
+  #skipped
+  schedule_id: "gym-membership"
+  schedule_skipped: "Vacation"
+  Assets:Checking  0 USD
+
+2026-08-15 * "24 Hour Fitness" "[SKIPPED] Still traveling"
+  #skipped
+  schedule_id: "gym-membership"
+  schedule_skipped: "Extended vacation"
+  Assets:Checking  0 USD
+
+; ============================================================================
+; EXAMPLE 3: Rent Paid in Advance
+; ============================================================================
+; Prepaid two months' rent in advance — skip next two expected payments
+
+2026-03-01 * "Landlord" "[SKIPPED] Prepaid two months in advance"
+  #skipped
+  schedule_id: "rent-payment"
+  Assets:Checking  0 USD
+
+2026-04-01 * "Landlord" "[SKIPPED] Covered by prepayment"
+  #skipped
+  schedule_id: "rent-payment"
+  Assets:Checking  0 USD
+
+; ============================================================================
+; EXAMPLE 4: Using Metadata Instead of Tag
+; ============================================================================
+; Alternative: using schedule_skipped metadata instead of tag
+
+2026-05-01 * "Netflix Subscription" "[SKIPPED] Account paused temporarily"
+  schedule_id: "netflix-monthly"
+  schedule_skipped: "Account pause"
+  Assets:Checking  0 USD
+
+; ============================================================================
+; EXAMPLE 5: One-Time Exception with Detailed Reason
+; ============================================================================
+; Clear, auditable reason for the skip
+
+2026-06-15 * "Utility Company" "[SKIPPED] Budget billing - no payment this month"
+  #skipped
+  schedule_id: "electric-bill"
+  schedule_skipped: "Budget billing plan - payment spread across 12 months"
+  Assets:Checking  0 USD
+
+; ============================================================================
+; HOW TO GENERATE THESE AUTOMATICALLY
+; ============================================================================
+; Instead of typing them manually, use the CLI command:
+;
+;   # Single skip
+;   beanschedule skip credit-card-payment 2026-02-15 --reason "$0 balance"
+;
+;   # Multiple dates
+;   beanschedule skip gym-membership 2026-07-15 2026-08-15 --reason "Traveling"
+;
+;   # Append to your ledger
+;   beanschedule skip rent-payment 2026-03-01 --output ledger.beancount
+;
+; The CLI auto-discovers your schedules directory and generates properly
+; formatted skip markers with the correct metadata.

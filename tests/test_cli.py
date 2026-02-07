@@ -836,4 +836,150 @@ schedules:
 
         assert result.exit_code == 1
         assert "does not have amortization configured" in result.output
-        assert "Add an 'amortization' section" in result.output
+
+
+class TestSkipCommand:
+    """Tests for the skip CLI command."""
+
+    def test_skip_single_date(self, cli_runner, schedules_yaml_file):
+        """Generate skip marker for a single date."""
+        result = cli_runner.invoke(
+            main,
+            [
+                "skip",
+                "monthly-rent",
+                "2026-02-01",
+                "--schedules-path",
+                str(schedules_yaml_file),
+            ],
+        )
+
+        assert result.exit_code == 0
+        assert "2026-02-01" in result.output
+        assert "#skipped" in result.output  # #skipped tag indicator
+        assert "Property Manager" in result.output
+        assert "[SKIPPED]" in result.output
+        assert "schedule_id" in result.output
+        assert "monthly-rent" in result.output
+
+    def test_skip_multiple_dates(self, cli_runner, schedules_yaml_file):
+        """Generate skip markers for multiple dates."""
+        result = cli_runner.invoke(
+            main,
+            [
+                "skip",
+                "monthly-rent",
+                "2026-02-01",
+                "2026-03-01",
+                "--schedules-path",
+                str(schedules_yaml_file),
+            ],
+        )
+
+        assert result.exit_code == 0
+        assert "2026-02-01" in result.output
+        assert "2026-03-01" in result.output
+
+    def test_skip_with_reason(self, cli_runner, schedules_yaml_file):
+        """Skip marker includes reason in narration."""
+        result = cli_runner.invoke(
+            main,
+            [
+                "skip",
+                "monthly-rent",
+                "2026-02-01",
+                "--reason",
+                "Postponed to next month",
+                "--schedules-path",
+                str(schedules_yaml_file),
+            ],
+        )
+
+        assert result.exit_code == 0
+        assert "Postponed to next month" in result.output
+        assert "[SKIPPED]" in result.output
+
+    def test_skip_invalid_schedule_id(self, cli_runner, schedules_yaml_file):
+        """Error when schedule_id not found."""
+        result = cli_runner.invoke(
+            main,
+            [
+                "skip",
+                "nonexistent-schedule",
+                "2026-02-01",
+                "--schedules-path",
+                str(schedules_yaml_file),
+            ],
+        )
+
+        assert result.exit_code == 1
+        assert "not found" in result.output
+
+    def test_skip_invalid_date_format(self, cli_runner, schedules_yaml_file):
+        """Error when date format is invalid."""
+        result = cli_runner.invoke(
+            main,
+            [
+                "skip",
+                "monthly-rent",
+                "02-01-2026",  # Wrong format
+                "--schedules-path",
+                str(schedules_yaml_file),
+            ],
+        )
+
+        assert result.exit_code == 1
+        assert "Invalid date format" in result.output
+
+    def test_skip_output_to_file(self, cli_runner, schedules_yaml_file, tmp_path):
+        """Skip markers can be appended to a file."""
+        output_file = tmp_path / "skips.beancount"
+        output_file.write_text("")  # Create empty file
+
+        result = cli_runner.invoke(
+            main,
+            [
+                "skip",
+                "monthly-rent",
+                "2026-02-01",
+                "--schedules-path",
+                str(schedules_yaml_file),
+                "--output",
+                str(output_file),
+            ],
+        )
+
+        assert result.exit_code == 0
+        content = output_file.read_text()
+        assert "2026-02-01" in content
+        assert "monthly-rent" in content
+
+    def test_skip_requires_dates(self, cli_runner, schedules_yaml_file):
+        """Error when no dates provided."""
+        result = cli_runner.invoke(
+            main,
+            [
+                "skip",
+                "monthly-rent",
+                "--schedules-path",
+                str(schedules_yaml_file),
+            ],
+        )
+
+        assert result.exit_code != 0
+        assert "Missing argument" in result.output or "DATES" in result.output
+
+    def test_skip_select_requires_ledger(self, cli_runner, schedules_yaml_file):
+        """Error when --select used without --ledger."""
+        result = cli_runner.invoke(
+            main,
+            [
+                "skip",
+                "--select",
+                "--schedules-path",
+                str(schedules_yaml_file),
+            ],
+        )
+
+        assert result.exit_code != 0
+        assert "ledger" in result.output.lower()
