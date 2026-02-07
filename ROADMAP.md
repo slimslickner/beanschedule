@@ -210,7 +210,6 @@ Focus: Code quality, documentation, CI/CD
   - [ ] CONTRIBUTING.md (deferred)
   - [ ] CODE_OF_CONDUCT.md (deferred)
 - [ ] All high priority code quality fixes
-- [ ] PyPI package registration
 
 ### v1.4.0 - Skip Markers & Polish
 
