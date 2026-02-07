@@ -1221,5 +1221,258 @@ missing_transaction:
     click.echo("  3. Integrate with beangulp: import beanschedule in your config.py")
 
 
+@main.command(name="skip")
+@click.argument("schedule_id", required=False)
+@click.argument("dates", nargs=-1)
+@click.option(
+    "--schedules-path",
+    "-s",
+    type=click.Path(exists=True),
+    default=None,
+    help="Path to schedules.yaml or schedules/ directory (auto-discovered if not specified)",
+)
+@click.option(
+    "--reason",
+    "-r",
+    type=str,
+    default=None,
+    help="Reason for skipping (will be included in transaction narration)",
+)
+@click.option(
+    "--output",
+    "-o",
+    type=click.Path(),
+    default=None,
+    help="Append to this file instead of printing to stdout",
+)
+@click.option(
+    "--select",
+    is_flag=True,
+    help="Interactive mode: select from missing scheduled transactions in ledger",
+)
+@click.option(
+    "--ledger",
+    "-l",
+    type=click.Path(exists=True),
+    default=None,
+    help="Ledger file to scan for missing transactions (required with --select)",
+)
+def skip(
+    schedule_id: str | None,
+    dates: tuple[str],
+    schedules_path: str | None,
+    reason: str | None,
+    output: str | None,
+    select: bool,
+    ledger: str | None,
+):
+    """Generate skip marker transactions for scheduled occurrences.
+
+    Marks specific occurrences of a scheduled transaction as intentionally skipped
+    without creating a placeholder or warning. The generated transaction includes
+    schedule_id metadata so the hook recognizes it as a skip marker.
+
+    Two modes:
+
+    1. DIRECT MODE: Provide SCHEDULE_ID and DATES
+       beanschedule skip credit-card-payment 2026-02-15
+
+    2. INTERACTIVE MODE: Use --select to choose from missing transactions
+       beanschedule skip --select --ledger ledger.beancount
+
+    Examples:
+        # Direct mode: skip specific dates
+        beanschedule skip credit-card-payment 2026-02-15
+        beanschedule skip gym-membership 2026-02-15 2026-07-15 --reason "Traveling"
+        beanschedule skip rent-payment 2026-03-01 --reason "Prepaid" --output ledger.beancount
+
+        # Interactive mode: select from missing transactions
+        beanschedule skip --select --ledger ledger.beancount
+    """
+    try:
+        from beanschedule.constants import META_SCHEDULE_ID, META_SCHEDULE_SKIPPED
+        from beanschedule.loader import load_schedules_from_path, get_enabled_schedules
+        from beanschedule.hook import schedule_hook
+        from beancount import loader as beancount_loader
+        from pathlib import Path
+
+        # Determine schedules path
+        if schedules_path is None:
+            schedules_path = "schedules.yaml" if Path("schedules.yaml").exists() else "schedules"
+
+        path_obj = Path(schedules_path)
+
+        # Load schedules
+        schedule_file = load_schedules_from_path(path_obj)
+        if schedule_file is None:
+            click.echo(f"Error: Could not load schedules from {path_obj}", err=True)
+            sys.exit(1)
+
+        # Interactive selection mode
+        if select:
+            if not ledger:
+                click.echo("Error: --ledger is required with --select", err=True)
+                sys.exit(1)
+
+            ledger_path = Path(ledger)
+            entries, load_errors, _options = beancount_loader.load_file(str(ledger_path))
+            for err in load_errors:
+                logger.warning("Ledger load warning: %s", err)
+
+            # Get today's date for date range calculation
+            from datetime import datetime, timedelta
+            today = datetime.now().date()
+            start_date = today - timedelta(days=90)
+            end_date = today + timedelta(days=90)
+
+            # Find missing schedules using hook logic
+            enabled_schedules = get_enabled_schedules(schedule_file)
+            from beanschedule.utils import generate_all_schedule_occurrences
+            from beanschedule.recurrence import RecurrenceEngine
+
+            recurrence_engine = RecurrenceEngine()
+            expected_occurrences = generate_all_schedule_occurrences(
+                enabled_schedules, recurrence_engine, start_date, end_date
+            )
+
+            # Get matched transactions from ledger
+            from beanschedule.hook import _match_ledger_transactions_lazy
+
+            matched = _match_ledger_transactions_lazy(entries, expected_occurrences, enabled_schedules)
+
+            # Build list of missing occurrences
+            missing = []
+            for account, sched_dates in expected_occurrences.items():
+                for sched, expected_date in sched_dates:
+                    if (sched.id, expected_date) not in matched:
+                        missing.append((sched, expected_date))
+
+            if not missing:
+                click.echo("No missing scheduled transactions found in date range.")
+                sys.exit(0)
+
+            # Sort by date (oldest first, to highlight overdue)
+            missing.sort(key=lambda x: x[1])
+
+            # Display options and let user select
+            click.echo("\nMissing scheduled transactions (sorted by date, oldest first):\n")
+            for i, (sched, exp_date) in enumerate(missing, 1):
+                # Mark overdue items with asterisk
+                overdue = " *" if exp_date < today else ""
+                click.echo(f"{i:2}. {exp_date} - {sched.id:30} ({sched.transaction.payee}){overdue}")
+
+            click.echo("\nEnter dates to skip (comma-separated numbers, or 'all'):")
+            selection = click.prompt("Selection")
+
+            if selection.lower() == "all":
+                selected = missing
+            else:
+                try:
+                    indices = [int(x.strip()) - 1 for x in selection.split(",")]
+                    selected = [missing[i] for i in indices if 0 <= i < len(missing)]
+                except (ValueError, IndexError):
+                    click.echo("Invalid selection", err=True)
+                    sys.exit(1)
+
+            if not selected:
+                click.echo("No items selected.")
+                sys.exit(0)
+
+            # Generate skip markers for selected items
+            skip_markers = []
+            for sched, skip_date in selected:
+                marker = _generate_skip_marker(sched, skip_date, reason)
+                skip_markers.append(marker)
+
+            output_text = "\n".join(skip_markers)
+
+            if output is None:
+                click.echo(output_text)
+            else:
+                output_path = Path(output)
+                with open(output_path, "a") as f:
+                    f.write("\n" + output_text + "\n")
+                click.echo(f"✓ Skip markers appended to {output_path}", err=False)
+
+        else:
+            # Direct mode: SCHEDULE_ID and DATES required
+            if not schedule_id or not dates:
+                click.echo("Error: SCHEDULE_ID and DATES required (or use --select for interactive mode)", err=True)
+                sys.exit(1)
+
+            # Find the schedule
+            schedule = next((s for s in schedule_file.schedules if s.id == schedule_id), None)
+            if schedule is None:
+                click.echo(f"Error: Schedule '{schedule_id}' not found", err=True)
+                sys.exit(1)
+
+            # Parse dates
+            parsed_dates = []
+            for date_str in dates:
+                try:
+                    parsed_dates.append(date.fromisoformat(date_str))
+                except ValueError:
+                    click.echo(f"Error: Invalid date format '{date_str}'. Use YYYY-MM-DD", err=True)
+                    sys.exit(1)
+
+            # Generate skip markers
+            skip_markers = []
+            for d in parsed_dates:
+                marker = _generate_skip_marker(schedule, d, reason)
+                skip_markers.append(marker)
+
+            # Output
+            output_text = "\n".join(skip_markers)
+
+            if output is None:
+                click.echo(output_text)
+            else:
+                output_path = Path(output)
+                with open(output_path, "a") as f:
+                    f.write("\n" + output_text + "\n")
+                click.echo(f"✓ Skip markers appended to {output_path}", err=False)
+
+    except Exception as e:
+        click.echo(f"✗ Error: {e}", err=True)
+        if logger.isEnabledFor(logging.DEBUG):
+            traceback.print_exc()
+        sys.exit(1)
+
+
+def _generate_skip_marker(schedule, skip_date: date, reason: str | None = None) -> str:
+    """
+    Generate a Beancount skip marker transaction.
+
+    Args:
+        schedule: The Schedule object
+        skip_date: The date to skip
+        reason: Optional reason for skipping
+
+    Returns:
+        Formatted Beancount transaction as a string
+    """
+    from beanschedule.constants import META_SCHEDULE_ID, META_SCHEDULE_SKIPPED
+
+    payee = schedule.transaction.payee
+    account = schedule.match.account
+
+    # Format narration
+    if reason:
+        narration = f"[SKIPPED] {reason}"
+    else:
+        narration = "[SKIPPED]"
+
+    # Format transaction with standard flag (*) and #skipped tag
+    lines = [
+        f"{skip_date.isoformat()} * \"{payee}\" \"{narration}\"",
+        f"  #skipped",
+        f"  {META_SCHEDULE_ID}: \"{schedule.id}\"",
+        f"  {META_SCHEDULE_SKIPPED}: \"true\"",
+        f"  {account}  0 USD",
+    ]
+
+    return "\n".join(lines)
+
+
 if __name__ == "__main__":
     main()

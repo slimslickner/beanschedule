@@ -30,6 +30,7 @@ META_SCHEDULE_MATCHED_DATE = "schedule_matched_date"
 META_SCHEDULE_CONFIDENCE = "schedule_confidence"
 META_SCHEDULE_PLACEHOLDER = "schedule_placeholder"
 META_SCHEDULE_EXPECTED_DATE = "schedule_expected_date"
+META_SCHEDULE_SKIPPED = "schedule_skipped"  # Marks when a scheduled transaction was intentionally skipped
 
 # Amortization-specific metadata
 META_AMORTIZATION_PRINCIPAL = "amortization_principal"

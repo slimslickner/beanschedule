@@ -212,8 +212,12 @@ Focus: Code quality, documentation, CI/CD
 - [ ] All high priority code quality fixes
 - [ ] PyPI package registration
 
-### v1.4.0 - Polish
+### v1.4.0 - Skip Markers & Polish
 
+- [x] **Skip Markers** - Official support for marking occurrences as intentionally skipped
+  - [x] Skip detection (flag 'S', #skipped tag, schedule_skipped metadata)
+  - [x] CLI command (`beanschedule skip`) to generate skip markers
+  - [x] Documentation with examples
 - [ ] Dry-run mode (`--dry-run` flag)
 - [ ] One-time/ad-hoc schedules (`ONCE` frequency)
 - [ ] `beanschedule quick` - guided schedule creation
@@ -225,8 +229,6 @@ Focus: Code quality, documentation, CI/CD
 - [ ] Optional account matching (match any account if not specified)
 - [ ] Schedule statistics command (coverage report, match rates)
 - [ ] Advanced amortization (ARM, balloon payments, interest-only periods)
-
-**Note:** Skipping schedule instances can be done with a $0 transaction + `schedule_id` metadata (no feature needed)
 
 ### v2.0.0+ - Future Vision
 

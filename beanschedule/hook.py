@@ -495,6 +495,36 @@ def _match_transaction(
     return matcher.find_best_match(transaction, candidates)
 
 
+def _is_skip_marker(entry: data.Transaction) -> bool:
+    """
+    Check if a transaction is a skip marker (intentionally skipped occurrence).
+
+    A skip marker is identified by any of:
+    - Transaction flag is 'S' (for "Skipped")
+    - Transaction has #skipped tag
+    - Transaction has schedule_skipped metadata (with any value)
+
+    Args:
+        entry: The transaction to check
+
+    Returns:
+        True if this is a skip marker, False otherwise
+    """
+    # Check flag
+    if entry.flag == "S":
+        return True
+
+    # Check tags (Beancount stores tags without the # symbol)
+    if entry.tags and "skipped" in entry.tags:
+        return True
+
+    # Check metadata
+    if constants.META_SCHEDULE_SKIPPED in entry.meta:
+        return True
+
+    return False
+
+
 def _match_ledger_transactions_lazy(
     ledger_entries: list[data.Directive],
     expected_occurrences: dict[str, list[tuple[Schedule, date]]],
@@ -543,6 +573,9 @@ def _match_ledger_transactions_lazy(
             )
             continue
 
+        # Check if this is a skip marker transaction
+        is_skip = _is_skip_marker(entry)
+
         # Find matching expected occurrence within date window
         date_window = schedule.match.date_window_days or 0
 
@@ -551,12 +584,21 @@ def _match_ledger_transactions_lazy(
                 days_diff = abs((entry.date - expected_date).days)
                 if days_diff <= date_window:
                     matched.add((schedule_id, expected_date))
-                    logger.debug(
-                        "Matched ledger transaction %s to schedule %s (expected %s)",
-                        entry.date,
-                        schedule_id,
-                        expected_date,
-                    )
+                    if is_skip:
+                        skip_reason = entry.meta.get(constants.META_SCHEDULE_SKIPPED, "")
+                        logger.info(
+                            "Detected skip marker for %s on %s%s",
+                            schedule_id,
+                            expected_date,
+                            f" ({skip_reason})" if skip_reason else "",
+                        )
+                    else:
+                        logger.debug(
+                            "Matched ledger transaction %s to schedule %s (expected %s)",
+                            entry.date,
+                            schedule_id,
+                            expected_date,
+                        )
                     break
 
     # Note: We do NOT do fuzzy matching on ledger transactions without schedule_id

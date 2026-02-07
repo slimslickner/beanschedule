@@ -352,3 +352,186 @@ schedule_file = load_schedules_file(Path('schedules.yaml'))
 for schedule in schedule_file.schedules:
     print(f"{schedule.id}: {schedule.match_criteria.account}")
 ```
+
+---
+
+## Skipping Scheduled Occurrences
+
+### Overview
+
+Sometimes you need to mark a scheduled transaction as **intentionally skipped** for a specific date without creating a placeholder warning. For example:
+- Credit card with $0 balance that month (no transfer needed)
+- Subscription temporarily paused
+- One-time travel exception
+
+Beanschedule supports skip markers — special transactions in your ledger that tell the hook "this occurrence was intentional, don't warn me."
+
+### Skip Marker Patterns
+
+A transaction is recognized as a skip marker if it has **any of**:
+1. **#skipped tag** — Transaction has `#skipped` tag
+2. **schedule_skipped metadata** — Transaction has `schedule_skipped` metadata key
+3. **Flag 'S'** — Transaction flag set to `S` (for "Skipped") - note: 'S' is not a standard Beancount flag, so use tags/metadata instead
+
+### Manual Skip Marker Format
+
+Add this to your Beancount ledger:
+
+```beancount
+2026-02-15 * "Capital One Payment" "[SKIPPED] $0 balance this month"
+  #skipped
+  schedule_id: "credit-card-payment"
+  schedule_skipped: "true"
+  Assets:Checking  0 USD
+```
+
+Note: The posting must include an amount (e.g., `0 USD`) for Beancount to properly parse the transaction.
+
+**Fields**:
+- **Date**: The expected occurrence date
+- **Flag**: `S` (identifies as skip marker)
+- **Payee**: Your schedule's payee name
+- **Narration**: `[SKIPPED]` prefix + optional reason
+- **Metadata**:
+  - `schedule_id`: Must match your schedule's ID (required for hook recognition)
+  - `schedule_skipped`: Optional reason or "true"
+- **Posting**: Main account from your schedule (no amount needed)
+
+### Using the CLI Command
+
+The `beanschedule skip` command has two modes:
+
+#### Direct Mode: Skip Specific Dates
+
+```bash
+# Single date
+beanschedule skip credit-card-payment 2026-02-15
+
+# Multiple dates
+beanschedule skip gym-membership 2026-02-15 2026-07-15
+
+# With reason (included in narration)
+beanschedule skip credit-card-payment 2026-02-15 --reason "$0 balance"
+
+# Append to ledger file
+beanschedule skip credit-card-payment 2026-02-15 --output ledger.beancount
+
+# Auto-discover schedules directory
+beanschedule skip rent-payment 2026-03-01 --reason "Postponed"
+
+# Explicit schedules path
+beanschedule skip rent-payment 2026-03-01 --schedules-path schedules.yaml
+```
+
+#### Interactive Mode: Select from Missing Transactions
+
+```bash
+# Show missing scheduled transactions and let user select which to skip
+beanschedule skip --select --ledger ledger.beancount
+
+# With custom schedules path
+beanschedule skip --select --ledger ledger.beancount --schedules-path schedules/
+
+# Skip selected with a reason
+beanschedule skip --select --ledger ledger.beancount --reason "Exception"
+
+# Append to file
+beanschedule skip --select --ledger ledger.beancount --output skips.beancount
+```
+
+The interactive mode:
+1. Scans your ledger for expected scheduled transactions
+2. Identifies missing occurrences (expected but not found)
+3. Displays them in a numbered list with dates
+4. Prompts you to select which to skip (by number, comma-separated, or "all")
+5. Generates skip markers for selected items
+
+**CLI Options**:
+
+*Direct Mode:*
+- `SCHEDULE_ID`: ID of the schedule to skip
+- `DATES`: One or more dates to skip (format: YYYY-MM-DD)
+
+*Interactive Mode:*
+- `--select`: Enable interactive selection from missing transactions
+- `--ledger, -l`: Ledger file to scan (required with --select)
+
+*Common Options:*
+- `--reason, -r`: Reason for skipping (added to narration)
+- `--output, -o`: File to append to (default: stdout)
+- `--schedules-path, -s`: Path to schedules.yaml or schedules/ directory (auto-discovered if not specified)
+
+### Generated Output
+
+The `beanschedule skip` CLI command generates:
+
+```beancount
+2026-02-15 * "Capital One Payment" "[SKIPPED] $0 balance"
+  #skipped
+  schedule_id: "credit-card-payment"
+  schedule_skipped: "true"
+  Assets:Checking  0 USD
+```
+
+### How It Works
+
+When the hook runs:
+1. It loads expected occurrences for each schedule
+2. It scans existing ledger entries for transactions with `schedule_id` metadata
+3. If a transaction is detected as a skip marker (flag 'S', #skipped tag, or schedule_skipped metadata):
+   - The occurrence is marked as "matched"
+   - Skip detection is logged: `"Detected skip marker for {schedule_id} on {date}"`
+   - **No placeholder is created** for that occurrence
+4. Other missing occurrences still generate placeholders as normal
+
+### Examples
+
+**Credit card with zero balance** (no transfer needed):
+```beancount
+2026-02-15 * "Capital One Payment" "[SKIPPED] $0 balance this month"
+  #skipped
+  schedule_id: "credit-card-payment"
+  schedule_skipped: "true"
+  Assets:Checking  0 USD
+```
+
+**Gym membership pause** (traveling):
+```beancount
+2026-07-15 * "24 Hour Fitness" "[SKIPPED] Traveling in Europe"
+  #skipped
+  schedule_id: "gym-membership"
+  schedule_skipped: "Vacation"
+  Assets:Checking  0 USD
+```
+
+**Using metadata instead of tag** (alternative style):
+```beancount
+2026-03-01 * "Landlord" "[SKIPPED] Prepaid two months in advance"
+  schedule_id: "rent-payment"
+  schedule_skipped: "true"
+  Assets:Checking  0 USD
+```
+
+### When to Use Skip Markers
+
+✓ **Use skip markers for**:
+- One-time skipped occurrences
+- Documented exceptions (reason is visible in ledger)
+- When you want to keep the schedule unchanged
+- When you want a permanent audit trail
+
+✗ **Don't use skip markers for**:
+- Disabling all future occurrences (use `enabled: false` in schedule YAML instead)
+- Multiple months at a time (pause the schedule temporarily)
+- Recurring skips (add explicit dates to schedule's recurrence rule)
+
+### Logging
+
+Skip marker detection is logged at INFO level when the hook runs:
+
+```
+INFO: Detected skip marker for credit-card-payment on 2026-02-15 ($0 balance)
+```
+
+This helps you verify skips are being recognized correctly.
+```
