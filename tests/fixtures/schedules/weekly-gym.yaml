@@ -3,7 +3,7 @@ enabled: true
 match:
   account: Assets:Bank:Checking
   payee_pattern: "FitnessPro|Gym"
-  amount: -20.00
+  amount: -20
   amount_tolerance: 2.00
   amount_min: null
   amount_max: null

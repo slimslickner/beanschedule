@@ -2,7 +2,6 @@
 
 import os
 import pytest
-from pathlib import Path
 import yaml
 
 from beanschedule.loader import (
@@ -493,11 +492,15 @@ class TestScheduleFileWithConfig:
 class TestEnvironmentVariableEdgeCases:
     """Tests for edge cases with environment variables."""
 
-    def test_beanschedule_dir_nonexistent_path(self, tmp_path):
+    def test_beanschedule_dir_nonexistent_path(self, tmp_path, monkeypatch):
         """Test BEANSCHEDULE_DIR pointing to non-existent directory."""
         old_dir = os.environ.get("BEANSCHEDULE_DIR")
         try:
             os.environ["BEANSCHEDULE_DIR"] = str(tmp_path / "nonexistent")
+            # Mock Path.cwd() to return tmp_path (which has no schedules/)
+            import beanschedule.loader as loader_module
+
+            monkeypatch.setattr(loader_module.Path, "cwd", lambda: tmp_path)
 
             location = find_schedules_location()
             # Should continue to next check, not return the nonexistent path

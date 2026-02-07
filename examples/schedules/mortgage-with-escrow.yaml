@@ -1,0 +1,74 @@
+# Mortgage payment with amortization PLUS escrow
+# Demonstrates: Mixing automatic amortization with fixed escrow amounts
+id: mortgage-with-escrow
+enabled: false  # Set to true to enable
+match:
+  account: Assets:Checking
+  payee_pattern: "First National Mortgage|FNM|MORTGAGE"
+  date_window_days: 3
+recurrence:
+  frequency: MONTHLY
+  start_date: 2024-01-01
+  day_of_month: 1
+
+# Amortization configuration - calculates principal/interest automatically
+amortization:
+  principal: 320000.00
+  annual_rate: 0.07
+  term_months: 360
+  start_date: 2024-01-01
+
+transaction:
+  payee: "First National Mortgage"
+  narration: "Monthly mortgage payment (P+I+Escrow)"
+  tags: [mortgage, housing]
+  metadata:
+    schedule_id: mortgage-with-escrow
+    property: primary-residence
+  postings:
+    # Payment account - will auto-calculate as -(principal + interest + escrows)
+    - account: Assets:Checking
+      amount: null
+      role: payment  # Explicitly mark as payment account
+
+    # AUTOMATIC (calculated from amortization):
+    - account: Expenses:Housing:Mortgage-Interest
+      amount: null  # Calculated from amortization schedule
+      role: interest  # Explicitly mark as interest
+
+    - account: Liabilities:Mortgage:Principal
+      amount: null  # Calculated from amortization schedule
+      role: principal  # Explicitly mark as principal reduction
+
+    # FIXED (manually specified, change yearly):
+    - account: Expenses:Housing:Property-Tax-Escrow
+      amount: 350.00  # Update this annually when escrow changes
+      narration: "Property tax escrow"
+      role: escrow  # Explicitly mark as escrow (fixed amount)
+
+    - account: Expenses:Housing:Insurance-Escrow
+      amount: 125.00  # Update this annually when escrow changes
+      narration: "Home insurance escrow"
+      role: escrow  # Explicitly mark as escrow (fixed amount)
+
+    # Optional: PMI if applicable
+    # - account: Expenses:Housing:PMI
+    #   amount: 75.00
+    #   narration: "Private mortgage insurance"
+
+# Example forecast transaction that will be generated:
+#
+# 2024-03-01 # "First National Mortgage" "Monthly mortgage payment (P+I+Escrow)"
+#   filename: "schedules/mortgage-with-escrow.yaml"
+#   schedule_id: "mortgage-with-escrow"
+#   amortization_payment_number: 3
+#   amortization_balance_after: 319208.52
+#   amortization_principal: 265.36
+#   amortization_interest: 1863.61
+#   Assets:Checking                               -2603.97 USD  ; -(265.36 + 1863.61 + 350.00 + 125.00)
+#   Expenses:Housing:Mortgage-Interest             1863.61 USD  ; Calculated from amortization
+#   Liabilities:Mortgage:Principal                  265.36 USD  ; Calculated from amortization
+#   Expenses:Housing:Property-Tax-Escrow            350.00 USD  ; Fixed amount
+#     narration: "Property tax escrow"
+#   Expenses:Housing:Insurance-Escrow               125.00 USD  ; Fixed amount
+#     narration: "Home insurance escrow"

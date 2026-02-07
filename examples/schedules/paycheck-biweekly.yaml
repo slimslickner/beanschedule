@@ -1,0 +1,55 @@
+# Bi-weekly paycheck (matches actual Hoogle payroll in example ledger)
+# Demonstrates: WEEKLY frequency, multiple payee patterns, complex multi-posting transaction
+id: paycheck-biweekly
+enabled: true
+match:
+  account: Assets:US:BofA:Checking
+  payee_pattern: "Hoogle"
+  amount: 1350.60
+  amount_tolerance: 50.00
+  amount_min: null
+  amount_max: null
+  date_window_days: 2
+recurrence:
+  frequency: WEEKLY
+  start_date: 2013-01-03
+  end_date: null
+  day_of_month: null
+  month: null
+  day_of_week: THU
+  interval: 2
+  days_of_month: null
+  interval_months: null
+transaction:
+  payee: Hoogle
+  narration: Payroll
+  tags: []
+  metadata:
+    schedule_id: paycheck-biweekly
+    category: income
+  postings:
+  - account: Assets:US:BofA:Checking
+    amount: 1350.60
+    narration: Net Deposit
+  - account: Assets:US:Vanguard:Cash
+    amount: 1200.00
+    narration: 401k Contribution
+  - account: Income:US:Hoogle:Salary
+    amount: -4615.38
+    narration: Gross Salary
+  - account: Expenses:Taxes:Y2013:US:Federal
+    amount: 1062.92
+    narration: Federal Tax
+  - account: Expenses:Taxes:Y2013:US:State
+    amount: 365.08
+    narration: State Tax
+  - account: Expenses:Taxes:Y2013:US:SocSec
+    amount: 281.54
+    narration: Social Security Tax
+  - account: Expenses:Taxes:Y2013:US:Medicare
+    amount: 106.62
+    narration: Medicare Tax
+missing_transaction:
+  create_placeholder: true
+  flag: '!'
+  narration_prefix: '[MISSING]'

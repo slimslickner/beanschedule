@@ -1,38 +1,38 @@
-# Simple monthly rent payment
+# Monthly rent payment (matches RiverBank Properties in example ledger)
 # Demonstrates: MONTHLY frequency, simple two-posting transaction
 id: rent-payment
 enabled: true
 match:
-  account: Assets:Bank:Checking
-  payee_pattern: "ABC Properties|Property Manager|Landlord"
-  amount: -1500.00
+  account: Assets:US:BofA:Checking
+  payee_pattern: "RiverBank Properties"
+  amount: -2400.00
   amount_tolerance: 0.00
   amount_min: null
   amount_max: null
-  date_window_days: 2
+  date_window_days: 3
 recurrence:
   frequency: MONTHLY
-  start_date: 2024-01-01
+  start_date: 2013-01-06
   end_date: null
-  day_of_month: 1
+  day_of_month: 6
   month: null
   day_of_week: null
   interval: 1
   days_of_month: null
   interval_months: null
 transaction:
-  payee: ABC Properties
-  narration: Apartment Rent
+  payee: RiverBank Properties
+  narration: Paying the rent
   tags: []
   metadata:
     schedule_id: rent-payment
   postings:
-    - account: Assets:Bank:Checking
-      amount: null
-      narration: null
-    - account: Expenses:Housing:Rent
-      amount: null
-      narration: null
+  - account: Assets:US:BofA:Checking
+    amount: -2400.00
+    narration: null
+  - account: Expenses:Home:Rent
+    amount: 2400.00
+    narration: null
 missing_transaction:
   create_placeholder: true
   flag: '!'

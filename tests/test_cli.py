@@ -1,14 +1,12 @@
 """Tests for CLI commands."""
 
 import json
-from datetime import date
-from pathlib import Path
 
 import pytest
 import yaml
 from click.testing import CliRunner
 
-from beanschedule.cli import main, init, list as list_cmd, validate, generate, migrate
+from beanschedule.cli import main
 
 
 @pytest.fixture
@@ -453,136 +451,6 @@ class TestGenerateCommand:
         # But we can test with explicit path instead
 
 
-class TestMigrateCommand:
-    """Tests for the migrate command."""
-
-    def test_migrate_dry_run(self, cli_runner, schedules_yaml_file, tmp_path):
-        """Test migrate command with --dry-run flag."""
-        output_dir = tmp_path / "schedules_new"
-
-        result = cli_runner.invoke(
-            main,
-            [
-                "migrate",
-                str(schedules_yaml_file),
-                str(output_dir),
-                "--dry-run",
-            ],
-        )
-        if result.exit_code != 0:
-            print(f"Output: {result.output}")
-            if result.exception:
-                import traceback
-
-                traceback.print_exception(
-                    type(result.exception), result.exception, result.exception.__traceback__
-                )
-        assert result.exit_code == 0
-        assert "[DRY RUN]" in result.output
-        assert "Would create directory" in result.output
-        # Output directory should not be created in dry-run mode
-        assert not output_dir.exists()
-
-    def test_migrate_creates_files(self, cli_runner, schedules_yaml_file, tmp_path):
-        """Test that migrate creates individual schedule files."""
-        output_dir = tmp_path / "schedules_migrated"
-
-        result = cli_runner.invoke(
-            main,
-            [
-                "migrate",
-                str(schedules_yaml_file),
-                str(output_dir),
-                "--force",
-            ],
-        )
-        assert result.exit_code == 0
-        assert "Migration complete" in result.output
-
-        # Check that files were created
-        assert (output_dir / "_config.yaml").exists()
-        assert (output_dir / "monthly-rent.yaml").exists()
-        assert (output_dir / "biweekly-paycheck.yaml").exists()
-        assert (output_dir / "disabled-schedule.yaml").exists()
-
-    def test_migrate_creates_backup(self, cli_runner, schedules_yaml_file, tmp_path):
-        """Test that migrate creates a backup of the original file."""
-        output_dir = tmp_path / "schedules_migrated"
-        backup_path = schedules_yaml_file.parent / f"{schedules_yaml_file.name}.backup"
-
-        result = cli_runner.invoke(
-            main,
-            [
-                "migrate",
-                str(schedules_yaml_file),
-                str(output_dir),
-                "--force",
-            ],
-        )
-        assert result.exit_code == 0
-
-        # Original file should be renamed to .backup
-        assert backup_path.exists()
-
-    def test_migrate_skip_validation(self, cli_runner, schedules_yaml_file, tmp_path):
-        """Test migrate with --skip-validation flag."""
-        output_dir = tmp_path / "schedules_migrated"
-
-        result = cli_runner.invoke(
-            main,
-            [
-                "migrate",
-                str(schedules_yaml_file),
-                str(output_dir),
-                "--force",
-                "--skip-validation",
-            ],
-        )
-        assert result.exit_code == 0
-        assert "Validating migration" not in result.output
-
-    def test_migrate_existing_directory_abort(self, cli_runner, schedules_yaml_file, tmp_path):
-        """Test migrate aborts when output directory exists without --force."""
-        output_dir = tmp_path / "schedules_existing"
-        output_dir.mkdir()
-
-        result = cli_runner.invoke(
-            main,
-            [
-                "migrate",
-                str(schedules_yaml_file),
-                str(output_dir),
-            ],
-            input="n",  # Abort the confirmation
-        )
-        assert result.exit_code != 0
-
-    def test_migrate_creates_config_file(self, cli_runner, schedules_yaml_file, tmp_path):
-        """Test that migrate creates the global config file."""
-        output_dir = tmp_path / "schedules_migrated"
-
-        result = cli_runner.invoke(
-            main,
-            [
-                "migrate",
-                str(schedules_yaml_file),
-                str(output_dir),
-                "--force",
-            ],
-        )
-        assert result.exit_code == 0
-
-        config_file = output_dir / "_config.yaml"
-        assert config_file.exists()
-
-        # Check config content
-        with open(config_file) as f:
-            config_data = yaml.safe_load(f)
-
-        assert "fuzzy_match_threshold" in config_data
-        assert "default_date_window_days" in config_data
-
-
 class TestInitCommand:
     """Tests for the init command."""
 
@@ -705,7 +573,7 @@ class TestHelpCommands:
         assert "validate" in result.output
         assert "list" in result.output
         assert "generate" in result.output
-        assert "migrate" in result.output
+        assert "amortize" in result.output
         assert "init" in result.output
 
     def test_validate_help(self, cli_runner):
@@ -725,3 +593,247 @@ class TestHelpCommands:
         result = cli_runner.invoke(main, ["generate", "--help"])
         assert result.exit_code == 0
         assert "Generate expected occurrence dates" in result.output
+
+
+class TestAmortizeCommand:
+    """Tests for amortize command."""
+
+    def test_amortize_table_format(self, cli_runner, tmp_path):
+        """Should display amortization table."""
+        # Create schedule with amortization
+        schedules_file = tmp_path / "schedules.yaml"
+        schedules_file.write_text("""
+version: "1.0"
+schedules:
+  - id: test-loan
+    enabled: true
+    match:
+      account: Assets:Checking
+      payee_pattern: "Loan"
+    recurrence:
+      frequency: MONTHLY
+      start_date: 2024-01-01
+      day_of_month: 1
+    amortization:
+      principal: 10000.00
+      annual_rate: 0.06
+      term_months: 12
+      start_date: 2024-01-01
+    transaction:
+      payee: "Loan Payment"
+      narration: "Monthly loan payment"
+      metadata:
+        schedule_id: test-loan
+      postings:
+        - account: Assets:Checking
+          amount: null
+        - account: Expenses:Interest
+          amount: null
+        - account: Liabilities:Loan
+          amount: null
+""")
+
+        result = cli_runner.invoke(
+            main, ["amortize", "test-loan", "--schedules-path", str(schedules_file), "--limit", "3"]
+        )
+
+        assert result.exit_code == 0
+        assert "Schedule: test-loan" in result.output
+        assert "Loan Amount: $10,000.00" in result.output
+        assert "Interest Rate: 6.000%" in result.output
+        assert "Term: 12 months" in result.output
+        assert "Monthly Payment:" in result.output
+        assert "Total Interest:" in result.output
+        # Check table headers
+        assert "Payment" in result.output
+        assert "Principal" in result.output
+        assert "Interest" in result.output
+        assert "Balance" in result.output
+
+    def test_amortize_summary_only(self, cli_runner, tmp_path):
+        """Should show summary without table."""
+        schedules_file = tmp_path / "schedules.yaml"
+        schedules_file.write_text("""
+version: "1.0"
+schedules:
+  - id: test-loan
+    enabled: true
+    match:
+      account: Assets:Checking
+      payee_pattern: "Loan"
+    recurrence:
+      frequency: MONTHLY
+      start_date: 2024-01-01
+      day_of_month: 1
+    amortization:
+      principal: 10000.00
+      annual_rate: 0.06
+      term_months: 12
+      start_date: 2024-01-01
+    transaction:
+      payee: "Loan Payment"
+      metadata:
+        schedule_id: test-loan
+      postings:
+        - account: Assets:Checking
+        - account: Expenses:Interest
+        - account: Liabilities:Loan
+""")
+
+        result = cli_runner.invoke(
+            main,
+            ["amortize", "test-loan", "--schedules-path", str(schedules_file), "--summary-only"],
+        )
+
+        assert result.exit_code == 0
+        assert "Schedule: test-loan" in result.output
+        assert "Total Interest:" in result.output
+        # Should not have table headers
+        assert result.output.count("Payment") <= 1  # Only in summary line
+
+    def test_amortize_csv_format(self, cli_runner, tmp_path):
+        """Should output CSV format."""
+        schedules_file = tmp_path / "schedules.yaml"
+        schedules_file.write_text("""
+version: "1.0"
+schedules:
+  - id: test-loan
+    enabled: true
+    match:
+      account: Assets:Checking
+      payee_pattern: "Loan"
+    recurrence:
+      frequency: MONTHLY
+      start_date: 2024-01-01
+      day_of_month: 1
+    amortization:
+      principal: 10000.00
+      annual_rate: 0.06
+      term_months: 12
+      start_date: 2024-01-01
+    transaction:
+      payee: "Loan Payment"
+      metadata:
+        schedule_id: test-loan
+      postings:
+        - account: Assets:Checking
+        - account: Expenses:Interest
+        - account: Liabilities:Loan
+""")
+
+        result = cli_runner.invoke(
+            main,
+            [
+                "amortize",
+                "test-loan",
+                "--schedules-path",
+                str(schedules_file),
+                "--format",
+                "csv",
+                "--limit",
+                "3",
+            ],
+        )
+
+        assert result.exit_code == 0
+        assert "#,Date,Payment,Principal,Interest,Balance" in result.output
+        assert "1,2024-01-01," in result.output
+
+    def test_amortize_json_format(self, cli_runner, tmp_path):
+        """Should output JSON format."""
+        schedules_file = tmp_path / "schedules.yaml"
+        schedules_file.write_text("""
+version: "1.0"
+schedules:
+  - id: test-loan
+    enabled: true
+    match:
+      account: Assets:Checking
+      payee_pattern: "Loan"
+    recurrence:
+      frequency: MONTHLY
+      start_date: 2024-01-01
+      day_of_month: 1
+    amortization:
+      principal: 10000.00
+      annual_rate: 0.06
+      term_months: 12
+      start_date: 2024-01-01
+    transaction:
+      payee: "Loan Payment"
+      metadata:
+        schedule_id: test-loan
+      postings:
+        - account: Assets:Checking
+        - account: Expenses:Interest
+        - account: Liabilities:Loan
+""")
+
+        result = cli_runner.invoke(
+            main,
+            [
+                "amortize",
+                "test-loan",
+                "--schedules-path",
+                str(schedules_file),
+                "--format",
+                "json",
+                "--limit",
+                "2",
+            ],
+        )
+
+        assert result.exit_code == 0
+        # Parse JSON to validate
+        output_json = json.loads(result.output)
+        assert "summary" in output_json
+        assert "payments" in output_json
+        assert output_json["summary"]["schedule_id"] == "test-loan"
+        assert len(output_json["payments"]) == 2
+
+    def test_amortize_schedule_not_found(self, cli_runner, tmp_path):
+        """Should error if schedule not found."""
+        schedules_file = tmp_path / "schedules.yaml"
+        schedules_file.write_text("""
+version: "1.0"
+schedules: []
+""")
+
+        result = cli_runner.invoke(
+            main, ["amortize", "nonexistent", "--schedules-path", str(schedules_file)]
+        )
+
+        assert result.exit_code == 1
+        assert "not found" in result.output
+
+    def test_amortize_no_amortization_config(self, cli_runner, tmp_path):
+        """Should error if schedule has no amortization."""
+        schedules_file = tmp_path / "schedules.yaml"
+        schedules_file.write_text("""
+version: "1.0"
+schedules:
+  - id: test-schedule
+    enabled: true
+    match:
+      account: Assets:Checking
+      payee_pattern: "Test"
+    recurrence:
+      frequency: MONTHLY
+      start_date: 2024-01-01
+      day_of_month: 1
+    transaction:
+      payee: "Test"
+      metadata:
+        schedule_id: test-schedule
+      postings:
+        - account: Assets:Checking
+        - account: Expenses:Test
+""")
+
+        result = cli_runner.invoke(
+            main, ["amortize", "test-schedule", "--schedules-path", str(schedules_file)]
+        )
+
+        assert result.exit_code == 1
+        assert "does not have amortization configured" in result.output
+        assert "Add an 'amortization' section" in result.output

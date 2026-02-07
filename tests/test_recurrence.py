@@ -1,6 +1,5 @@
 """Tests for date recurrence generation engine."""
 
-import pytest
 from datetime import date
 
 from beanschedule.recurrence import RecurrenceEngine

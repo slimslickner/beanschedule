@@ -1,7 +1,7 @@
 # Quarterly water bill
 # Demonstrates: INTERVAL frequency (every 3 months)
 id: utilities-water
-enabled: true
+enabled: false
 match:
   account: Assets:Bank:Checking
   payee_pattern: "Water Authority|Municipal Water|WATER DEPT"

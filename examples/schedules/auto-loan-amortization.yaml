@@ -1,0 +1,41 @@
+# Auto loan payment with automatic amortization
+# Demonstrates: Amortization feature for automatic principal/interest split
+id: auto-loan-amortization
+enabled: true
+match:
+  account: Assets:Checking
+  payee_pattern: "Auto Finance|CAR LOAN"
+  date_window_days: 3
+recurrence:
+  frequency: MONTHLY
+  start_date: 2024-01-01
+  day_of_month: 15
+# Amortization configuration - automatically calculates principal/interest split
+amortization:
+  principal: 30000.00
+  annual_rate: 0.05
+  term_months: 60
+  start_date: 2024-01-01
+  # Optional: Add extra principal payment each month
+  # extra_principal: 50.00
+transaction:
+  payee: Auto Finance Company
+  narration: Monthly auto loan payment
+  tags: [auto, loan]
+  metadata:
+    schedule_id: auto-loan-amortization
+    vehicle: honda-civic
+  postings:
+    # The plugin will automatically calculate amounts based on amortization schedule:
+    # - Payment account (role: payment) gets -total_payment
+    # - Interest account (role: interest) gets interest portion
+    # - Principal account (role: principal) gets principal portion
+    - account: Assets:Checking
+      amount: null  # Will be calculated
+      role: payment  # Explicitly mark as payment account
+    - account: Expenses:Auto:Loan-Interest
+      amount: null  # Will be calculated from amortization
+      role: interest  # Explicitly mark as interest
+    - account: Liabilities:Auto-Loan
+      amount: null  # Will be calculated from amortization
+      role: principal  # Explicitly mark as principal reduction

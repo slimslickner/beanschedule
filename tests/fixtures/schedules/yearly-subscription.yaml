@@ -3,7 +3,7 @@ enabled: true
 match:
   account: Assets:Bank:Checking
   payee_pattern: "Adobe|Software"
-  amount: -99.00
+  amount: -99
   amount_tolerance: 5.00
   amount_min: null
   amount_max: null

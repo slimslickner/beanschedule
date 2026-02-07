@@ -4,7 +4,7 @@ from datetime import date
 from decimal import Decimal
 from unittest.mock import MagicMock, patch
 
-from beancount.core import data
+from beancount.core import amount, data
 
 from beanschedule.hook import schedule_hook
 from beanschedule.schema import ScheduleFile
@@ -191,6 +191,80 @@ class TestTransactionMatching:
         # Transaction should be unchanged
         unmatched_txn = result[0][1][0]
         assert "schedule_id" not in unmatched_txn.meta
+
+    def test_hook_links_transaction_with_existing_schedule_id(
+        self, sample_transaction, sample_schedule, global_config
+    ):
+        """Test that transactions with pre-existing schedule_id metadata are linked without fuzzy matching."""
+        # Create a transaction with existing schedule_id metadata
+        meta = data.new_metadata("test.csv", 0)
+        meta["schedule_id"] = "rent"
+        txn = sample_transaction(
+            date(2024, 1, 15),
+            "Unknown Payee",  # Different from schedule pattern
+            "Assets:Bank:Checking",
+            Decimal("-1500.00"),
+        )
+        txn = txn._replace(meta=meta)
+
+        # Create schedule with strict matching criteria that wouldn't match fuzzy
+        schedule = sample_schedule(
+            id="rent",
+            payee_pattern="LANDLORD",  # Strict pattern
+            amount=Decimal("-1500.00"),
+        )
+
+        extracted_entries = [
+            ("checking.csv", [txn], "Assets:Bank:Checking", None),
+        ]
+
+        schedule_file = ScheduleFile(schedules=[schedule], config=global_config)
+
+        with patch("beanschedule.hook.load_schedules_file", return_value=schedule_file):
+            result = schedule_hook(extracted_entries)
+
+        # Transaction should be matched to the rent schedule despite payee mismatch
+        matched_txn = result[0][1][0]
+        assert matched_txn.meta["schedule_id"] == "rent"
+        # Confidence should be 1.0 (perfect) since it used pre-existing schedule_id
+        assert matched_txn.meta["schedule_confidence"] == "1.00"
+
+    def test_hook_falls_back_to_fuzzy_when_schedule_id_not_found(
+        self, sample_transaction, sample_schedule, global_config
+    ):
+        """Test that fuzzy matching is used when pre-existing schedule_id is not in candidates."""
+        # Create a transaction with schedule_id that doesn't exist
+        meta = data.new_metadata("test.csv", 0)
+        meta["schedule_id"] = "nonexistent"
+        txn = sample_transaction(
+            date(2024, 1, 15),
+            "Landlord Corp",  # Slightly different payee for fuzzy matching
+            "Assets:Bank:Checking",
+            Decimal("-1500.00"),
+        )
+        txn = txn._replace(meta=meta)
+
+        schedule = sample_schedule(
+            id="rent",
+            payee_pattern="Landlord",
+            amount=Decimal("-1500.00"),
+        )
+
+        extracted_entries = [
+            ("checking.csv", [txn], "Assets:Bank:Checking", None),
+        ]
+
+        schedule_file = ScheduleFile(schedules=[schedule], config=global_config)
+
+        with patch("beanschedule.hook.load_schedules_file", return_value=schedule_file):
+            result = schedule_hook(extracted_entries)
+
+        # Transaction should fall back to fuzzy matching and match rent schedule
+        matched_txn = result[0][1][0]
+        assert matched_txn.meta["schedule_id"] == "rent"
+        # Confidence should be less than 1.0 (fuzzy match, not perfect)
+        confidence = float(matched_txn.meta["schedule_confidence"])
+        assert confidence < 1.0
 
 
 class TestTransactionEnrichment:
@@ -471,3 +545,422 @@ class TestPostingReplacement:
         assert matched_txn.postings[1].account == "Expenses:Housing:Rent"
         # First posting should have the imported amount
         assert matched_txn.postings[0].units.number == Decimal("-1500.00")
+
+
+class TestLedgerTransactionMatching:
+    """Tests for matching transactions already in the ledger."""
+
+    def test_ledger_transaction_with_schedule_id_not_flagged_missing(
+        self, sample_transaction, sample_schedule, global_config
+    ):
+        """Test that ledger transactions with schedule_id are not flagged as missing."""
+        # Create a ledger transaction with schedule_id
+        ledger_meta = data.new_metadata("ledger.beancount", 10)
+        ledger_meta["schedule_id"] = "rent"
+        ledger_txn = sample_transaction(
+            date(2024, 1, 15),
+            "Landlord",
+            "Assets:Bank:Checking",
+            Decimal("-1500.00"),
+        )
+        ledger_txn = ledger_txn._replace(meta=ledger_meta)
+
+        # Create schedule
+        schedule = sample_schedule(
+            id="rent",
+            payee_pattern="Landlord",
+            amount=Decimal("-1500.00"),
+        )
+
+        # No imported transactions - just the ledger
+        extracted_entries = []
+
+        schedule_file = ScheduleFile(schedules=[schedule], config=global_config)
+
+        with patch("beanschedule.hook.load_schedules_file", return_value=schedule_file):
+            result = schedule_hook(extracted_entries, existing_entries=[ledger_txn])
+
+        # Should have no placeholders (transaction is already in ledger)
+        assert len(result) == 0
+
+    def test_ledger_transaction_without_schedule_id_allows_placeholder(
+        self, sample_transaction, sample_schedule, global_config
+    ):
+        """Test that ledger transactions without schedule_id don't prevent missing warnings."""
+        # Create a ledger transaction WITHOUT schedule_id
+        ledger_txn = sample_transaction(
+            date(2024, 1, 15),
+            "Landlord",
+            "Assets:Bank:Checking",
+            Decimal("-1500.00"),
+        )
+
+        # Create schedule
+        schedule = sample_schedule(
+            id="rent",
+            payee_pattern="Landlord",
+            amount=Decimal("-1500.00"),
+        )
+
+        # No imported transactions
+        extracted_entries = []
+
+        schedule_file = ScheduleFile(schedules=[schedule], config=global_config)
+
+        with patch("beanschedule.hook.load_schedules_file", return_value=schedule_file):
+            result = schedule_hook(extracted_entries, existing_entries=[ledger_txn])
+
+        # Should still create a placeholder (ledger txn has no schedule_id)
+        # Even though there's a transaction in the ledger, without schedule_id we can't confirm it's linked
+        assert len(result) > 0
+        assert result[0][0] == "<schedules>"
+        assert len(result[0][1]) > 0
+
+    def test_ledger_transaction_with_schedule_id_date_within_window(
+        self, sample_transaction, sample_schedule, global_config
+    ):
+        """Test that ledger transactions match even if date is within the date window."""
+        # Create a ledger transaction on Jan 16 instead of Jan 15
+        ledger_meta = data.new_metadata("ledger.beancount", 10)
+        ledger_meta["schedule_id"] = "rent"
+        ledger_txn = sample_transaction(
+            date(2024, 1, 16),  # One day off
+            "Landlord",
+            "Assets:Bank:Checking",
+            Decimal("-1500.00"),
+        )
+        ledger_txn = ledger_txn._replace(meta=ledger_meta)
+
+        # Create schedule with date window
+        schedule = sample_schedule(
+            id="rent",
+            payee_pattern="Landlord",
+            amount=Decimal("-1500.00"),
+        )
+        # Set date window to 3 days (default from config)
+
+        extracted_entries = []
+
+        schedule_file = ScheduleFile(schedules=[schedule], config=global_config)
+
+        with patch("beanschedule.hook.load_schedules_file", return_value=schedule_file):
+            result = schedule_hook(extracted_entries, existing_entries=[ledger_txn])
+
+        # Should have no placeholders (ledger transaction matches within date window)
+        assert len(result) == 0
+
+    def test_ledger_transaction_with_unknown_schedule_id(
+        self, sample_transaction, sample_schedule, global_config
+    ):
+        """Test that ledger transactions with unknown schedule_id are ignored."""
+        # Create a ledger transaction with non-existent schedule_id
+        ledger_meta = data.new_metadata("ledger.beancount", 10)
+        ledger_meta["schedule_id"] = "unknown_schedule"
+        ledger_txn = sample_transaction(
+            date(2024, 1, 15),
+            "Landlord",
+            "Assets:Bank:Checking",
+            Decimal("-1500.00"),
+        )
+        ledger_txn = ledger_txn._replace(meta=ledger_meta)
+
+        # Create a different schedule
+        schedule = sample_schedule(
+            id="rent",
+            payee_pattern="Landlord",
+            amount=Decimal("-1500.00"),
+        )
+
+        extracted_entries = []
+
+        schedule_file = ScheduleFile(schedules=[schedule], config=global_config)
+
+        with patch("beanschedule.hook.load_schedules_file", return_value=schedule_file):
+            result = schedule_hook(extracted_entries, existing_entries=[ledger_txn])
+
+        # Should still create placeholder (unknown schedule_id is ignored)
+        assert len(result) > 0
+        assert result[0][0] == "<schedules>"
+
+    def test_ledger_and_imported_transactions_both_matched(
+        self, sample_transaction, sample_schedule, global_config
+    ):
+        """Test that both ledger and imported transactions prevent missing warnings."""
+        # Create a ledger transaction for Jan 15
+        ledger_meta = data.new_metadata("ledger.beancount", 10)
+        ledger_meta["schedule_id"] = "rent"
+        ledger_txn_1 = sample_transaction(
+            date(2024, 1, 15),
+            "Landlord",
+            "Assets:Bank:Checking",
+            Decimal("-1500.00"),
+        )
+        ledger_txn_1 = ledger_txn_1._replace(meta=ledger_meta)
+
+        # Create an imported transaction for Feb 15
+        imported_txn = sample_transaction(
+            date(2024, 2, 15),
+            "Landlord",
+            "Assets:Bank:Checking",
+            Decimal("-1500.00"),
+        )
+
+        # Create schedule
+        schedule = sample_schedule(
+            id="rent",
+            payee_pattern="Landlord",
+            amount=Decimal("-1500.00"),
+        )
+
+        extracted_entries = [
+            ("checking.csv", [imported_txn], "Assets:Bank:Checking", None),
+        ]
+
+        schedule_file = ScheduleFile(schedules=[schedule], config=global_config)
+
+        with patch("beanschedule.hook.load_schedules_file", return_value=schedule_file):
+            result = schedule_hook(extracted_entries, existing_entries=[ledger_txn_1])
+
+        # Should have no placeholders (both transactions matched)
+        # Result will have the modified imported transaction
+        assert len(result) == 1
+        # The imported transaction should be matched
+        matched_txn = result[0][1][0]
+        assert matched_txn.meta["schedule_id"] == "rent"
+
+
+class TestAmortizationEnrichment:
+    """Tests for amortization integration in the beangulp hook."""
+
+    def test_stateful_amortization_enrichment(
+        self, sample_transaction, sample_schedule, global_config
+    ):
+        """Test stateful amortization enrichment using ledger balance."""
+        from decimal import Decimal
+
+        from beanschedule.schema import AmortizationConfig
+        from beanschedule.types import CompoundingFrequency
+        from tests.conftest import make_posting_template
+
+        # Create schedule with stateful amortization (balance_from_ledger: True)
+        amort_config = AmortizationConfig(
+            annual_rate=Decimal("0.0675"),
+            monthly_payment=Decimal("1995.68"),
+            balance_from_ledger=True,
+            compounding=CompoundingFrequency.MONTHLY,
+        )
+
+        # Create posting templates with roles
+        postings = [
+            make_posting_template("Assets:Bank:Checking", None, role="payment"),
+            make_posting_template("Expenses:Housing:Interest", None, role="interest"),
+            make_posting_template("Liabilities:Mortgage", None, role="principal"),
+        ]
+
+        schedule = sample_schedule(
+            id="mortgage",
+            payee_pattern="MORTGAGE BANK",
+            amount=Decimal("-1995.68"),
+            postings=postings,
+        )
+        schedule.amortization = amort_config
+
+        # Create ledger entry: initial loan disbursement
+        loan_init = data.Transaction(
+            meta={"filename": "ledger.beancount", "lineno": 1},
+            date=date(2024, 1, 1),
+            flag="*",  # Cleared flag (P also works, but * is clearer)
+            payee="Lender",
+            narration="Loan disbursement",
+            tags=frozenset(),
+            links=frozenset(),
+            postings=[
+                data.Posting(
+                    account="Assets:Bank:Checking",
+                    units=amount.Amount(Decimal("300000"), "USD"),
+                    cost=None,
+                    price=None,
+                    flag=None,
+                    meta=None,
+                ),
+                data.Posting(
+                    account="Liabilities:Mortgage",
+                    units=amount.Amount(Decimal("-300000"), "USD"),
+                    cost=None,
+                    price=None,
+                    flag=None,
+                    meta=None,
+                ),
+            ],
+        )
+
+        # Create imported transaction for first payment (Feb 15, for Feb 1 amortization)
+        imported_txn = sample_transaction(
+            date(2024, 2, 15),
+            "MORTGAGE BANK",
+            "Assets:Bank:Checking",
+            Decimal("-1995.68"),
+        )
+
+        extracted_entries = [
+            ("bank.csv", [imported_txn], "Assets:Bank:Checking", None),
+        ]
+
+        schedule_file = ScheduleFile(schedules=[schedule], config=global_config)
+
+        with patch("beanschedule.hook.load_schedules_file", return_value=schedule_file):
+            result = schedule_hook(extracted_entries, existing_entries=[loan_init])
+
+        # Find the enriched transaction
+        enriched_txn = result[0][1][0]
+
+        # Verify amortization metadata is present
+        assert "amortization_principal" in enriched_txn.meta
+        assert "amortization_interest" in enriched_txn.meta
+        assert "amortization_balance_after" in enriched_txn.meta
+        assert "amortization_linked_date" in enriched_txn.meta
+
+        # Verify the split is reasonable (stateful mode, second month)
+        principal = Decimal(enriched_txn.meta["amortization_principal"])
+        interest = Decimal(enriched_txn.meta["amortization_interest"])
+
+        # Second payment should have slightly less interest than first
+        assert principal > Decimal("0")
+        assert interest > Decimal("1600")  # Still mostly interest
+        total = principal + interest
+        assert total == Decimal("1995.68")  # Should equal monthly payment
+
+    def test_amortization_with_escrow(
+        self, sample_transaction, sample_schedule, global_config
+    ):
+        """Test amortization with explicit escrow postings."""
+        from decimal import Decimal
+
+        from beanschedule.schema import AmortizationConfig
+        from beanschedule.types import CompoundingFrequency
+        from tests.conftest import make_posting_template
+
+        amort_config = AmortizationConfig(
+            annual_rate=Decimal("0.0675"),
+            monthly_payment=Decimal("1995.68"),
+            balance_from_ledger=True,
+            compounding=CompoundingFrequency.MONTHLY,
+        )
+
+        # Postings including escrow with explicit amount
+        postings = [
+            make_posting_template("Assets:Bank:Checking", None, role="payment"),
+            make_posting_template("Expenses:Housing:Interest", None, role="interest"),
+            make_posting_template("Liabilities:Mortgage", None, role="principal"),
+            make_posting_template("Expenses:Housing:Insurance", Decimal("150"), role="escrow"),
+        ]
+
+        schedule = sample_schedule(
+            id="mortgage",
+            payee_pattern="MORTGAGE BANK",
+            amount=Decimal("-2145.68"),
+            postings=postings,
+        )
+        schedule.amortization = amort_config
+
+        # Create ledger entry: initial loan
+        loan_init = data.Transaction(
+            meta={"filename": "ledger.beancount", "lineno": 1},
+            date=date(2024, 1, 1),
+            flag="*",
+            payee="Lender",
+            narration="Loan disbursement",
+            tags=frozenset(),
+            links=frozenset(),
+            postings=[
+                data.Posting(
+                    account="Assets:Bank:Checking",
+                    units=amount.Amount(Decimal("300000"), "USD"),
+                    cost=None,
+                    price=None,
+                    flag=None,
+                    meta=None,
+                ),
+                data.Posting(
+                    account="Liabilities:Mortgage",
+                    units=amount.Amount(Decimal("-300000"), "USD"),
+                    cost=None,
+                    price=None,
+                    flag=None,
+                    meta=None,
+                ),
+            ],
+        )
+
+        imported_txn = sample_transaction(
+            date(2024, 2, 15),
+            "MORTGAGE BANK",
+            "Assets:Bank:Checking",
+            Decimal("-2145.68"),
+        )
+
+        extracted_entries = [
+            ("bank.csv", [imported_txn], "Assets:Bank:Checking", None),
+        ]
+
+        schedule_file = ScheduleFile(schedules=[schedule], config=global_config)
+
+        with patch("beanschedule.hook.load_schedules_file", return_value=schedule_file):
+            result = schedule_hook(extracted_entries, existing_entries=[loan_init])
+
+        enriched_txn = result[0][1][0]
+
+        # Verify escrow posting has explicit amount
+        escrow_posting = next(
+            (p for p in enriched_txn.postings if p.account == "Expenses:Housing:Insurance"),
+            None,
+        )
+        assert escrow_posting is not None
+        assert escrow_posting.units.number == Decimal("150")
+
+        # Verify P/I postings still have computed amounts
+        interest_posting = next(p for p in enriched_txn.postings if p.account == "Expenses:Housing:Interest")
+        principal_posting = next(p for p in enriched_txn.postings if p.account == "Liabilities:Mortgage")
+
+        assert interest_posting.units.number > Decimal("0")
+        assert principal_posting.units.number > Decimal("0")
+
+    def test_no_amortization_unchanged(
+        self, sample_transaction, sample_schedule, global_config
+    ):
+        """Regression test: non-amortization schedules are unchanged."""
+        # Create regular schedule without amortization
+        schedule = sample_schedule(
+            id="rent",
+            payee_pattern="LANDLORD",
+            amount=Decimal("-1500.00"),
+            postings=None,  # No postings, simple enrichment
+        )
+
+        imported_txn = sample_transaction(
+            date(2024, 1, 15),
+            "LANDLORD",
+            "Assets:Bank:Checking",
+            Decimal("-1500.00"),
+        )
+
+        extracted_entries = [
+            ("bank.csv", [imported_txn], "Assets:Bank:Checking", None),
+        ]
+
+        schedule_file = ScheduleFile(schedules=[schedule], config=global_config)
+
+        with patch("beanschedule.hook.load_schedules_file", return_value=schedule_file):
+            result = schedule_hook(extracted_entries)
+
+        enriched_txn = result[0][1][0]
+
+        # Should NOT have amortization metadata
+        assert "amortization_principal" not in enriched_txn.meta
+        assert "amortization_interest" not in enriched_txn.meta
+        assert "amortization_balance_after" not in enriched_txn.meta
+
+        # Should have standard schedule metadata
+        assert enriched_txn.meta["schedule_id"] == "rent"
+        assert "schedule_matched_date" in enriched_txn.meta
+        assert "schedule_confidence" in enriched_txn.meta

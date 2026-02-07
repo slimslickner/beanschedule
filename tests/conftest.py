@@ -154,12 +154,14 @@ def make_posting_template(
     account: str,
     amount: Decimal = None,
     narration: str = None,
+    role: str | None = None,
 ) -> Posting:
     """Create a transaction posting template."""
     return Posting(
         account=account,
         amount=amount,
         narration=narration,
+        role=role,
     )
 
 
@@ -221,6 +223,7 @@ def make_schedule(
         payee=kwargs.get("payee", payee_pattern),
         narration=kwargs.get("narration", "Test transaction"),
         schedule_id=id,
+        postings=kwargs.get("postings"),
     )
 
     missing_txn = MissingTransactionConfig(
@@ -293,18 +296,6 @@ def sample_schedule():
 def global_config():
     """Fixture providing default GlobalConfig."""
     return make_global_config()
-
-
-@pytest.fixture
-def custom_global_config():
-    """Fixture providing a custom global config builder."""
-    return make_global_config
-
-
-@pytest.fixture
-def sample_posting():
-    """Fixture providing a posting builder function."""
-    return make_posting
 
 
 @pytest.fixture

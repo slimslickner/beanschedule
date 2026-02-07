@@ -5,10 +5,11 @@ import re
 from datetime import date
 from decimal import Decimal
 from difflib import SequenceMatcher
-from typing import Optional, Tuple
+from typing import Optional
 
 from beancount.core import data
 
+from . import constants
 from .schema import GlobalConfig, Schedule
 
 logger = logging.getLogger(__name__)
@@ -25,6 +26,10 @@ class TransactionMatcher:
             config: Global configuration with matching thresholds
         """
         self.config = config
+        # Cache for compiled regex patterns (pattern -> compiled regex)
+        self.compiled_patterns: dict[str, re.Pattern] = {}
+        # Cache for fuzzy match results ((payee, pattern) -> score)
+        self.fuzzy_cache: dict[tuple[str, str], float] = {}
 
     def calculate_match_score(
         self,
@@ -59,12 +64,16 @@ class TransactionMatcher:
         date_score = self._date_score(transaction, schedule, expected_date)
 
         # Weighted combination
-        total_score = (payee_score * 0.4) + (amount_score * 0.4) + (date_score * 0.2)
+        total_score = (payee_score * constants.PAYEE_SCORE_WEIGHT) + (amount_score * constants.AMOUNT_SCORE_WEIGHT) + (date_score * constants.DATE_SCORE_WEIGHT)
 
         logger.debug(
-            f"Match score for {transaction.payee} vs {schedule.id}: "
-            f"{total_score:.2f} (payee={payee_score:.2f}, "
-            f"amount={amount_score:.2f}, date={date_score:.2f})",
+            "Match score for %s vs %s: %.2f (payee=%.2f, amount=%.2f, date=%.2f)",
+            transaction.payee,
+            schedule.id,
+            total_score,
+            payee_score,
+            amount_score,
+            date_score,
         )
 
         return total_score
@@ -101,46 +110,74 @@ class TransactionMatcher:
 
     def _is_regex_pattern(self, pattern: str) -> bool:
         """Detect if pattern is likely a regex."""
-        regex_indicators = ["|", ".*", ".+", "\\", "[", "]", "(", ")", "^", "$"]
-        return any(indicator in pattern for indicator in regex_indicators)
+        return any(indicator in pattern for indicator in constants.REGEX_INDICATORS)
 
     def _regex_match(self, payee: str, pattern: str) -> float:
         """
-        Match payee against regex pattern.
+        Match payee against regex pattern using cached compiled patterns.
+
+        Patterns are compiled and cached on first use for better performance.
+        Comparison is case-insensitive.
+
+        Args:
+            payee: Transaction payee string to match.
+            pattern: Regex pattern to match against (case-insensitive).
 
         Returns:
-            1.0 if matches, 0.0 if not
+            1.0 if pattern matches payee, 0.0 otherwise.
         """
         try:
             normalized_payee = payee.upper().strip()
             normalized_pattern = pattern.upper().strip()
 
-            if re.search(normalized_pattern, normalized_payee):
+            # Get or compile and cache the pattern
+            if normalized_pattern not in self.compiled_patterns:
+                self.compiled_patterns[normalized_pattern] = re.compile(
+                    normalized_pattern,
+                    re.IGNORECASE,
+                )
+
+            compiled = self.compiled_patterns[normalized_pattern]
+            if compiled.search(normalized_payee):
                 return 1.0
             return 0.0
         except re.error as e:
-            logger.warning(f"Invalid regex pattern '{pattern}': {e}")
+            logger.warning("Invalid regex pattern '%s': %s", pattern, e)
             return 0.0
 
     def _fuzzy_match(self, payee: str, pattern: str) -> float:
         """
-        Fuzzy match payee against pattern using sequence similarity.
+        Fuzzy match payee against pattern using sequence similarity with caching.
+
+        Uses SequenceMatcher to calculate string similarity. Results are cached
+        by (payee, pattern) tuple to avoid redundant calculations.
+
+        Args:
+            payee: Transaction payee string to match.
+            pattern: Fuzzy pattern to match against.
 
         Returns:
-            Similarity ratio from 0.0 to 1.0
+            Similarity ratio from 0.0 to 1.0 (cached for performance).
         """
         normalized_payee = payee.upper().strip()
         normalized_pattern = pattern.upper().strip()
 
-        ratio = SequenceMatcher(None, normalized_payee, normalized_pattern).ratio()
-        return ratio
+        # Check cache first
+        cache_key = (normalized_payee, normalized_pattern)
+        if cache_key in self.fuzzy_cache:
+            return self.fuzzy_cache[cache_key]
+
+        # Calculate and cache the result
+        score = SequenceMatcher(None, normalized_payee, normalized_pattern).ratio()
+        self.fuzzy_cache[cache_key] = score
+        return score
 
     def _amount_score(self, transaction: data.Transaction, schedule: Schedule) -> float:
         """
         Calculate amount matching score.
 
         Supports:
-        - Exact amount with tolerance
+        - Exact amount with tolerance (derived from posting for matched account)
         - Amount range (min/max)
 
         Returns:
@@ -160,12 +197,13 @@ class TransactionMatcher:
                 return 1.0
             return 0.0
 
-        # Check if using exact amount with tolerance
-        if match_criteria.amount is None:
-            # No amount criteria
+        # Derive expected amount from schedule's posting for the matched account
+        expected_amount = self._get_expected_amount_from_postings(schedule)
+
+        if expected_amount is None:
+            # No amount criteria - match any amount
             return 1.0
 
-        expected_amount = match_criteria.amount
         tolerance = match_criteria.amount_tolerance
 
         if tolerance is None:
@@ -186,6 +224,30 @@ class TransactionMatcher:
         score = 1.0 - float(diff / tolerance)
         return max(0.0, min(1.0, score))
 
+    def _get_expected_amount_from_postings(self, schedule: Schedule) -> Optional[Decimal]:
+        """
+        Get expected amount from schedule postings by finding the posting
+        that matches the schedule's match account.
+
+        Args:
+            schedule: Schedule with transaction postings
+
+        Returns:
+            Expected amount from matched account posting, or None if not found
+        """
+        if not schedule.transaction.postings:
+            return None
+
+        # Find the posting for the matched account
+        for posting in schedule.transaction.postings:
+            if posting.account == schedule.match.account:
+                if posting.amount is not None:
+                    return Decimal(str(posting.amount))
+                return None
+
+        # If matched account not found in postings, no amount criteria
+        return None
+
     def _date_score(
         self,
         transaction: data.Transaction,
@@ -193,10 +255,19 @@ class TransactionMatcher:
         expected_date: date,
     ) -> float:
         """
-        Calculate date proximity score.
+        Calculate date proximity score based on difference from expected date.
+
+        Uses linear interpolation within the configured date window. Transactions
+        matching the expected date exactly score 1.0, declining linearly to 0.0
+        at the window boundary.
+
+        Args:
+            transaction: Transaction with date to evaluate.
+            schedule: Schedule defining the date_window_days tolerance.
+            expected_date: Expected occurrence date from recurrence rule.
 
         Returns:
-            Score from 0.0 to 1.0 (linear decay from exact to window boundary)
+            Score from 0.0 to 1.0 (1.0 at exact match, 0.0 outside window).
         """
         txn_date = transaction.date
         window_days = schedule.match.date_window_days or self.config.default_date_window_days
@@ -216,8 +287,8 @@ class TransactionMatcher:
     def find_best_match(
         self,
         transaction: data.Transaction,
-        candidates: list[Tuple[Schedule, date]],
-    ) -> Optional[Tuple[Schedule, date, float]]:
+        candidates: list[tuple[Schedule, date]],
+    ) -> Optional[tuple[Schedule, date, float]]:
         """
         Find best matching schedule for transaction.
 

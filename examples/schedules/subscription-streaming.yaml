@@ -1,7 +1,7 @@
 # Monthly streaming subscription
 # Demonstrates: Credit card payment, small fixed amount
 id: subscription-streaming
-enabled: true
+enabled: false
 match:
   account: Liabilities:CreditCard:Visa
   payee_pattern: "STREAMFLIX|StreamFlix Inc"
@@ -28,12 +28,12 @@ transaction:
     schedule_id: subscription-streaming
     subscription_type: entertainment
   postings:
-    - account: Liabilities:CreditCard:Visa
-      amount: null
-      narration: null
-    - account: Expenses:Entertainment:Subscriptions
-      amount: null
-      narration: null
+  - account: Liabilities:CreditCard:Visa
+    amount: null
+    narration: null
+  - account: Expenses:Entertainment:Subscriptions
+    amount: null
+    narration: null
 missing_transaction:
   create_placeholder: true
   flag: '!'

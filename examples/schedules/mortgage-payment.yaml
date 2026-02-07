@@ -1,11 +1,11 @@
 # Monthly mortgage payment with interest, escrow, and principal split
 # Demonstrates: MONTHLY frequency, fixed posting split with interest/principal/escrow
 id: mortgage-payment
-enabled: true
+enabled: false
 match:
   account: Assets:Bank:Checking
   payee_pattern: "First National Mortgage|FNM|MORTGAGE PAYMENT"
-  amount: -1850.00
+  amount: -1850
   amount_tolerance: 10.00
   amount_min: null
   amount_max: null
@@ -24,26 +24,26 @@ transaction:
   payee: First National Mortgage
   narration: Monthly Mortgage Payment
   tags:
-    - property-main-home
+  - property-main-home
   metadata:
     schedule_id: mortgage-payment
     property: main-residence
   postings:
-    - account: Assets:Bank:Checking
-      amount: null
-      narration: null
-    - account: Expenses:Housing:Mortgage-Interest
-      amount: 1250.00
-      narration: Mortgage Interest
-    - account: Expenses:Housing:Property-Tax-Escrow
-      amount: 300.00
-      narration: Property Tax Escrow
-    - account: Expenses:Housing:Insurance-Escrow
-      amount: 100.00
-      narration: Home Insurance Escrow
-    - account: Liabilities:Mortgage:Principal
-      amount: 200.00
-      narration: Principal Payment
+  - account: Assets:Bank:Checking
+    amount: null
+    narration: null
+  - account: Expenses:Housing:Mortgage-Interest
+    amount: 1250.00
+    narration: Mortgage Interest
+  - account: Expenses:Housing:Property-Tax-Escrow
+    amount: 300.00
+    narration: Property Tax Escrow
+  - account: Expenses:Housing:Insurance-Escrow
+    amount: 100.00
+    narration: Home Insurance Escrow
+  - account: Liabilities:Mortgage:Principal
+    amount: 200.00
+    narration: Principal Payment
 missing_transaction:
   create_placeholder: true
   flag: '!'

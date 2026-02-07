@@ -3,16 +3,17 @@
 import logging
 import os
 from pathlib import Path
-from typing import List, Optional, Tuple
+from typing import Optional
 
 import yaml
 
+from . import constants
 from .schema import GlobalConfig, Schedule, ScheduleFile
 
 logger = logging.getLogger(__name__)
 
 
-def find_schedules_location() -> Optional[Tuple[str, Path]]:
+def find_schedules_location() -> Optional[tuple[str, Path]]:
     """
     Locate schedules configuration (directory or file).
 
@@ -28,26 +29,26 @@ def find_schedules_location() -> Optional[Tuple[str, Path]]:
         Tuple of ("dir", Path) or ("file", Path), or None if not found
     """
     # Check BEANSCHEDULE_DIR env var (new directory mode)
-    if env_dir := os.getenv("BEANSCHEDULE_DIR"):
+    if env_dir := os.getenv(constants.ENV_SCHEDULES_DIR):
         path = Path(env_dir)
         if path.is_dir():
             return ("dir", path)
-        logger.warning(f"BEANSCHEDULE_DIR points to non-existent directory: {env_dir}")
+        logger.warning("BEANSCHEDULE_DIR points to non-existent directory: %s", env_dir)
 
     # Check BEANSCHEDULE_FILE env var (existing file mode)
-    if env_file := os.getenv("BEANSCHEDULE_FILE"):
+    if env_file := os.getenv(constants.ENV_SCHEDULES_FILE):
         path = Path(env_file)
         if path.is_file():
             return ("file", path)
-        logger.warning(f"BEANSCHEDULE_FILE points to non-existent file: {env_file}")
+        logger.warning("BEANSCHEDULE_FILE points to non-existent file: %s", env_file)
 
     # Check current directory for schedules/ (directory mode)
-    cwd_dir = Path.cwd() / "schedules"
+    cwd_dir = Path.cwd() / constants.DEFAULT_SCHEDULES_DIR
     if cwd_dir.is_dir():
         return ("dir", cwd_dir)
 
     # Check current directory for schedules.yaml (file mode, backward compat)
-    cwd_file = Path.cwd() / "schedules.yaml"
+    cwd_file = Path.cwd() / constants.DEFAULT_SCHEDULES_FILE
     if cwd_file.is_file():
         return ("file", cwd_file)
 
@@ -56,16 +57,16 @@ def find_schedules_location() -> Optional[Tuple[str, Path]]:
         config_dir = Path(__file__).parent.parent.parent
 
         # Check for schedules/ directory
-        config_schedules_dir = config_dir / "schedules"
+        config_schedules_dir = config_dir / constants.DEFAULT_SCHEDULES_DIR
         if config_schedules_dir.is_dir():
             return ("dir", config_schedules_dir)
 
         # Check for schedules.yaml file (backward compat)
-        config_schedules_file = config_dir / "schedules.yaml"
+        config_schedules_file = config_dir / constants.DEFAULT_SCHEDULES_FILE
         if config_schedules_file.is_file():
             return ("file", config_schedules_file)
-    except Exception as e:
-        logger.debug(f"Error checking config parent directory: {e}")
+    except (OSError, ValueError) as e:
+        logger.debug("Error checking config parent directory: %s", e)
 
     return None
 
@@ -97,6 +98,25 @@ def find_schedules_file() -> Optional[Path]:
     return None
 
 
+def load_schedules_from_path(path: Path) -> Optional[ScheduleFile]:
+    """Load schedules from a file or directory path.
+
+    Routes to load_schedules_file() or load_schedules_from_directory()
+    based on whether path is a file or directory.
+
+    Args:
+        path: Path to a schedules file or directory
+
+    Returns:
+        ScheduleFile if path is a valid file or directory, None otherwise
+    """
+    if path.is_file():
+        return load_schedules_file(path)
+    if path.is_dir():
+        return load_schedules_from_directory(path)
+    return None
+
+
 def load_schedule_from_file(filepath: Path) -> Optional[Schedule]:
     """
     Load a single schedule from an individual YAML file.
@@ -111,36 +131,48 @@ def load_schedule_from_file(filepath: Path) -> Optional[Schedule]:
         Errors are logged but not raised - allows directory loading to continue
     """
     try:
-        with open(filepath) as f:
+        with filepath.open() as f:
             data = yaml.safe_load(f)
 
         if data is None:
-            logger.warning(f"Empty schedule file: {filepath}")
+            logger.warning("Empty schedule file: %s", filepath)
             return None
 
         # Validate and parse with Pydantic
         schedule = Schedule(**data)
 
+        # Store source file path
+        schedule.source_file = filepath
+
         # Validate filename matches schedule ID
         expected_filename = f"{schedule.id}.yaml"
         if filepath.name != expected_filename:
             logger.error(
-                f"Failed to load schedule from '{filepath}':\n"
-                f"  Schedule ID '{schedule.id}' does not match filename.\n"
-                f"  Expected: '{expected_filename}'\n"
-                f"  Found: '{filepath.name}'\n"
-                f"  Fix: Rename file to '{expected_filename}' or change 'id' field to '{filepath.stem}'",
+                "Failed to load schedule from '%s':\n"
+                "  Schedule ID '%s' does not match filename.\n"
+                "  Expected: '%s'\n"
+                "  Found: '%s'\n"
+                "  Fix: Rename file to '%s' or change 'id' field to '%s'",
+                filepath,
+                schedule.id,
+                expected_filename,
+                filepath.name,
+                expected_filename,
+                filepath.stem,
             )
             return None
 
         return schedule
 
     except yaml.YAMLError as e:
-        logger.error(f"YAML parsing error in '{filepath}': {e}")
+        logger.error("YAML parsing error in '%s': %s", filepath, e)
+        return None
+    except (ValueError, TypeError) as e:
+        logger.error("Invalid schedule data in '%s': %s", filepath, e)
         return None
     except Exception as e:
-        logger.error(f"Failed to load schedule from '{filepath}': {e}")
-        return None
+        logger.error("Unexpected error loading '%s': %s", filepath, e)
+        raise
 
 
 def load_schedules_from_directory(dirpath: Path) -> Optional[ScheduleFile]:
@@ -160,30 +192,30 @@ def load_schedules_from_directory(dirpath: Path) -> Optional[ScheduleFile]:
     Returns:
         ScheduleFile object with all loaded schedules
     """
-    logger.info(f"Loading schedules from directory: {dirpath}")
+    logger.info("Loading schedules from directory: %s", dirpath)
 
     # Load global config
-    config_path = dirpath / "_config.yaml"
+    config_path = dirpath / constants.CONFIG_FILENAME
     config = GlobalConfig()  # Default config
 
     if config_path.is_file():
         try:
-            with open(config_path) as f:
+            with config_path.open() as f:
                 config_data = yaml.safe_load(f)
 
             if config_data is not None:
                 config = GlobalConfig(**config_data)
-                logger.debug(f"Loaded global config from: {config_path}")
-        except Exception as e:
-            logger.warning(f"Failed to load config from '{config_path}', using defaults: {e}")
+                logger.debug("Loaded global config from: %s", config_path)
+        except (yaml.YAMLError, ValueError, TypeError, KeyError) as e:
+            logger.warning("Failed to load config from '%s', using defaults: %s", config_path, e)
 
     # Load all schedule files
     schedules = []
-    schedule_files = sorted(dirpath.glob("*.yaml"))
+    schedule_files = sorted(dirpath.glob(constants.SCHEDULE_FILE_PATTERN))
 
     for schedule_path in schedule_files:
         # Skip config file
-        if schedule_path.name == "_config.yaml":
+        if schedule_path.name == constants.CONFIG_FILENAME:
             continue
 
         # Skip hidden files
@@ -199,10 +231,13 @@ def load_schedules_from_directory(dirpath: Path) -> Optional[ScheduleFile]:
     for schedule in schedules:
         if schedule.id in seen_ids:
             logger.error(
-                f"Duplicate schedule ID '{schedule.id}' found in multiple files:\n"
-                f"  First: {seen_ids[schedule.id]}\n"
-                f"  Duplicate: {dirpath / f'{schedule.id}.yaml'}\n"
-                f"  The duplicate will be ignored.",
+                "Duplicate schedule ID '%s' found in multiple files:\n"
+                "  First: %s\n"
+                "  Duplicate: %s\n"
+                "  The duplicate will be ignored.",
+                schedule.id,
+                seen_ids[schedule.id],
+                dirpath / f"{schedule.id}.yaml",
             )
         else:
             seen_ids[schedule.id] = dirpath / f"{schedule.id}.yaml"
@@ -218,9 +253,10 @@ def load_schedules_from_directory(dirpath: Path) -> Optional[ScheduleFile]:
     schedule_file = ScheduleFile(schedules=unique_schedules, config=config)
 
     logger.info(
-        f"Loaded {len(schedule_file.schedules)} schedules "
-        f"({sum(1 for s in schedule_file.schedules if s.enabled)} enabled) "
-        f"from directory: {dirpath}",
+        "Loaded %d schedules (%d enabled) from directory: %s",
+        len(schedule_file.schedules),
+        sum(1 for s in schedule_file.schedules if s.enabled),
+        dirpath,
     )
 
     return schedule_file
@@ -248,14 +284,14 @@ def load_schedules_file(filepath: Optional[Path] = None) -> Optional[ScheduleFil
     """
     # If explicit filepath provided, use legacy single-file loading
     if filepath is not None:
-        logger.info(f"Loading schedules from: {filepath}")
+        logger.info("Loading schedules from: %s", filepath)
 
         try:
-            with open(filepath) as f:
+            with filepath.open() as f:
                 data = yaml.safe_load(f)
 
             if data is None:
-                logger.warning(f"Empty schedules file: {filepath}")
+                logger.warning("Empty schedules file: %s", filepath)
                 return ScheduleFile(schedules=[], config=GlobalConfig())
 
             # Handle case where schedules key is None (all commented out)
@@ -264,18 +300,24 @@ def load_schedules_file(filepath: Optional[Path] = None) -> Optional[ScheduleFil
 
             # Validate and parse with Pydantic
             schedule_file = ScheduleFile(**data)
+
+            # Set source file for all schedules
+            for schedule in schedule_file.schedules:
+                schedule.source_file = filepath
+
             logger.info(
-                f"Loaded {len(schedule_file.schedules)} schedules "
-                f"({sum(1 for s in schedule_file.schedules if s.enabled)} enabled)",
+                "Loaded %d schedules (%d enabled)",
+                len(schedule_file.schedules),
+                sum(1 for s in schedule_file.schedules if s.enabled),
             )
 
             return schedule_file
 
         except yaml.YAMLError as e:
-            logger.error(f"YAML parsing error in {filepath}: {e}")
+            logger.error("YAML parsing error in %s: %s", filepath, e)
             raise
         except Exception as e:
-            logger.error(f"Error loading schedules from {filepath}: {e}")
+            logger.error("Error loading schedules from %s: %s", filepath, e)
             raise
 
     # Auto-discover using new location finder
@@ -289,15 +331,15 @@ def load_schedules_file(filepath: Optional[Path] = None) -> Optional[ScheduleFil
 
     if mode == "dir":
         return load_schedules_from_directory(path)
-    # mode == "file"
-    logger.info(f"Loading schedules from: {path}")
+
+    logger.info("Loading schedules from: %s", path)
 
     try:
-        with open(path) as f:
+        with path.open() as f:
             data = yaml.safe_load(f)
 
         if data is None:
-            logger.warning(f"Empty schedules file: {path}")
+            logger.warning("Empty schedules file: %s", path)
             return ScheduleFile(schedules=[], config=GlobalConfig())
 
         # Handle case where schedules key is None (all commented out)
@@ -306,22 +348,28 @@ def load_schedules_file(filepath: Optional[Path] = None) -> Optional[ScheduleFil
 
         # Validate and parse with Pydantic
         schedule_file = ScheduleFile(**data)
+
+        # Set source file for all schedules
+        for schedule in schedule_file.schedules:
+            schedule.source_file = path
+
         logger.info(
-            f"Loaded {len(schedule_file.schedules)} schedules "
-            f"({sum(1 for s in schedule_file.schedules if s.enabled)} enabled)",
+            "Loaded %d schedules (%d enabled)",
+            len(schedule_file.schedules),
+            sum(1 for s in schedule_file.schedules if s.enabled),
         )
 
         return schedule_file
 
     except yaml.YAMLError as e:
-        logger.error(f"YAML parsing error in {path}: {e}")
+        logger.error("YAML parsing error in %s: %s", path, e)
         raise
     except Exception as e:
-        logger.error(f"Error loading schedules from {path}: {e}")
+        logger.error("Error loading schedules from %s: %s", path, e)
         raise
 
 
-def get_enabled_schedules(schedule_file: Optional[ScheduleFile]) -> List[Schedule]:
+def get_enabled_schedules(schedule_file: Optional[ScheduleFile]) -> list[Schedule]:
     """
     Get list of enabled schedules.
 
