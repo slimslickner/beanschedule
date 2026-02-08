@@ -30,7 +30,9 @@ META_SCHEDULE_MATCHED_DATE = "schedule_matched_date"
 META_SCHEDULE_CONFIDENCE = "schedule_confidence"
 META_SCHEDULE_PLACEHOLDER = "schedule_placeholder"
 META_SCHEDULE_EXPECTED_DATE = "schedule_expected_date"
-META_SCHEDULE_SKIPPED = "schedule_skipped"  # Marks when a scheduled transaction was intentionally skipped
+META_SCHEDULE_SKIPPED = (
+    "schedule_skipped"  # Marks when a scheduled transaction was intentionally skipped
+)
 
 # Amortization-specific metadata
 META_AMORTIZATION_PRINCIPAL = "amortization_principal"
@@ -50,6 +52,10 @@ DEFAULT_CURRENCY = "USD"
 DEFAULT_FUZZY_MATCH_THRESHOLD = 0.80
 DEFAULT_AMOUNT_TOLERANCE_PERCENT = 0.02  # 2%
 SCHEDULE_FILE_VERSION = "1.0"
+
+# Forecast configuration defaults
+DEFAULT_FORECAST_MONTHS = 3  # How many months forward to forecast
+DEFAULT_INCLUDE_PAST_DATES = False  # Whether to generate placeholders for past dates
 
 # ============================================================================
 # Matching Algorithm Scoring Weights

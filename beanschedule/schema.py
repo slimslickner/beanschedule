@@ -24,7 +24,9 @@ class MatchCriteria(BaseModel):
     amount_tolerance: Optional[Decimal] = Field(None, description="Amount tolerance (±)")
     amount_min: Optional[Decimal] = Field(None, description="Minimum amount for range")
     amount_max: Optional[Decimal] = Field(None, description="Maximum amount for range")
-    date_window_days: Optional[int] = Field(constants.DEFAULT_DATE_WINDOW_DAYS, description="Date matching window (±days)")
+    date_window_days: Optional[int] = Field(
+        constants.DEFAULT_DATE_WINDOW_DAYS, description="Date matching window (±days)"
+    )
 
     @field_validator("amount_tolerance")
     @classmethod
@@ -174,8 +176,12 @@ class MissingTransactionConfig(BaseModel):
     """Configuration for missing transactions."""
 
     create_placeholder: bool = Field(True, description="Create placeholder transaction")
-    flag: FlagType = Field(constants.DEFAULT_PLACEHOLDER_FLAG, description="Transaction flag for placeholder")
-    narration_prefix: str = Field(constants.DEFAULT_MISSING_PREFIX, description="Prefix for narration")
+    flag: FlagType = Field(
+        constants.DEFAULT_PLACEHOLDER_FLAG, description="Transaction flag for placeholder"
+    )
+    narration_prefix: str = Field(
+        constants.DEFAULT_MISSING_PREFIX, description="Prefix for narration"
+    )
 
 
 class AmortizationOverride(BaseModel):
@@ -423,14 +429,32 @@ class Schedule(BaseModel):
 class GlobalConfig(BaseModel):
     """Global configuration for beanschedule."""
 
-    default_currency: str = Field(constants.DEFAULT_CURRENCY, description="Default currency for transactions")
-    fuzzy_match_threshold: float = Field(constants.DEFAULT_FUZZY_MATCH_THRESHOLD, description="Fuzzy match threshold (0.0-1.0)")
-    default_date_window_days: int = Field(constants.DEFAULT_DATE_WINDOW_DAYS, description="Default date window (±days)")
+    default_currency: str = Field(
+        constants.DEFAULT_CURRENCY, description="Default currency for transactions"
+    )
+    fuzzy_match_threshold: float = Field(
+        constants.DEFAULT_FUZZY_MATCH_THRESHOLD, description="Fuzzy match threshold (0.0-1.0)"
+    )
+    default_date_window_days: int = Field(
+        constants.DEFAULT_DATE_WINDOW_DAYS, description="Default date window (±days)"
+    )
     default_amount_tolerance_percent: float = Field(
         constants.DEFAULT_AMOUNT_TOLERANCE_PERCENT,
         description="Default amount tolerance (%)",
     )
-    placeholder_flag: FlagType = Field(constants.DEFAULT_PLACEHOLDER_FLAG, description="Flag for placeholder transactions")
+    placeholder_flag: FlagType = Field(
+        constants.DEFAULT_PLACEHOLDER_FLAG, description="Flag for placeholder transactions"
+    )
+    forecast_months: int = Field(
+        constants.DEFAULT_FORECAST_MONTHS, description="How many months forward to forecast"
+    )
+    min_forecast_date: Optional[date] = Field(
+        None, description="Override start date for forecasting (null = use transaction range)"
+    )
+    include_past_dates: bool = Field(
+        constants.DEFAULT_INCLUDE_PAST_DATES,
+        description="Generate placeholders for dates in the past",
+    )
 
     @field_validator("fuzzy_match_threshold")
     @classmethod
@@ -440,10 +464,20 @@ class GlobalConfig(BaseModel):
             raise ValueError("fuzzy_match_threshold must be between 0.0 and 1.0")
         return v
 
+    @field_validator("forecast_months")
+    @classmethod
+    def validate_forecast_months(cls, v: int) -> int:
+        """Ensure forecast_months is positive."""
+        if v < 0:
+            raise ValueError("forecast_months must be non-negative")
+        return v
+
 
 class ScheduleFile(BaseModel):
     """Root schedule file structure."""
 
-    version: str = Field(constants.SCHEDULE_FILE_VERSION, description="Schedule file format version")
+    version: str = Field(
+        constants.SCHEDULE_FILE_VERSION, description="Schedule file format version"
+    )
     schedules: list[Schedule] = Field(default_factory=list, description="List of schedules")
     config: GlobalConfig = Field(default_factory=GlobalConfig, description="Global configuration")

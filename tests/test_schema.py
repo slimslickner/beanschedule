@@ -331,6 +331,58 @@ class TestGlobalConfig:
         config = GlobalConfig(placeholder_flag="*")
         assert config.placeholder_flag == "*"
 
+    def test_forecast_months_defaults_to_3(self):
+        """Test that forecast_months defaults to 3."""
+        config = GlobalConfig()
+        assert config.forecast_months == 3
+
+    def test_forecast_months_custom_value(self):
+        """Test setting custom forecast_months."""
+        config = GlobalConfig(forecast_months=6)
+        assert config.forecast_months == 6
+
+    def test_forecast_months_zero(self):
+        """Test that forecast_months can be set to 0 to disable forecasting."""
+        config = GlobalConfig(forecast_months=0)
+        assert config.forecast_months == 0
+
+    def test_forecast_months_negative_rejected(self):
+        """Test that negative forecast_months is rejected."""
+        with pytest.raises(ValueError, match="forecast_months must be non-negative"):
+            GlobalConfig(forecast_months=-1)
+
+    def test_min_forecast_date_defaults_to_none(self):
+        """Test that min_forecast_date defaults to None."""
+        config = GlobalConfig()
+        assert config.min_forecast_date is None
+
+    def test_min_forecast_date_custom_value(self):
+        """Test setting custom min_forecast_date."""
+        test_date = date(2026, 1, 1)
+        config = GlobalConfig(min_forecast_date=test_date)
+        assert config.min_forecast_date == test_date
+
+    def test_include_past_dates_defaults_to_false(self):
+        """Test that include_past_dates defaults to False."""
+        config = GlobalConfig()
+        assert config.include_past_dates is False
+
+    def test_include_past_dates_true(self):
+        """Test setting include_past_dates to True."""
+        config = GlobalConfig(include_past_dates=True)
+        assert config.include_past_dates is True
+
+    def test_forecast_config_combined(self):
+        """Test setting all forecast-related config values together."""
+        config = GlobalConfig(
+            forecast_months=12,
+            min_forecast_date=date(2025, 1, 1),
+            include_past_dates=True,
+        )
+        assert config.forecast_months == 12
+        assert config.min_forecast_date == date(2025, 1, 1)
+        assert config.include_past_dates is True
+
 
 class TestMissingTransactionConfig:
     """Tests for MissingTransactionConfig."""

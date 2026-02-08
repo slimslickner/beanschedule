@@ -50,7 +50,7 @@ from datetime import date, timedelta
 from decimal import Decimal
 from pathlib import Path
 
-from decimal import Decimal
+from dateutil.relativedelta import relativedelta
 from beancount.core import amount, data, realization
 
 logger = logging.getLogger(__name__)
@@ -58,7 +58,7 @@ logger = logging.getLogger(__name__)
 __plugins__ = ("schedules",)
 
 
-def schedules(entries, options_map, config_file=None):
+def schedules(entries, options_map, config=None):
     """Generate forecast transactions from YAML schedule definitions.
 
     This Beancount plugin generates forecast (#) transactions for scheduled events
@@ -73,7 +73,7 @@ def schedules(entries, options_map, config_file=None):
     1. FORECAST GENERATION
        - For each enabled schedule, generates expected occurrence dates (using
          shared generate_schedule_occurrences() utility)
-       - Restricts to future dates (tomorrow + 365 days) to avoid duplicates
+       - Restricts to future dates based on forecast_months config
        - Creates forecast transactions (flag="#") for each date
 
     2. DUPLICATE AVOIDANCE (Key Fix)
@@ -95,7 +95,7 @@ def schedules(entries, options_map, config_file=None):
 
     Processing steps:
     1. Load YAML schedules (auto-discover or use provided path)
-    2. Determine forecast window (tomorrow to tomorrow + 365 days)
+    2. Determine forecast window based on configuration
     3. Build index of existing scheduled transactions (shared utility)
     4. For each enabled schedule:
        a. Generate expected occurrence dates using recurrence engine
@@ -107,7 +107,13 @@ def schedules(entries, options_map, config_file=None):
     Args:
         entries: Existing beancount entries (the full ledger being read)
         options_map: Beancount options (includes filename for path resolution)
-        config_file: Optional path to schedules.yaml (auto-discovers if not provided)
+        config: Can be:
+            - A string: path to schedules.yaml (auto-discovers if not provided)
+            - A dict: forecast configuration with keys:
+                - forecast_months: months to forecast ahead (overrides YAML config)
+                - min_forecast_date: forecast start date (overrides YAML config)
+                - include_past_dates: include past dates in placeholders (overrides YAML config)
+            - None: auto-discover schedules.yaml
 
     Returns:
         Tuple of (entries + forecast_entries, errors)
@@ -135,10 +141,48 @@ def schedules(entries, options_map, config_file=None):
     errors = []
 
     # 1. Load YAML schedules
+    schedule_file = None
+    forecast_config = None
+    config_file_path = None
+
     try:
-        if config_file:
+        # Separate file path from forecast config
+        if isinstance(config, dict):
+            # config is forecast configuration
+            forecast_config = config
+        elif isinstance(config, str):
+            # config could be a file path or a dict string from Beancount
+            # Try to parse as Python dict/JSON first
+            import json
+            import ast
+
+            config_str = config.strip()
+            parsed_dict = None
+
+            # Try JSON first (with double quotes)
+            try:
+                parsed_dict = json.loads(config_str)
+            except (json.JSONDecodeError, ValueError):
+                pass
+
+            # Try Python literal (with single quotes)
+            if parsed_dict is None:
+                try:
+                    parsed_dict = ast.literal_eval(config_str)
+                except (ValueError, SyntaxError):
+                    pass
+
+            if isinstance(parsed_dict, dict):
+                # Successfully parsed as dict config
+                forecast_config = parsed_dict
+            else:
+                # Treat as file path
+                config_file_path = config
+        # else: None means auto-discover
+
+        if config_file_path:
             # Use provided path
-            schedule_path = Path(config_file)
+            schedule_path = Path(config_file_path)
             if not schedule_path.is_absolute():
                 # Make relative to ledger file location
                 ledger_file = options_map.get("filename")
@@ -170,6 +214,19 @@ def schedules(entries, options_map, config_file=None):
             logger.warning("Failed to load schedules, skipping forecast generation")
             return entries, []
 
+        # Override config with plugin parameters if provided
+        if forecast_config:
+            if "forecast_months" in forecast_config:
+                schedule_file.config.forecast_months = forecast_config["forecast_months"]
+            if "min_forecast_date" in forecast_config:
+                min_date_str = forecast_config["min_forecast_date"]
+                if isinstance(min_date_str, str):
+                    schedule_file.config.min_forecast_date = date.fromisoformat(min_date_str)
+                else:
+                    schedule_file.config.min_forecast_date = min_date_str
+            if "include_past_dates" in forecast_config:
+                schedule_file.config.include_past_dates = forecast_config["include_past_dates"]
+
     except Exception as e:
         error_msg = f"Failed to load schedules: {e}"
         logger.error(error_msg)
@@ -177,16 +234,34 @@ def schedules(entries, options_map, config_file=None):
         return entries, errors
 
     # 2. Determine forecast horizon
-    # Default: Tomorrow to 1 year from today
-    # Can be configured via plugin options in future
+    # Determine forecast window based on configuration
     #
     # NOTE: We start from TOMORROW, not today, to avoid duplicating actual
     # transactions that were just imported today. If a paycheck arrives today
     # (2026-02-05), we want forecasts for future dates (2026-02-20, etc.),
     # not a duplicate forecast for today.
+    #
+    # The forecast window is configurable via GlobalConfig:
+    # - forecast_months: extends the end_date by N months (default 3)
+    # - min_forecast_date: can override the start_date if set
     today = date.today()
     forecast_start = today + timedelta(days=1)  # Start from tomorrow, not today
-    forecast_end = today + timedelta(days=365)
+
+    # Apply min_forecast_date override if configured
+    if schedule_file.config.min_forecast_date:
+        forecast_start = min(forecast_start, schedule_file.config.min_forecast_date)
+        logger.info(
+            "Using configured min_forecast_date: %s", schedule_file.config.min_forecast_date
+        )
+
+    # Calculate forecast_end using forecast_months
+    forecast_months = schedule_file.config.forecast_months or 3  # Fallback to 3 if not set
+    forecast_end = today + relativedelta(months=forecast_months)
+    logger.info(
+        "Using forecast_months=%d to extend forecast window to: %s",
+        forecast_months,
+        forecast_end,
+    )
 
     logger.info(
         "Generating forecasts from %s to %s (%d schedule(s))",
@@ -229,8 +304,6 @@ def schedules(entries, options_map, config_file=None):
             forecast_dates = occurrences
             amort_occurrences = None
             if schedule.amortization and schedule.amortization.payment_day_of_month:
-                from dateutil.relativedelta import relativedelta
-
                 # Generate amortization dates based on payment day of month
                 amort_occurrences = []
                 current = forecast_start
