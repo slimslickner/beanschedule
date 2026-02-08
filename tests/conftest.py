@@ -247,14 +247,24 @@ def make_global_config(
     default_date_window_days: int = 3,
     default_amount_tolerance_percent: float = 0.02,
     placeholder_flag: str = "!",
+    forecast_months: int = 0,
+    min_forecast_date: date = None,
+    include_past_dates: bool = False,
     **kwargs,
 ) -> GlobalConfig:
-    """Create GlobalConfig with defaults or custom values."""
+    """Create GlobalConfig with defaults or custom values.
+
+    Note: forecast_months defaults to 0 in tests to avoid generating extra placeholders
+    based on the forecast extension. Use forecast_months > 0 to test forecasting behavior.
+    """
     return GlobalConfig(
         fuzzy_match_threshold=fuzzy_match_threshold,
         default_date_window_days=default_date_window_days,
         default_amount_tolerance_percent=default_amount_tolerance_percent,
         placeholder_flag=placeholder_flag,
+        forecast_months=forecast_months,
+        min_forecast_date=min_forecast_date,
+        include_past_dates=include_past_dates,
     )
 
 
@@ -310,6 +320,9 @@ def temp_schedule_dir(tmp_path):
         "default_date_window_days": 3,
         "default_amount_tolerance_percent": 0.02,
         "placeholder_flag": "!",
+        "forecast_months": 0,
+        "min_forecast_date": None,
+        "include_past_dates": False,
     }
     with open(schedules_dir / "_config.yaml", "w") as f:
         yaml.dump(config, f)

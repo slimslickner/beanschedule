@@ -115,7 +115,7 @@ def schedule_hook(
         return extracted_entries_list
 
     # Step 2: Extract date range from all transactions (imported + ledger)
-    date_range = _extract_date_range(extracted_entries_list, ledger_entries)
+    date_range = _extract_date_range(extracted_entries_list, ledger_entries, schedule_file.config)
     if date_range is None:
         logger.info("No transactions found in imports or ledger, returning entries unchanged")
         return extracted_entries_list
@@ -240,6 +240,7 @@ def schedule_hook(
         expected_occurrences,
         matched_occurrences,
         schedule_file.config.placeholder_flag,
+        schedule_file.config,
     )
 
     if placeholders:
@@ -272,17 +273,29 @@ def schedule_hook(
 def _extract_date_range(
     extracted_entries_list,
     ledger_entries: Optional[list[data.Directive]] = None,
+    config=None,
 ) -> Optional[tuple[date, date]]:
     """
     Extract min/max date range from all transactions (imported + ledger).
 
+    Applies forecast configuration to extend the date range:
+    - Uses min_forecast_date if configured (overrides transaction min)
+    - Extends end_date by forecast_months
+
     Args:
         extracted_entries_list: List from beangulp (format varies)
         ledger_entries: Existing ledger entries (optional)
+        config: GlobalConfig instance with forecast settings (optional)
 
     Returns:
-        Tuple of (start_date, end_date) with ±7 day buffer, or None if no transactions
+        Tuple of (start_date, end_date) with buffers and forecast extension, or None if no transactions
     """
+    from .schema import GlobalConfig
+
+    # Use default config if not provided
+    if config is None:
+        config = GlobalConfig()
+
     dates = []
 
     # Extract dates from imported transactions
@@ -308,7 +321,24 @@ def _extract_date_range(
 
     # Add buffer for edge cases
     buffer = timedelta(days=constants.DATE_RANGE_BUFFER_DAYS)
-    return (min_date - buffer, max_date + buffer)
+    min_date = min_date - buffer
+
+    # Apply min_forecast_date override if configured
+    if config.min_forecast_date:
+        min_date = min(min_date, config.min_forecast_date)
+        logger.info("Using configured min_forecast_date: %s", config.min_forecast_date)
+
+    # Extend end_date by forecast_months
+    if config.forecast_months > 0:
+        # Add forecast_months to the end_date
+        from dateutil.relativedelta import relativedelta
+
+        max_date = max_date + relativedelta(months=config.forecast_months)
+        logger.info("Extended forecast by %d month(s) to: %s", config.forecast_months, max_date)
+    else:
+        max_date = max_date + buffer
+
+    return (min_date, max_date)
 
 
 def _get_principal_account(schedule: Schedule) -> Optional[str]:
@@ -773,23 +803,33 @@ def _create_placeholders(
     expected_occurrences: dict[str, list[tuple[Schedule, date]]],
     matched_occurrences: set[tuple[str, date]],
     placeholder_flag: str,
+    config=None,
 ) -> list[data.Transaction]:
     """
     Create placeholder transactions for missing scheduled transactions.
 
-    Only creates placeholders for transactions that are overdue or imminent
-    (within the date window of today). Future transactions that aren't due
-    yet are not flagged as missing.
+    By default, only creates placeholders for transactions that are overdue or imminent
+    (within the date window of today). Future transactions that aren't due yet are not
+    flagged as missing.
+
+    If include_past_dates is enabled in config, also creates placeholders for past dates
+    that should have occurred but weren't matched.
 
     Args:
         expected_occurrences: All expected occurrences
         matched_occurrences: Set of (schedule_id, expected_date) that were matched
         placeholder_flag: Flag character for placeholders
+        config: GlobalConfig instance with placeholder settings (optional)
 
     Returns:
         List of placeholder transactions for overdue/imminent missing transactions
     """
     from datetime import date as date_type
+    from .schema import GlobalConfig
+
+    # Use default config if not provided
+    if config is None:
+        config = GlobalConfig()
 
     placeholders = []
     today = date_type.today()
@@ -804,11 +844,18 @@ def _create_placeholders(
             if not schedule.missing_transaction.create_placeholder:
                 continue
 
-            # Only create placeholder for transactions that are overdue or imminent
-            # Skip future transactions that aren't due yet
+            # Check if we should create placeholder based on date
             date_window = schedule.match.date_window_days or constants.DEFAULT_DATE_WINDOW_DAYS
-            if expected_date > today + timedelta(days=date_window):
-                continue
+
+            if config.include_past_dates:
+                # include_past_dates: create placeholders for any missing date (past or future)
+                # Still skip dates far in the future that aren't due yet
+                if expected_date > today + timedelta(days=date_window):
+                    continue
+            else:
+                # Default behavior: only create for overdue/imminent (today or past)
+                if expected_date > today + timedelta(days=date_window):
+                    continue
 
             # Create placeholder transaction
             placeholder = _create_placeholder_transaction(schedule, expected_date, placeholder_flag)

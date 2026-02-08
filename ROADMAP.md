@@ -211,12 +211,16 @@ Focus: Code quality, documentation, CI/CD
   - [ ] CODE_OF_CONDUCT.md (deferred)
 - [ ] All high priority code quality fixes
 
-### v1.4.0 - Skip Markers & Polish
+### v1.4.0 - Skip Markers & Forecast Configuration
 
 - [x] **Skip Markers** - Official support for marking occurrences as intentionally skipped
   - [x] Skip detection (flag 'S', #skipped tag, schedule_skipped metadata)
   - [x] CLI command (`beanschedule skip`) to generate skip markers
   - [x] Documentation with examples
+- [x] **Forecast Configuration** - Control how far forward to generate expected dates
+  - [x] `forecast_months` (default 3) - extends end_date by N months
+  - [x] `min_forecast_date` (optional) - override start date for forecasting
+  - [x] `include_past_dates` (default false) - generate placeholders for past dates
 - [ ] Dry-run mode (`--dry-run` flag)
 - [ ] One-time/ad-hoc schedules (`ONCE` frequency)
 - [ ] `beanschedule quick` - guided schedule creation

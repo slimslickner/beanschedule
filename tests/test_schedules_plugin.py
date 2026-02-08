@@ -19,6 +19,7 @@ version: "1.0"
 
 config:
   default_currency: USD
+  forecast_months: 12
 
 schedules:
   - id: rent-monthly
@@ -85,7 +86,7 @@ class TestSchedulesPlugin:
         options_map = {"filename": str(sample_schedule_yaml.parent / "main.bean")}
 
         # Run plugin with explicit config file
-        result_entries, errors = schedules([], options_map, config_file=str(sample_schedule_yaml))
+        result_entries, errors = schedules([], options_map, config=str(sample_schedule_yaml))
 
         # Should have generated forecast transactions
         assert len(result_entries) > 0, "Should generate forecast transactions"
@@ -118,7 +119,7 @@ class TestSchedulesPlugin:
         """Should not generate forecasts for disabled schedules."""
         options_map = {"filename": str(disabled_schedule_yaml.parent / "main.bean")}
 
-        result_entries, errors = schedules([], options_map, config_file=str(disabled_schedule_yaml))
+        result_entries, errors = schedules([], options_map, config=str(disabled_schedule_yaml))
 
         # Should not generate any forecasts
         assert len(result_entries) == 0, "Should not generate forecasts for disabled schedules"
@@ -129,7 +130,7 @@ class TestSchedulesPlugin:
         options_map = {"filename": str(tmp_path / "main.bean")}
 
         result_entries, errors = schedules(
-            [], options_map, config_file=str(tmp_path / "nonexistent.yaml")
+            [], options_map, config=str(tmp_path / "nonexistent.yaml")
         )
 
         # Should return original entries unchanged
@@ -190,7 +191,7 @@ class TestSchedulesPlugin:
         options_map = {"filename": str(sample_schedule_yaml.parent / "main.bean")}
 
         result_entries, errors = schedules(
-            [existing_txn], options_map, config_file=str(sample_schedule_yaml)
+            [existing_txn], options_map, config=str(sample_schedule_yaml)
         )
 
         # Should include existing entry + forecast entries
@@ -199,12 +200,12 @@ class TestSchedulesPlugin:
         assert len(errors) == 0
 
     def test_plugin_generates_multiple_months(self, sample_schedule_yaml):
-        """Should generate forecasts for multiple months."""
+        """Should generate forecasts for multiple months (12 months configured)."""
         options_map = {"filename": str(sample_schedule_yaml.parent / "main.bean")}
 
-        result_entries, errors = schedules([], options_map, config_file=str(sample_schedule_yaml))
+        result_entries, errors = schedules([], options_map, config=str(sample_schedule_yaml))
 
-        # Should generate 12 months of forecasts (1 year)
+        # Should generate 12 months of forecasts (configured in fixture)
         forecast_txns = [e for e in result_entries if isinstance(e, data.Transaction)]
         assert len(forecast_txns) >= 12, "Should generate at least 12 monthly forecasts"
 
@@ -218,6 +219,10 @@ class TestSchedulesPlugin:
         schedule_yaml.write_text(
             """
 version: "1.0"
+
+config:
+  forecast_months: 12
+
 schedules:
   - id: paycheck
     enabled: true
@@ -242,7 +247,7 @@ schedules:
         )
 
         options_map = {"filename": str(tmp_path / "main.bean")}
-        result_entries, errors = schedules([], options_map, config_file=str(schedule_yaml))
+        result_entries, errors = schedules([], options_map, config=str(schedule_yaml))
 
         # Should generate 2 forecasts per month (5th and 20th)
         forecast_txns = [e for e in result_entries if isinstance(e, data.Transaction)]
@@ -284,13 +289,59 @@ schedules:
         )
 
         options_map = {"filename": str(tmp_path / "main.bean")}
-        result_entries, errors = schedules([], options_map, config_file=str(schedule_yaml))
+        result_entries, errors = schedules([], options_map, config=str(schedule_yaml))
 
         # Check posting narrations
         forecast_txn = result_entries[0]
         assert forecast_txn.postings[0].meta is not None
         assert forecast_txn.postings[0].meta.get("narration") == "Test expense note"
         assert forecast_txn.postings[1].meta.get("narration") == "Payment from checking"
+
+    def test_plugin_respects_forecast_months_config(self, tmp_path):
+        """Should generate forecasts respecting forecast_months config."""
+        schedule_yaml = tmp_path / "schedules.yaml"
+        # Set forecast_months to 1 to generate only 1 month ahead
+        schedule_yaml.write_text(
+            """
+version: "1.0"
+
+config:
+  forecast_months: 1
+
+schedules:
+  - id: test-monthly
+    enabled: true
+    match:
+      account: Assets:Checking
+      payee_pattern: "Test"
+    recurrence:
+      frequency: MONTHLY
+      start_date: 2024-01-01
+      day_of_month: 1
+    transaction:
+      payee: "Test Payment"
+      narration: "Monthly test"
+      metadata:
+        schedule_id: test-monthly
+      postings:
+        - account: Expenses:Test
+          amount: 100.00
+        - account: Assets:Checking
+"""
+        )
+
+        options_map = {"filename": str(tmp_path / "main.bean")}
+        result_entries, errors = schedules([], options_map, config=str(schedule_yaml))
+
+        assert len(errors) == 0
+        forecasts = [e for e in result_entries if isinstance(e, data.Transaction) and e.flag == "#"]
+        # With forecast_months=1, should have fewer forecasts than default (3 months)
+        assert len(forecasts) >= 1
+        # All forecasts should be within 1 month (+ 1 day for tomorrow start)
+        assert all(
+            (e.date - date.today()).days <= 32
+            for e in forecasts  # ~1 month
+        )
 
 
 class TestPluginErrorHandling:
@@ -302,7 +353,7 @@ class TestPluginErrorHandling:
         invalid_yaml.write_text("invalid: yaml: syntax: here:")
 
         options_map = {"filename": str(tmp_path / "main.bean")}
-        result_entries, errors = schedules([], options_map, config_file=str(invalid_yaml))
+        result_entries, errors = schedules([], options_map, config=str(invalid_yaml))
 
         # Should have errors
         assert len(errors) > 0
@@ -320,7 +371,7 @@ schedules:
         )
 
         options_map = {"filename": str(tmp_path / "main.bean")}
-        result_entries, errors = schedules([], options_map, config_file=str(invalid_schedule))
+        result_entries, errors = schedules([], options_map, config=str(invalid_schedule))
 
         # Should handle gracefully (pydantic validation will catch it)
         assert len(errors) > 0
@@ -365,7 +416,7 @@ schedules:
         options_map = {"filename": str(tmp_path / "main.bean")}
 
         # Use relative path from ledger location
-        result_entries, errors = schedules([], options_map, config_file="config/schedules.yaml")
+        result_entries, errors = schedules([], options_map, config="config/schedules.yaml")
 
         # Should resolve correctly and generate forecasts
         assert len(result_entries) > 0
@@ -409,7 +460,7 @@ schedules:
         monkeypatch.chdir(tmp_path)
 
         options_map = {"filename": str(tmp_path / "main.bean")}
-        result_entries, errors = schedules([], options_map, config_file=str(schedule_yaml))
+        result_entries, errors = schedules([], options_map, config=str(schedule_yaml))
 
         # Check filename metadata
         forecast_txn = result_entries[0]
@@ -550,7 +601,7 @@ schedules:
         monkeypatch.setenv("BEANSCHEDULE_DISPLAY_BASE", str(tmp_path))
 
         options_map = {"filename": str(tmp_path / "main.bean")}
-        result_entries, errors = schedules([], options_map, config_file=str(schedule_yaml))
+        result_entries, errors = schedules([], options_map, config=str(schedule_yaml))
 
         # Check filename metadata uses relative path from BEANSCHEDULE_DISPLAY_BASE
         forecast_txn = result_entries[0]
@@ -600,7 +651,7 @@ schedules:
 
         monkeypatch.chdir(tmp_path)
         options_map = {"filename": str(tmp_path / "main.bean")}
-        result_entries, errors = schedules([], options_map, config_file=str(schedule_yaml))
+        result_entries, errors = schedules([], options_map, config=str(schedule_yaml))
 
         # Should have error
         assert len(errors) == 1
@@ -670,7 +721,7 @@ schedules:
 
         monkeypatch.chdir(tmp_path)
         options_map = {"filename": str(tmp_path / "main.bean")}
-        result_entries, errors = schedules([], options_map, config_file=str(schedule_yaml))
+        result_entries, errors = schedules([], options_map, config=str(schedule_yaml))
 
         assert len(errors) == 0
         assert len(result_entries) > 0
@@ -755,7 +806,7 @@ schedules:
 
         monkeypatch.chdir(tmp_path)
         options_map = {"filename": str(tmp_path / "main.bean")}
-        result_entries, errors = schedules([], options_map, config_file=str(schedule_yaml))
+        result_entries, errors = schedules([], options_map, config=str(schedule_yaml))
 
         forecast_txn = result_entries[0]
 
@@ -823,7 +874,7 @@ schedules:
 
         monkeypatch.chdir(tmp_path)
         options_map = {"filename": str(tmp_path / "main.bean")}
-        result_entries, errors = schedules([], options_map, config_file=str(schedule_yaml))
+        result_entries, errors = schedules([], options_map, config=str(schedule_yaml))
 
         assert len(errors) == 0
         assert len(result_entries) > 0
@@ -886,7 +937,7 @@ schedules:
 
         monkeypatch.chdir(tmp_path)
         options_map = {"filename": str(tmp_path / "main.bean")}
-        result_entries, errors = schedules([], options_map, config_file=str(schedule_yaml))
+        result_entries, errors = schedules([], options_map, config=str(schedule_yaml))
 
         assert len(errors) == 0
         assert len(result_entries) > 0
@@ -947,7 +998,7 @@ schedules:
 
         monkeypatch.chdir(tmp_path)
         options_map = {"filename": str(tmp_path / "main.bean")}
-        result_entries, errors = schedules([], options_map, config_file=str(schedule_yaml))
+        result_entries, errors = schedules([], options_map, config=str(schedule_yaml))
 
         assert len(errors) == 0
 
@@ -1079,6 +1130,10 @@ class TestStatefulAmortization:
         """Build schedule YAML string for the test loan."""
         lines = [
             'version: "1.0"',
+            "",
+            "config:",
+            "  forecast_months: 12",
+            "",
             "schedules:",
             "  - id: test-loan",
             "    enabled: true",
@@ -1128,7 +1183,7 @@ class TestStatefulAmortization:
 
         options_map = {"filename": str(tmp_path / "main.bean")}
         result_entries, errors = schedules(
-            self._make_ledger_entries(), options_map, config_file=str(schedule_yaml)
+            self._make_ledger_entries(), options_map, config=str(schedule_yaml)
         )
 
         assert len(errors) == 0
@@ -1171,7 +1226,7 @@ class TestStatefulAmortization:
 
         options_map = {"filename": str(tmp_path / "main.bean")}
         result_entries, errors = schedules(
-            self._make_ledger_entries(), options_map, config_file=str(schedule_yaml)
+            self._make_ledger_entries(), options_map, config=str(schedule_yaml)
         )
         assert len(errors) == 0
 
@@ -1202,7 +1257,7 @@ class TestStatefulAmortization:
 
         options_map = {"filename": str(tmp_path / "main.bean")}
         result_entries, errors = schedules(
-            self._make_ledger_entries(), options_map, config_file=str(schedule_yaml)
+            self._make_ledger_entries(), options_map, config=str(schedule_yaml)
         )
         assert len(errors) == 0
 
@@ -1258,7 +1313,7 @@ class TestStatefulAmortization:
         result_entries, errors = schedules(
             self._make_ledger_entries(extra_entries=[phantom]),
             options_map,
-            config_file=str(schedule_yaml),
+            config=str(schedule_yaml),
         )
         assert len(errors) == 0
 
@@ -1300,7 +1355,7 @@ class TestStatefulAmortization:
             ],
         )
 
-        result_entries, errors = schedules([phantom], options_map, config_file=str(schedule_yaml))
+        result_entries, errors = schedules([phantom], options_map, config=str(schedule_yaml))
         # No hard errors — just a warning log and skip
         assert len(errors) == 0
         # No new forecasts generated for this schedule
