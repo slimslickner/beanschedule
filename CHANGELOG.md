@@ -5,6 +5,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.0] - 2026-02-08
+
+### Added
+- Configurable forecast settings to control forecasting behavior
+  - `forecast_months`: extend end_date by N months (default 3)
+  - `min_forecast_date`: override start date for forecasting
+  - `include_past_dates`: generate placeholders for historical missing dates
+- Support for Beancount plugin parameters (dict and JSON syntax) for forecast configuration
+- Hook and plugin now respect the same forecast configuration settings
+- Official support for marking scheduled transactions as intentionally skipped
+  - Skip marker detection (flag 'S', #skipped tag, schedule_skipped metadata)
+  - `beanschedule skip` CLI command to generate skip markers
+  - Skip markers prevent duplicate placeholder generation
+
+### Fixed
+- Plugin parameter handling for Beancount config dict/JSON syntax
+- Test fixture isolation with forecast_months=0 by default
+
 ## [1.2.0] - 2026-01-15
 
 ### Added

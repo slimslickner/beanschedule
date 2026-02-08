@@ -223,12 +223,54 @@ Or specify a custom schedule file path:
 plugin "beanschedule.plugins.schedules" "path/to/schedules.yaml"
 ```
 
+Or pass forecast configuration directly (overrides YAML config):
+
+```beancount
+plugin "beanschedule.plugins.schedules" "{'forecast_months': 12}"
+```
+
+JSON syntax is also supported:
+
+```beancount
+plugin "beanschedule.plugins.schedules" "{\"forecast_months\": 12}"
+```
+
+### Configuring Forecast Behavior
+
+Control how far forward to generate forecasts using the `forecast_months` parameter:
+
+**In main.beancount:**
+
+```beancount
+# Look 6 months ahead (instead of default 3)
+plugin "beanschedule.plugins.schedules" "{'forecast_months': 6}"
+
+# Look 12 months ahead with custom start date
+plugin "beanschedule.plugins.schedules" "{
+  'forecast_months': 12,
+  'min_forecast_date': '2026-01-01'
+}"
+```
+
+**In schedules/_config.yaml:**
+
+```yaml
+forecast_months: 6              # How many months forward to forecast (default: 3)
+min_forecast_date: 2026-01-01   # Override start date for forecasting (optional)
+include_past_dates: false       # Generate placeholders for historical missing dates (default: false)
+```
+
+Configuration parameters:
+- **forecast_months** - How many months forward to forecast from today (default: 3)
+- **min_forecast_date** - Override the start date for forecasting (useful with historical ledger data)
+- **include_past_dates** - Whether to generate placeholders for missing dates in the past
+
 ### What It Does
 
 The plugin:
 
 1. Reads your YAML schedules (auto-discovers `schedules.yaml` or `schedules/` directory)
-2. Generates forecast transactions for the next 12 months
+2. Generates forecast transactions for the configured forecast period (default: 3 months)
 3. Returns them with the `#` flag (forecast flag)
 4. Includes all metadata and tags from your schedule definitions
 
@@ -435,6 +477,34 @@ When an expected transaction doesn't occur, beanschedule creates a placeholder:
   Assets:Bank:Checking                    -125.00 USD
   Expenses:Insurance:Auto                  125.00 USD
 ```
+
+### Skipping Scheduled Occurrences
+
+Mark specific occurrences as intentionally skipped (e.g., a month you paid early or took a break):
+
+**Using the CLI:**
+
+```bash
+# Skip a single occurrence
+beanschedule skip rent-payment 2024-03-01
+
+# Skip multiple occurrences
+beanschedule skip gym-membership 2024-02-15 2024-07-15
+
+# Add a reason
+beanschedule skip utility-payment 2024-04-01 --reason "Prepaid for 2 months"
+```
+
+**Manual entry:**
+
+```beancount
+2024-03-01 S "Landlord" "[SKIPPED] Prepaid for 2 months"
+  schedule_id: rent-payment
+  schedule_skipped: "Prepaid for 2 months"
+  Assets:Bank:Checking
+```
+
+Skip markers (identified by flag `S`, `#skipped` tag, or `schedule_skipped` metadata) prevent placeholder creation for intentionally skipped dates.
 
 ### Zerosum Transfers (Credit Card Payments)
 
