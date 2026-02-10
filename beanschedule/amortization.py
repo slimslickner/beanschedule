@@ -376,9 +376,7 @@ def compute_stateful_splits(
     return splits
 
 
-def build_liability_balance_index(
-    entries, accounts: set[str]
-) -> dict[str, tuple[Decimal, date]]:
+def build_liability_balance_index(entries, accounts: set[str]) -> dict[str, tuple[Decimal, date]]:
     """Compute (remaining_balance, most_recent_date) for each tracked liability account.
 
     Uses beancount's realization engine to correctly compute account balances,
@@ -406,11 +404,28 @@ def build_liability_balance_index(
     # We include both cleared (*) and pending (P) transactions for balance
     # computation. Pending transactions often represent the initial loan
     # disbursement which establishes the starting liability balance.
-    filtered_entries = [
-        entry
-        for entry in entries
-        if not isinstance(entry, data.Transaction) or entry.flag in ("*", "P")
-    ]
+    # Also skip entries with auto-balancing postings (units=None) as these are
+    # unbalanced extracted entries and cannot be realized.
+    filtered_entries = []
+    skipped_auto_balance_count = 0
+
+    for entry in entries:
+        if not isinstance(entry, data.Transaction) or entry.flag not in ("*", "P"):
+            continue
+
+        # Skip entries with auto-balancing postings (units=None)
+        if any(posting.units is None for posting in entry.postings):
+            skipped_auto_balance_count += 1
+            continue
+
+        filtered_entries.append(entry)
+
+    if skipped_auto_balance_count > 0:
+        logger.info(
+            f"Skipped {skipped_auto_balance_count} entry(ies) with auto-balancing postings "
+            f"(units=None) during amortization computation. These are extracted/unbalanced entries "
+            f"that cannot be realized. Only already-loaded ledger entries are used for balance calculation."
+        )
 
     # Use beancount's realization engine to get correct balances
     # This handles pad directives, balance assertions, and all beancount internals
