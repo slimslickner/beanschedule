@@ -1,0 +1,70 @@
+; Example pending transactions
+;
+; Pending transactions are one-time transactions you stage before they've posted
+; (e.g., online orders, pending charges). They automatically match and enrich
+; imported transactions when they arrive via the beangulp hook.
+;
+; Format:
+;   Date ! "Payee" "Narration"
+;     #pending
+;     Account  Amount
+;       Posting splits with optional narrations...
+;
+; Matching:
+;   - Matches on: account (exact) + amount (exact) + date (±4 days)
+;   - When matched, removes transaction from this file automatically
+;   - Use for one-time purchases, deliveries, pending charges
+;
+
+; ============================================================================
+; Online Purchase - Multiple splits
+; ============================================================================
+
+2026-02-20 ! "Amazon" "Wireless headphones ordered (not yet charged)"
+  #pending
+  Assets:Checking                        -89.99 USD
+  Expenses:Electronics:Audio              85.00 USD
+    narration: "Bose QuietComfort 45 headphones"
+  Expenses:Shopping:Shipping               4.99 USD
+    narration: "Standard shipping"
+
+
+; ============================================================================
+; Grocery Delivery
+; ============================================================================
+
+2026-02-22 ! "Whole Foods" "Grocery delivery scheduled"
+  #pending
+  Assets:Checking                       -127.45 USD
+  Expenses:Food:Groceries                127.45 USD
+
+
+; ============================================================================
+; Restaurant with split
+; ============================================================================
+
+2026-02-23 ! "Luigi's Ristorante" "Dinner reservation (card at table)"
+  #pending
+  Assets:Checking                        -75.00 USD
+  Expenses:Food:Dining                    75.00 USD
+    narration: "Dinner for 2"
+
+
+; ============================================================================
+; Subscription / Streaming Service
+; ============================================================================
+
+2026-03-01 ! "Netflix" "Monthly subscription charge" #pending
+  Assets:Checking                        -15.99 USD
+  Expenses:Subscriptions:Entertainment    15.99 USD
+    narration: "Netflix premium monthly"
+
+
+; ============================================================================
+; Travel Booking
+; ============================================================================
+
+2026-02-25 ! "Booking.com" "Hotel reservation in Paris" #pending
+  Assets:Checking                       -850.00 USD
+  Expenses:Travel:Lodging                850.00 USD
+    narration: "Hotel Paris (3 nights)"

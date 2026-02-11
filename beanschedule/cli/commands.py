@@ -35,6 +35,7 @@ from .formatters import (
     print_schedule_csv,
     print_schedule_table,
 )
+from .pending_cmds import pending
 
 logger = logging.getLogger(__name__)
 
@@ -279,15 +280,9 @@ def show(  # noqa: PLR0912, PLR0915
         # tomorrow if no explicit from_date is provided. This avoids showing forecasts
         # for today, which might already have actual imported transactions.
         today = date.today()  # noqa: DTZ011
-        from_date = (
-            today + timedelta(days=1) if from_date is None else from_date.date()
-        )
+        from_date = today + timedelta(days=1) if from_date is None else from_date.date()
 
-        to_date = (
-            from_date + timedelta(days=count * 45)
-            if to_date is None
-            else to_date.date()
-        )
+        to_date = from_date + timedelta(days=count * 45) if to_date is None else to_date.date()
 
         # Generate occurrences using shared utility (consistent with hook & plugin)
         from beanschedule.utils import generate_schedule_occurrences
@@ -1321,6 +1316,7 @@ def skip(
 
             # Get today's date for date range calculation
             from datetime import datetime, timedelta
+
             today = datetime.now().date()
             start_date = today - timedelta(days=90)
             end_date = today + timedelta(days=90)
@@ -1338,7 +1334,9 @@ def skip(
             # Get matched transactions from ledger
             from beanschedule.hook import _match_ledger_transactions_lazy
 
-            matched = _match_ledger_transactions_lazy(entries, expected_occurrences, enabled_schedules)
+            matched = _match_ledger_transactions_lazy(
+                entries, expected_occurrences, enabled_schedules
+            )
 
             # Build list of missing occurrences
             missing = []
@@ -1359,7 +1357,9 @@ def skip(
             for i, (sched, exp_date) in enumerate(missing, 1):
                 # Mark overdue items with asterisk
                 overdue = " *" if exp_date < today else ""
-                click.echo(f"{i:2}. {exp_date} - {sched.id:30} ({sched.transaction.payee}){overdue}")
+                click.echo(
+                    f"{i:2}. {exp_date} - {sched.id:30} ({sched.transaction.payee}){overdue}"
+                )
 
             click.echo("\nEnter dates to skip (comma-separated numbers, or 'all'):")
             selection = click.prompt("Selection")
@@ -1397,7 +1397,10 @@ def skip(
         else:
             # Direct mode: SCHEDULE_ID and DATES required
             if not schedule_id or not dates:
-                click.echo("Error: SCHEDULE_ID and DATES required (or use --select for interactive mode)", err=True)
+                click.echo(
+                    "Error: SCHEDULE_ID and DATES required (or use --select for interactive mode)",
+                    err=True,
+                )
                 sys.exit(1)
 
             # Find the schedule
@@ -1464,14 +1467,18 @@ def _generate_skip_marker(schedule, skip_date: date, reason: str | None = None) 
 
     # Format transaction with standard flag (*) and #skipped tag
     lines = [
-        f"{skip_date.isoformat()} * \"{payee}\" \"{narration}\"",
+        f'{skip_date.isoformat()} * "{payee}" "{narration}"',
         f"  #skipped",
-        f"  {META_SCHEDULE_ID}: \"{schedule.id}\"",
-        f"  {META_SCHEDULE_SKIPPED}: \"true\"",
+        f'  {META_SCHEDULE_ID}: "{schedule.id}"',
+        f'  {META_SCHEDULE_SKIPPED}: "true"',
         f"  {account}  0 USD",
     ]
 
     return "\n".join(lines)
+
+
+# Register pending transactions command group
+main.add_command(pending)
 
 
 if __name__ == "__main__":
