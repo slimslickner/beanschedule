@@ -226,6 +226,14 @@ Focus: Code quality, documentation, CI/CD
 - [ ] `beanschedule quick` - guided schedule creation
 - [ ] CSV export for matched transactions
 - [ ] Interactive fuzzy match confirmation
+- [x] **Pending Transactions** - Stage transactions awaiting posting and auto-enrich on import
+  - [x] `beanschedule pending create` - interactive split entry
+  - [x] `beanschedule pending list` - list pending transactions
+  - [x] `beanschedule pending clean` - clean up empty pending file
+  - [x] Automatic matching on account + amount + date (±4 days)
+  - [x] Automatic removal from pending file after match
+  - [x] Simplified format (#pending tag only, no metadata required)
+  - [x] Documentation and examples
 
 ### v1.5.0 - Enhanced Flexibility
 

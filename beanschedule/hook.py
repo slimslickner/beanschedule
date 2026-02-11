@@ -19,6 +19,13 @@ from .loader import get_enabled_schedules, load_schedules_file
 from .matcher import TransactionMatcher
 from .recurrence import RecurrenceEngine
 from .schema import Schedule
+from .pending import (
+    find_pending_file,
+    load_pending_transactions,
+    match_pending_transaction,
+    enrich_from_pending,
+    remove_pending_transactions,
+)
 from .utils import (
     build_date_index,
     generate_all_schedule_occurrences,
@@ -114,6 +121,32 @@ def schedule_hook(
         logger.info("No enabled schedules, returning entries unchanged")
         return extracted_entries_list
 
+    # NEW: Load pending transactions (one-time transactions to match and enrich)
+    pending_file_path = find_pending_file()
+    pending_transactions = []
+    matched_pending_entries = []  # Track which pending transactions were matched
+    if pending_file_path:
+        try:
+            pending_transactions = load_pending_transactions(pending_file_path)
+            if pending_transactions:
+                logger.info("=" * 70)
+                logger.info("PENDING TRANSACTIONS - LOADED (%d)", len(pending_transactions))
+                logger.info("=" * 70)
+                for pending in sorted(pending_transactions, key=lambda p: p.date):
+                    logger.info(
+                        "  • %s: %s - %s (%d postings)",
+                        pending.date,
+                        pending.payee,
+                        pending.amount,
+                        len(pending.postings),
+                    )
+                logger.info("=" * 70)
+            else:
+                logger.info("No pending transactions found in %s", pending_file_path)
+        except Exception as e:
+            logger.error("Failed to load pending transactions: %s", e)
+            pending_transactions = []
+
     # Step 2: Extract date range from all transactions (imported + ledger)
     date_range = _extract_date_range(extracted_entries_list, ledger_entries, schedule_file.config)
     if date_range is None:
@@ -177,6 +210,22 @@ def schedule_hook(
                     account_str,
                     units_str,
                 )
+
+                # NEW: Try pending match FIRST (higher priority than schedules)
+                pending_match = match_pending_transaction(entry, pending_transactions)
+                if pending_match:
+                    enriched_txn = enrich_from_pending(entry, pending_match)
+                    modified_entries.append(enriched_txn)
+                    matched_pending_entries.append(entry)
+                    logger.info(
+                        "✓ Matched pending transaction: %s (%s) - %s | %s",
+                        entry.date,
+                        pending_match.payee,
+                        entry.postings[0].units if entry.postings else "no amount",
+                        f"{len(pending_match.postings)} postings",
+                    )
+                    continue
+
                 match_result = _match_transaction(entry, expected_occurrences, matcher)
 
                 if match_result:
@@ -262,6 +311,51 @@ def schedule_hook(
             expected_date = placeholder.meta.get(constants.META_SCHEDULE_EXPECTED_DATE, "unknown")
             logger.warning("  • %s - %s (%s)", expected_date, placeholder.payee, schedule_id)
         logger.warning("=" * 70)
+
+    # NEW: Remove matched pending transactions from file and log summary
+    if matched_pending_entries and pending_file_path:
+        try:
+            remove_pending_transactions(pending_file_path, matched_pending_entries)
+            logger.info("Removed %d matched pending transaction(s)", len(matched_pending_entries))
+        except Exception as e:
+            logger.error("Failed to remove matched pending transactions: %s", e)
+
+    # Log summary of unmatched pending transactions
+    if pending_transactions:
+        matched_ids = {
+            (entry.date, entry.payee, entry.postings[0].units.number if entry.postings and entry.postings[0].units else None)
+            for entry in matched_pending_entries
+        }
+        unmatched = [
+            p for p in pending_transactions
+            if (p.date, p.payee, p.amount) not in matched_ids
+        ]
+
+        if unmatched:
+            from datetime import date as date_type
+
+            logger.warning("=" * 70)
+            logger.warning("PENDING TRANSACTIONS - UNMATCHED (%d open)", len(unmatched))
+            logger.warning("=" * 70)
+            for pending in sorted(unmatched, key=lambda p: p.date):
+                days_diff = (pending.date - date_type.today()).days
+                if days_diff > 0:
+                    age_str = f"in {days_diff} days"
+                elif days_diff == 0:
+                    age_str = "today"
+                else:
+                    age_str = f"{abs(days_diff)} days ago"
+
+                logger.warning(
+                    "  • %s (%s): %s - %s",
+                    pending.date,
+                    age_str,
+                    pending.payee,
+                    pending.amount,
+                )
+            logger.warning("=" * 70)
+        else:
+            logger.info("All pending transactions matched and removed")
 
     # Log final summary
     _log_summary(enabled_schedules, matched_occurrences, placeholders, start_date, end_date)

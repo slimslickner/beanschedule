@@ -261,6 +261,7 @@ include_past_dates: false       # Generate placeholders for historical missing d
 ```
 
 Configuration parameters:
+
 - **forecast_months** - How many months forward to forecast from today (default: 3)
 - **min_forecast_date** - Override the start date for forecasting (useful with historical ledger data)
 - **include_past_dates** - Whether to generate placeholders for missing dates in the past
@@ -478,6 +479,97 @@ When an expected transaction doesn't occur, beanschedule creates a placeholder:
   Expenses:Insurance:Auto                  125.00 USD
 ```
 
+### Staging One-Time Transactions
+
+Stage transactions that haven't yet posted (e.g., online orders, pending charges) and have them automatically match and enrich when imported.
+
+**Use Case:**
+
+You make an online purchase that won't post for a few days. You want to pre-define the exact splits so when it imports, it's automatically categorized correctly.
+
+**Using the CLI:**
+
+```bash
+# Interactive: prompts for each split
+beanschedule pending create \
+  --account Assets:Checking \
+  --amount -89.99 \
+  --date 2026-02-20 \
+  --payee "Amazon" \
+  --narration "Wireless headphones"
+
+# List pending transactions
+beanschedule pending list
+
+# Clean up empty pending file
+beanschedule pending clean
+```
+
+**Manual entry:**
+
+Create or edit `pending.beancount`:
+
+```beancount
+2026-02-20 ! "Amazon" "Wireless headphones (not yet charged)"
+  #pending
+  Assets:Checking  -89.99 USD
+  Expenses:Electronics:Audio  85.00 USD
+    narration: "Bose QuietComfort 45 headphones"
+  Expenses:Shopping:Shipping  4.99 USD
+    narration: "Standard shipping"
+```
+
+**How it works:**
+
+1. **Stage** — Create `pending.beancount` with pending transactions before they post
+2. **Import** — Run beangulp import as usual
+3. **Match** — Hook matches on account + amount + date (±4 days)
+4. **Enrich** — Applies pre-defined splits from pending transaction
+5. **Cleanup** — Automatically removes matched transaction from staging file (one-time use)
+
+**Configuration:**
+
+Set custom location via environment variable:
+
+```bash
+export BEANSCHEDULE_PENDING=/path/to/my/pending.beancount
+beanschedule pending list
+```
+
+Default search order:
+
+1. `BEANSCHEDULE_PENDING` environment variable
+2. `pending.beancount` in current directory
+3. `pending.beancount` in parent directory
+
+See `examples/pending.beancount` for more examples.
+
+**Logging:**
+
+The hook provides comprehensive logging for pending transaction processing:
+
+```
+[INFO] ======================================================================
+[INFO] PENDING TRANSACTIONS - LOADED (3)
+[INFO] ======================================================================
+[INFO]   • 2026-02-20: Amazon - -89.99 USD (3 postings)
+[INFO]   • 2026-02-22: Whole Foods - -127.45 USD (2 postings)
+[INFO] ======================================================================
+
+[INFO] ✓ Matched pending transaction: 2026-02-20 (Amazon) - -89.99 USD | 3 postings
+
+[WARNING] ======================================================================
+[WARNING] PENDING TRANSACTIONS - UNMATCHED (1 open)
+[WARNING] ======================================================================
+[WARNING]   • 2026-03-01 (in 9 days): Netflix - -15.99 USD
+[WARNING] ======================================================================
+```
+
+This helps you track:
+- ✓ Which pending transactions were loaded
+- ✓ Real-time matches as imports process
+- ⚠ Summary of unmatched pending transactions with relative dates
+
 ### Skipping Scheduled Occurrences
 
 Mark specific occurrences as intentionally skipped (e.g., a month you paid early or took a break):
@@ -608,7 +700,6 @@ See the [examples/](examples/) directory for:
 - 10 example schedule files covering different scenarios
 - Sample `example.beancount` ledger
 - Detailed README with usage tips
-
 
 ## Requirements
 

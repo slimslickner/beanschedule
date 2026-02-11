@@ -18,6 +18,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Skip marker detection (flag 'S', #skipped tag, schedule_skipped metadata)
   - `beanschedule skip` CLI command to generate skip markers
   - Skip markers prevent duplicate placeholder generation
+- Pending transactions feature for staging one-time transactions awaiting posting
+  - `beanschedule pending create` - Interactive CLI for creating pending transactions
+  - `beanschedule pending list` - List all pending transactions with dates and amounts
+  - `beanschedule pending clean` - Clean up empty pending file
+  - Automatic matching on account + amount + date (±4 days)
+  - Auto-removal from staging file after successful match
+  - Comprehensive logging with real-time match updates and unmatched summary
+  - Simplified format using just `#pending` tag (no metadata required)
 
 ### Fixed
 - Plugin parameter handling for Beancount config dict/JSON syntax

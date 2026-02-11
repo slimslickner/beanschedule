@@ -355,6 +355,89 @@ for schedule in schedule_file.schedules:
 
 ---
 
+## Pending One-Time Transactions
+
+Pending transactions allow you to pre-define splits for transactions that haven't yet posted (e.g., online orders, pending charges). They automatically match and enrich imported transactions when they arrive.
+
+### Quick Start
+
+```bash
+# Create pending transaction (interactive)
+beanschedule pending create \
+  --account Assets:Checking \
+  --amount -89.99 \
+  --date 2026-02-20 \
+  --payee "Amazon" \
+  --narration "Wireless headphones"
+
+# List pending
+beanschedule pending list
+
+# When transaction imports, it auto-matches and applies splits
+# Then automatically removes from pending file
+```
+
+### Pending Transaction Format
+
+```beancount
+2026-02-20 ! "Amazon" "Wireless headphones"
+  #pending
+  Assets:Checking  -89.99 USD
+  Expenses:Electronics:Audio  85.00 USD
+    narration: "Bose QuietComfort 45"
+  Expenses:Shopping:Shipping  4.99 USD
+```
+
+**Format Notes:**
+- Flag: `!` (indicates pending transaction)
+- Tag: `#pending` (required for identification)
+- Postings: Define splits with optional per-posting narrations
+- No metadata required (clean and simple)
+
+### Matching Algorithm
+
+Pending transactions match on **all** of:
+
+1. **Account** — exact match of first posting account
+2. **Amount** — exact match of first posting amount (to cents)
+3. **Date** — imported date within ±4 days of pending date
+
+Example: Pending on 2026-02-20 matches imports on 2026-02-16 to 2026-02-24.
+
+### Transaction Lifecycle
+
+1. **Create** — `beanschedule pending create` or manual `pending.beancount`
+2. **Import** — Run beangulp import with hook enabled
+3. **Match** — Hook detects matching import transaction
+4. **Enrich** — Applies pending splits to import
+5. **Cleanup** — Hook automatically removes from `pending.beancount`
+
+### Commands
+
+- `beanschedule pending create` — Create pending transaction (interactive split entry)
+- `beanschedule pending list` — List pending transactions
+- `beanschedule pending clean` — Clean up empty pending file
+
+### File Location
+
+Default discovery order:
+
+1. `BEANSCHEDULE_PENDING` environment variable (if set)
+2. `pending.beancount` in current directory
+3. `pending.beancount` in parent directory
+
+Set environment variable:
+
+```bash
+export BEANSCHEDULE_PENDING=/path/to/my/pending.beancount
+```
+
+### Limitations
+
+- Match is by specific date only (use `enabled: false` in schedule for permanent disabling)
+- Pending transactions auto-remove after first match (one-time use)
+- No UI for managing (ledger-based approach)
+
 ## Skipping Scheduled Occurrences
 
 ### Overview
