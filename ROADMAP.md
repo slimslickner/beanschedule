@@ -8,19 +8,23 @@ Roadmap for open-sourcing beanschedule with focus on code quality, documentation
 
 | Metric | Value | Target |
 |--------|-------|--------|
-| **Version** | v1.2.0 | v1.3.0 (Open Source Release) |
-| **Test Coverage** | 86% | 90%+ |
+| **Version** | v1.4.0 (Released) | v1.5.0 (Next) |
+| **Tests** | 371 passing | 90%+ coverage |
+| **Test Coverage** | 72% | 90%+ |
 | **Type Hints** | ~90% | 100% |
 | **Docstrings** | ~85% | 100% |
-| **Critical Release Blockers** | 8/10 ✅ | 10/10 |
+| **Critical Release Blockers** | 10/10 ✅ | N/A |
 
 ### What's Working
 
 - Core matching & enrichment with 80%+ performance optimization
 - Pattern discovery (`beanschedule detect`)
 - Loan amortization (static and stateful modes)
-- CLI commands: `validate`, `list`, `show`, `generate`, `create`, `detect`, `amortize`, `init`
-- 86% test coverage across all modules
+- Pending transactions with auto-matching and removal
+- Skip markers for intentional transaction exclusions
+- Configurable forecast settings
+- CLI commands: `validate`, `list`, `show`, `generate`, `create`, `detect`, `amortize`, `init`, `pending`, `skip`
+- 371 passing tests (367 core + 24 pending) with 72% coverage
 
 ---
 
@@ -197,7 +201,7 @@ def load_schedules_from_path(path: Path) -> Optional[ScheduleFile]:
 
 ## Feature Roadmap
 
-### v1.3.0 - Open Source Release
+### v1.3.0 - Open Source Release ✅ RELEASED
 
 Focus: Code quality, documentation, CI/CD
 
@@ -207,11 +211,10 @@ Focus: Code quality, documentation, CI/CD
   - [x] GitHub Actions CI pipeline
   - [x] Code cleanup (dead function removal)
   - [x] SECURITY.md created
-  - [ ] CONTRIBUTING.md (deferred)
-  - [ ] CODE_OF_CONDUCT.md (deferred)
-- [ ] All high priority code quality fixes
+  - [ ] CONTRIBUTING.md (deferred to v1.5.0)
+  - [ ] CODE_OF_CONDUCT.md (deferred to v1.5.0)
 
-### v1.4.0 - Skip Markers & Forecast Configuration
+### v1.4.0 - Skip Markers, Forecast & Pending Transactions ✅ RELEASED (2026-02-08)
 
 - [x] **Skip Markers** - Official support for marking occurrences as intentionally skipped
   - [x] Skip detection (flag 'S', #skipped tag, schedule_skipped metadata)
@@ -235,11 +238,13 @@ Focus: Code quality, documentation, CI/CD
   - [x] Simplified format (#pending tag only, no metadata required)
   - [x] Documentation and examples
 
-### v1.5.0 - Enhanced Flexibility
+### v1.5.0 - Enhanced Flexibility (Planned)
 
 - [ ] Optional account matching (match any account if not specified)
 - [ ] Schedule statistics command (coverage report, match rates)
 - [ ] Advanced amortization (ARM, balloon payments, interest-only periods)
+- [ ] CONTRIBUTING.md documentation
+- [ ] CODE_OF_CONDUCT.md documentation
 
 ### v2.0.0+ - Future Vision
 
