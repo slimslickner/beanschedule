@@ -359,7 +359,7 @@ class TestEnrichFromPending:
         assert enriched.postings[1].account == "Expenses:Electronics:Audio"
         assert enriched.postings[1].units.number == Decimal("85.00")
         assert enriched.postings[1].meta["narration"] == "Bose QuietComfort 45"
-        assert enriched.meta["matched_pending"] == "true"
+        assert enriched.meta["pending_matched_date"] == "2026-02-20"
 
     def test_posting_narrations_preserved(self):
         """Test posting narrations are preserved."""
@@ -435,29 +435,18 @@ class TestRemovePendingTransactions:
             pending = load_pending_transactions(file_path)
             assert len(pending) == 2
 
-            # Create matching transaction to remove
-            remove_txn = data.Transaction(
-                meta={"lineno": 1},
+            # Create pending transaction to remove (first one)
+            remove_pending = PendingTransaction(
                 date=date(2026, 2, 20),
-                flag="!",
+                account="Assets:Checking",
+                amount=Decimal("-89.99"),
                 payee="Amazon",
                 narration="Headphones",
-                tags=frozenset(),
-                links=frozenset(),
-                postings=[
-                    data.Posting(
-                        account="Assets:Checking",
-                        units=bc_amount.Amount(Decimal("-89.99"), "USD"),
-                        cost=None,
-                        price=None,
-                        flag=None,
-                        meta=None,
-                    ),
-                ],
+                postings=[],
             )
 
             # Remove first one
-            remove_pending_transactions(file_path, [remove_txn])
+            remove_pending_transactions(file_path, [remove_pending])
 
             # Verify only second remains
             pending = load_pending_transactions(file_path)
@@ -489,49 +478,27 @@ class TestRemovePendingTransactions:
             file_path = Path(f.name)
 
         try:
-            # Create matching transactions to remove
-            remove_txns = [
-                data.Transaction(
-                    meta={"lineno": 1},
+            # Create pending transactions to remove
+            remove_pendings = [
+                PendingTransaction(
                     date=date(2026, 2, 20),
-                    flag="!",
+                    account="Assets:Checking",
+                    amount=Decimal("-10.00"),
                     payee="Amazon",
                     narration="Item 1",
-                    tags=frozenset(),
-                    links=frozenset(),
-                    postings=[
-                        data.Posting(
-                            account="Assets:Checking",
-                            units=bc_amount.Amount(Decimal("-10.00"), "USD"),
-                            cost=None,
-                            price=None,
-                            flag=None,
-                            meta=None,
-                        ),
-                    ],
+                    postings=[],
                 ),
-                data.Transaction(
-                    meta={"lineno": 1},
+                PendingTransaction(
                     date=date(2026, 2, 20),
-                    flag="!",
+                    account="Assets:Checking",
+                    amount=Decimal("-30.00"),
                     payee="Shop",
                     narration="Item 3",
-                    tags=frozenset(),
-                    links=frozenset(),
-                    postings=[
-                        data.Posting(
-                            account="Assets:Checking",
-                            units=bc_amount.Amount(Decimal("-30.00"), "USD"),
-                            cost=None,
-                            price=None,
-                            flag=None,
-                            meta=None,
-                        ),
-                    ],
+                    postings=[],
                 ),
             ]
 
-            remove_pending_transactions(file_path, remove_txns)
+            remove_pending_transactions(file_path, remove_pendings)
 
             pending = load_pending_transactions(file_path)
             assert len(pending) == 1
@@ -552,29 +519,18 @@ class TestRemovePendingTransactions:
             file_path = Path(f.name)
 
         try:
-            # Create non-matching transaction
-            remove_txn = data.Transaction(
-                meta={"lineno": 1},
+            # Create non-matching pending transaction
+            remove_pending = PendingTransaction(
                 date=date(2026, 2, 20),
-                flag="!",
+                account="Assets:Checking",
+                amount=Decimal("-50.00"),
                 payee="Other",
                 narration="Other",
-                tags=frozenset(),
-                links=frozenset(),
-                postings=[
-                    data.Posting(
-                        account="Assets:Checking",
-                        units=bc_amount.Amount(Decimal("-50.00"), "USD"),
-                        cost=None,
-                        price=None,
-                        flag=None,
-                        meta=None,
-                    ),
-                ],
+                postings=[],
             )
 
             # Should not error
-            remove_pending_transactions(file_path, [remove_txn])
+            remove_pending_transactions(file_path, [remove_pending])
 
             # Original transaction should still exist
             pending = load_pending_transactions(file_path)

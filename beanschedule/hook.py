@@ -216,7 +216,7 @@ def schedule_hook(
                 if pending_match:
                     enriched_txn = enrich_from_pending(entry, pending_match)
                     modified_entries.append(enriched_txn)
-                    matched_pending_entries.append(entry)
+                    matched_pending_entries.append(pending_match)
                     logger.info(
                         "✓ Matched pending transaction: %s (%s) - %s | %s",
                         entry.date,
@@ -322,13 +322,9 @@ def schedule_hook(
 
     # Log summary of unmatched pending transactions
     if pending_transactions:
-        matched_ids = {
-            (entry.date, entry.payee, entry.postings[0].units.number if entry.postings and entry.postings[0].units else None)
-            for entry in matched_pending_entries
-        }
+        matched_ids = {(entry.date, entry.payee, entry.amount) for entry in matched_pending_entries}
         unmatched = [
-            p for p in pending_transactions
-            if (p.date, p.payee, p.amount) not in matched_ids
+            p for p in pending_transactions if (p.date, p.payee, p.amount) not in matched_ids
         ]
 
         if unmatched:

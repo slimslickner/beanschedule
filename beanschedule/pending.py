@@ -266,7 +266,6 @@ def enrich_from_pending(
     """
     # Add pending metadata
     new_meta = txn.meta.copy()
-    new_meta["matched_pending"] = "true"
     new_meta["pending_matched_date"] = pending.date.isoformat()
 
     # Use pending payee/narration
@@ -306,18 +305,22 @@ def enrich_from_pending(
     )
 
 
-def remove_pending_transactions(file_path: Path, matched_entries: list[data.Transaction]) -> None:
+def remove_pending_transactions(
+    file_path: Path, matched_pending: list["PendingTransaction"]
+) -> None:
     """
     Remove matched pending transactions from file.
 
     Reads the beancount file, filters out transactions that match the provided
-    entries (by date, payee, amount), and writes back to the file.
+    pending transactions (by date, payee, amount), and writes back to the file.
 
     Args:
         file_path: Path to pending.beancount
-        matched_entries: List of matched beancount transactions to remove
+        matched_pending: List of matched PendingTransaction objects to remove
     """
-    logger.info("Removing %d matched pending transaction(s) from %s", len(matched_entries), file_path)
+    logger.info(
+        "Removing %d matched pending transaction(s) from %s", len(matched_pending), file_path
+    )
 
     try:
         entries, _errors, _options = bc_loader.load_file(str(file_path))
@@ -325,11 +328,8 @@ def remove_pending_transactions(file_path: Path, matched_entries: list[data.Tran
         logger.error("Failed to load pending file for removal %s: %s", file_path, e)
         return
 
-    # Create a set of (date, payee, amount) tuples to remove
-    remove_set = {
-        (e.date, e.payee, e.postings[0].units.number if e.postings and e.postings[0].units else None)
-        for e in matched_entries
-    }
+    # Create a set of (date, payee, amount) tuples from pending transactions
+    remove_set = {(p.date, p.payee, p.amount) for p in matched_pending}
 
     # Filter out matched transactions
     kept_entries = []
@@ -340,7 +340,9 @@ def remove_pending_transactions(file_path: Path, matched_entries: list[data.Tran
             entry_key = (
                 entry.date,
                 entry.payee,
-                entry.postings[0].units.number if entry.postings and entry.postings[0].units else None,
+                entry.postings[0].units.number
+                if entry.postings and entry.postings[0].units
+                else None,
             )
             if entry_key in remove_set:
                 removed_count += 1
