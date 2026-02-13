@@ -17,8 +17,8 @@ recurrence:
   day_of_week: null
   interval: 1
   days_of_month:
-  - 5
-  - 20
+    - 5
+    - 20
   interval_months: null
 transaction:
   payee: ACME Corp
@@ -29,5 +29,5 @@ transaction:
   postings: null
 missing_transaction:
   create_placeholder: true
-  flag: '!'
-  narration_prefix: '[MISSING]'
+  flag: "!"
+  narration_prefix: "[MISSING]"

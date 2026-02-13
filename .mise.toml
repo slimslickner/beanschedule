@@ -1,0 +1,28 @@
+# Mise configuration for Beancount project
+
+[tools]
+python = "3.13"
+
+[env]
+_.file = '.env'
+
+
+[tasks.format-ruff]
+description = "Format Python code with ruff"
+run = "uv run ruff format ."
+
+[tasks.format-prettier]
+description = "Format YAML and JSON files with prettier"
+run = "uv run prettier --write '**/*.{yaml,yml,json}'"
+
+[tasks.format]
+description = "Run all formatters"
+run = "mise run format-ruff && mise run format-prettier"
+
+[tasks.setup]
+description = "Full clean setup: clear venv, sync deps, install in editable mode"
+run = """
+rm -rf .venv
+uv sync --refresh
+uv pip install -e .
+"""

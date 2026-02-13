@@ -22,19 +22,19 @@ recurrence:
   interval_months: null
 transaction:
   payee: EDISON POWER
-  narration: ''
+  narration: ""
   tags: []
   metadata:
     schedule_id: utilities-electric
     utility_type: electric
   postings:
-  - account: Assets:US:BofA:Checking
-    amount: -65.00
-    narration: null
-  - account: Expenses:Home:Electricity
-    amount: 65.00
-    narration: null
+    - account: Assets:US:BofA:Checking
+      amount: -65.00
+      narration: null
+    - account: Expenses:Home:Electricity
+      amount: 65.00
+      narration: null
 missing_transaction:
   create_placeholder: true
-  flag: '!'
-  narration_prefix: '[MISSING]'
+  flag: "!"
+  narration_prefix: "[MISSING]"

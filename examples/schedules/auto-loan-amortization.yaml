@@ -31,11 +31,11 @@ transaction:
     # - Interest account (role: interest) gets interest portion
     # - Principal account (role: principal) gets principal portion
     - account: Assets:Checking
-      amount: null  # Will be calculated
-      role: payment  # Explicitly mark as payment account
+      amount: null # Will be calculated
+      role: payment # Explicitly mark as payment account
     - account: Expenses:Auto:Loan-Interest
-      amount: null  # Will be calculated from amortization
-      role: interest  # Explicitly mark as interest
+      amount: null # Will be calculated from amortization
+      role: interest # Explicitly mark as interest
     - account: Liabilities:Auto-Loan
-      amount: null  # Will be calculated from amortization
-      role: principal  # Explicitly mark as principal reduction
+      amount: null # Will be calculated from amortization
+      role: principal # Explicitly mark as principal reduction

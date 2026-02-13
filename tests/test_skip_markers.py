@@ -43,7 +43,7 @@ class TestSkipMarkerDetection:
             "Test Payee",
             "Assets:Checking",
             None,
-            **{META_SCHEDULE_SKIPPED: "true"}
+            **{META_SCHEDULE_SKIPPED: "true"},
         )
         assert _is_skip_marker(txn) is True
 
@@ -54,7 +54,7 @@ class TestSkipMarkerDetection:
             "Test Payee",
             "Assets:Checking",
             None,
-            **{META_SCHEDULE_SKIPPED: "$0 balance"}
+            **{META_SCHEDULE_SKIPPED: "$0 balance"},
         )
         assert _is_skip_marker(txn) is True
 
@@ -116,7 +116,7 @@ class TestSkipMarkerPreventsPlaceholder:
             **{
                 META_SCHEDULE_ID: "rent-payment",
                 META_SCHEDULE_SKIPPED: "Testing",
-            }
+            },
         )
 
         # Mar 1 transaction is missing - should get placeholder
@@ -127,6 +127,7 @@ class TestSkipMarkerPreventsPlaceholder:
         ]
 
         from unittest.mock import patch
+
         with patch("beanschedule.hook.load_schedules_file", return_value=schedule_file):
             result = schedule_hook(extracted_entries, existing_entries=[])
 
@@ -134,9 +135,7 @@ class TestSkipMarkerPreventsPlaceholder:
         assert len(result) > 0
         assert result[0][1][0] == skip_marker
 
-    def test_skip_marker_with_schedule_id_metadata(
-        self, sample_schedule, global_config
-    ):
+    def test_skip_marker_with_schedule_id_metadata(self, sample_schedule, global_config):
         """Skip marker with explicit schedule_id metadata is recognized."""
         schedule = sample_schedule(schedule_id="test-schedule")
         schedule_file = ScheduleFile(schedules=[schedule], config=global_config)
@@ -146,7 +145,7 @@ class TestSkipMarkerPreventsPlaceholder:
             schedule.transaction.payee,
             schedule.match.account,
             None,
-            **{META_SCHEDULE_ID: "test-schedule", META_SCHEDULE_SKIPPED: "true"}
+            **{META_SCHEDULE_ID: "test-schedule", META_SCHEDULE_SKIPPED: "true"},
         )
 
         extracted_entries = [
@@ -154,6 +153,7 @@ class TestSkipMarkerPreventsPlaceholder:
         ]
 
         from unittest.mock import patch
+
         with patch("beanschedule.hook.load_schedules_file", return_value=schedule_file):
             result = schedule_hook(extracted_entries, existing_entries=[])
 
@@ -176,7 +176,7 @@ class TestSkipMarkerPreventsPlaceholder:
             "Test Payee",
             "Assets:Checking",
             None,
-            **{META_SCHEDULE_SKIPPED: "Traveling"}
+            **{META_SCHEDULE_SKIPPED: "Traveling"},
         )
 
         # Both should be recognized as skip markers
@@ -205,7 +205,7 @@ class TestSkipMarkerLogging:
             "Test",
             "Assets:Checking",
             None,
-            **{META_SCHEDULE_SKIPPED: "$0 balance"}
+            **{META_SCHEDULE_SKIPPED: "$0 balance"},
         )
         assert _is_skip_marker(txn_with_meta) is True
 
