@@ -117,6 +117,9 @@ def load_pending_transactions(file_path: Path) -> list[PendingTransaction]:
     Parses the beancount file and extracts all transactions marked as pending
     (#pending tag).
 
+    Automatically injects the auto_accounts plugin at runtime (without modifying the file)
+    to create account open directives for any accounts used in pending transactions.
+
     Args:
         file_path: Path to pending.beancount file
 
@@ -126,7 +129,17 @@ def load_pending_transactions(file_path: Path) -> list[PendingTransaction]:
     logger.info("Loading pending transactions from %s", file_path)
 
     try:
-        entries, errors, _options = bc_loader.load_file(str(file_path))
+        # Read file content
+        content = file_path.read_text()
+
+        # Prepend auto_accounts plugin directive (in-memory only, doesn't modify file)
+        plugin_directive = 'plugin "beancount.plugins.auto_accounts"\n\n'
+        modified_content = plugin_directive + content
+
+        # Load from modified string (file remains unchanged on disk)
+        entries, errors, options = bc_loader.load_string(modified_content)
+        logger.debug("Applied auto_accounts plugin via inline directive injection")
+
     except Exception as e:
         logger.error("Failed to load pending file %s: %s", file_path, e)
         return []
