@@ -27,5 +27,5 @@ transaction:
   postings: null
 missing_transaction:
   create_placeholder: true
-  flag: '!'
-  narration_prefix: '[MISSING]'
+  flag: "!"
+  narration_prefix: "[MISSING]"

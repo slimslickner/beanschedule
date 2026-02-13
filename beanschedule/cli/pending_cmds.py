@@ -131,11 +131,13 @@ def create_pending(
 
         split_narration = click.prompt("  Narration (optional)", default="", show_default=False)
 
-        splits.append({
-            "account": split_account,
-            "amount": split_amount,
-            "narration": split_narration,
-        })
+        splits.append(
+            {
+                "account": split_account,
+                "amount": split_amount,
+                "narration": split_narration,
+            }
+        )
 
         remaining -= split_amount
 
@@ -168,7 +170,7 @@ def create_pending(
     lines.append(f"  {account}  {amount} USD")
 
     for split in splits:
-        lines.append(f'  {split["account"]}  {split["amount"]} USD')
+        lines.append(f"  {split['account']}  {split['amount']} USD")
         if split["narration"]:
             lines.append(f'    narration: "{split["narration"]}"')
 

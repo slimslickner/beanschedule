@@ -64,7 +64,11 @@ class TransactionMatcher:
         date_score = self._date_score(transaction, schedule, expected_date)
 
         # Weighted combination
-        total_score = (payee_score * constants.PAYEE_SCORE_WEIGHT) + (amount_score * constants.AMOUNT_SCORE_WEIGHT) + (date_score * constants.DATE_SCORE_WEIGHT)
+        total_score = (
+            (payee_score * constants.PAYEE_SCORE_WEIGHT)
+            + (amount_score * constants.AMOUNT_SCORE_WEIGHT)
+            + (date_score * constants.DATE_SCORE_WEIGHT)
+        )
 
         logger.debug(
             "Match score for %s vs %s: %.2f (payee=%.2f, amount=%.2f, date=%.2f)",

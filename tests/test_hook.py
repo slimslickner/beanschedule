@@ -830,9 +830,7 @@ class TestAmortizationEnrichment:
         total = principal + interest
         assert total == Decimal("1995.68")  # Should equal monthly payment
 
-    def test_amortization_with_escrow(
-        self, sample_transaction, sample_schedule, global_config
-    ):
+    def test_amortization_with_escrow(self, sample_transaction, sample_schedule, global_config):
         """Test amortization with explicit escrow postings."""
         from decimal import Decimal
 
@@ -919,15 +917,17 @@ class TestAmortizationEnrichment:
         assert escrow_posting.units.number == Decimal("150")
 
         # Verify P/I postings still have computed amounts
-        interest_posting = next(p for p in enriched_txn.postings if p.account == "Expenses:Housing:Interest")
-        principal_posting = next(p for p in enriched_txn.postings if p.account == "Liabilities:Mortgage")
+        interest_posting = next(
+            p for p in enriched_txn.postings if p.account == "Expenses:Housing:Interest"
+        )
+        principal_posting = next(
+            p for p in enriched_txn.postings if p.account == "Liabilities:Mortgage"
+        )
 
         assert interest_posting.units.number > Decimal("0")
         assert principal_posting.units.number > Decimal("0")
 
-    def test_no_amortization_unchanged(
-        self, sample_transaction, sample_schedule, global_config
-    ):
+    def test_no_amortization_unchanged(self, sample_transaction, sample_schedule, global_config):
         """Regression test: non-amortization schedules are unchanged."""
         # Create regular schedule without amortization
         schedule = sample_schedule(

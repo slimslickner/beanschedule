@@ -1,7 +1,7 @@
 # Mortgage payment with amortization PLUS escrow
 # Demonstrates: Mixing automatic amortization with fixed escrow amounts
 id: mortgage-with-escrow
-enabled: false  # Set to true to enable
+enabled: false # Set to true to enable
 match:
   account: Assets:Checking
   payee_pattern: "First National Mortgage|FNM|MORTGAGE"
@@ -29,27 +29,28 @@ transaction:
     # Payment account - will auto-calculate as -(principal + interest + escrows)
     - account: Assets:Checking
       amount: null
-      role: payment  # Explicitly mark as payment account
+      role: payment # Explicitly mark as payment account
 
     # AUTOMATIC (calculated from amortization):
     - account: Expenses:Housing:Mortgage-Interest
-      amount: null  # Calculated from amortization schedule
-      role: interest  # Explicitly mark as interest
+      amount: null # Calculated from amortization schedule
+      role: interest # Explicitly mark as interest
 
     - account: Liabilities:Mortgage:Principal
-      amount: null  # Calculated from amortization schedule
-      role: principal  # Explicitly mark as principal reduction
+      amount: null # Calculated from amortization schedule
+      role: principal # Explicitly mark as principal reduction
 
     # FIXED (manually specified, change yearly):
     - account: Expenses:Housing:Property-Tax-Escrow
-      amount: 350.00  # Update this annually when escrow changes
+      amount: 350.00 # Update this annually when escrow changes
       narration: "Property tax escrow"
-      role: escrow  # Explicitly mark as escrow (fixed amount)
+      role: escrow # Explicitly mark as escrow (fixed amount)
 
     - account: Expenses:Housing:Insurance-Escrow
-      amount: 125.00  # Update this annually when escrow changes
+      amount: 125.00 # Update this annually when escrow changes
       narration: "Home insurance escrow"
-      role: escrow  # Explicitly mark as escrow (fixed amount)
+      role: escrow # Explicitly mark as escrow (fixed amount)
+
 
     # Optional: PMI if applicable
     # - account: Expenses:Housing:PMI

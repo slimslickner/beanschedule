@@ -25,11 +25,11 @@ transaction:
   metadata:
     schedule_id: monthly-rent
   postings:
-  - account: Assets:Bank:Checking
-    amount: null
-  - account: Expenses:Housing:Rent
-    amount: null
+    - account: Assets:Bank:Checking
+      amount: null
+    - account: Expenses:Housing:Rent
+      amount: null
 missing_transaction:
   create_placeholder: true
-  flag: '!'
-  narration_prefix: '[MISSING]'
+  flag: "!"
+  narration_prefix: "[MISSING]"

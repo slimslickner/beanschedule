@@ -28,13 +28,13 @@ transaction:
     schedule_id: subscription-streaming
     subscription_type: entertainment
   postings:
-  - account: Liabilities:CreditCard:Visa
-    amount: null
-    narration: null
-  - account: Expenses:Entertainment:Subscriptions
-    amount: null
-    narration: null
+    - account: Liabilities:CreditCard:Visa
+      amount: null
+      narration: null
+    - account: Expenses:Entertainment:Subscriptions
+      amount: null
+      narration: null
 missing_transaction:
   create_placeholder: true
-  flag: '!'
-  narration_prefix: '[MISSING]'
+  flag: "!"
+  narration_prefix: "[MISSING]"

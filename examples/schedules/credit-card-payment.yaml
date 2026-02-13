@@ -27,13 +27,13 @@ transaction:
   metadata:
     schedule_id: credit-card-payment
   postings:
-  - account: Assets:Bank:Checking
-    amount: null
-    narration: null
-  - account: Liabilities:CreditCard:Visa
-    amount: null
-    narration: null
+    - account: Assets:Bank:Checking
+      amount: null
+      narration: null
+    - account: Liabilities:CreditCard:Visa
+      amount: null
+      narration: null
 missing_transaction:
   create_placeholder: true
-  flag: '!'
-  narration_prefix: '[MISSING]'
+  flag: "!"
+  narration_prefix: "[MISSING]"

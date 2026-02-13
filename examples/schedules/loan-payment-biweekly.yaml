@@ -28,16 +28,16 @@ transaction:
     schedule_id: loan-payment-biweekly
     loan_type: student
   postings:
-  - account: Assets:Bank:Checking
-    amount: null
-    narration: null
-  - account: Expenses:Loans:Interest
-    amount: 85.00
-    narration: Loan Interest
-  - account: Liabilities:StudentLoan:Principal
-    amount: 200.00
-    narration: Principal Payment
+    - account: Assets:Bank:Checking
+      amount: null
+      narration: null
+    - account: Expenses:Loans:Interest
+      amount: 85.00
+      narration: Loan Interest
+    - account: Liabilities:StudentLoan:Principal
+      amount: 200.00
+      narration: Principal Payment
 missing_transaction:
   create_placeholder: true
-  flag: '!'
-  narration_prefix: '[MISSING]'
+  flag: "!"
+  narration_prefix: "[MISSING]"

@@ -27,13 +27,13 @@ transaction:
   metadata:
     schedule_id: rent-payment
   postings:
-  - account: Assets:US:BofA:Checking
-    amount: -2400.00
-    narration: null
-  - account: Expenses:Home:Rent
-    amount: 2400.00
-    narration: null
+    - account: Assets:US:BofA:Checking
+      amount: -2400.00
+      narration: null
+    - account: Expenses:Home:Rent
+      amount: 2400.00
+      narration: null
 missing_transaction:
   create_placeholder: true
-  flag: '!'
-  narration_prefix: '[MISSING]'
+  flag: "!"
+  narration_prefix: "[MISSING]"
