@@ -132,6 +132,14 @@ def load_pending_transactions(file_path: Path) -> list[PendingTransaction]:
         # Read file content
         content = file_path.read_text()
 
+        # Check for ;; comments and warn about using narration metadata instead
+        if ";;" in content:
+            logger.warning(
+                "Pending file contains ;; comments. "
+                "Consider using posting-level 'narration:' metadata instead for better integration. "
+                "Example: Assets:Checking  -50.00 USD\n  narration: \"Your description here\""
+            )
+
         # Prepend auto_accounts plugin directive (in-memory only, doesn't modify file)
         plugin_directive = 'plugin "beancount.plugins.auto_accounts"\n\n'
         modified_content = plugin_directive + content
