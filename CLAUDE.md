@@ -21,8 +21,11 @@ Beanschedule is a **beangulp hook** that automatically matches imported bank tra
 - `matcher.py` - Scoring algorithm (payee + amount + date)
 - `recurrence.py` - Date generation (MONTHLY, WEEKLY, YEARLY, etc.)
 - `loader.py` - YAML loading with auto-discovery
+- `pending.py` - One-time transaction matching and enrichment
 - `hook.py` - Beangulp integration + lazy matching optimization
-- `cli.py` - Command-line interface (validate, list, generate, init)
+- `cli/commands.py` - Command-line interface (validate, list, generate, init, pending, skip, etc.)
+- `cli/formatters.py` - Output formatting (tables, JSON, CSV)
+- `cli/builders.py` - Interactive transaction/schedule builders
 
 ## Quick Setup
 
@@ -50,7 +53,7 @@ See `.continue/rules/setup-and-commands.md` for full reference.
 
 4. **Type Hints**: Required on public functions, optional on simple internal functions.
 
-5. **Test Coverage**: 77 tests, 86% coverage (test_schema, test_matcher, test_hook complete; test_recurrence, test_loader, test_cli pending).
+5. **Test Coverage**: 371 passing tests, 72% overall coverage (367 core tests + 24 pending transaction tests). Pre-existing 2 failures in date-sensitive amortization tests.
 
 ## Key Design Decisions
 
@@ -61,12 +64,13 @@ See `.continue/rules/setup-and-commands.md` for full reference.
 
 See `.continue/rules/architecture.md` for full architecture details.
 
-## ROADMAP (January 2026)
+## v1.4.0 Status (Current)
 
-High-priority next steps:
-1. Fix logging f-strings → deferred formatting
-2. Implement payee pattern compilation (40-50% speedup)
-3. Complete test coverage (recurrence, loader, CLI, end-to-end)
-4. Pre-release: CONTRIBUTING.md, CODE_OF_CONDUCT.md, CHANGELOG.md, GitHub Actions
+✅ **Completed in v1.4.0**:
+- Skip markers for intentionally skipped scheduled transactions
+- Configurable forecast settings (forecast_months, min_forecast_date, include_past_dates)
+- Pending transactions feature (one-time staging, auto-matching, auto-removal)
+- Comprehensive logging for pending transaction processing
+- All pending transaction tests passing (24/24)
 
-See ROADMAP.md for full details.
+See ROADMAP.md for full roadmap and v1.5.0+ planned features.

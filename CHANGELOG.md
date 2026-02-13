@@ -30,6 +30,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - Plugin parameter handling for Beancount config dict/JSON syntax
 - Test fixture isolation with forecast_months=0 by default
+- Pending transaction removal now correctly matches by pending transaction details (date, payee, amount)
+- Pending transaction narration parsing supports both metadata and comment syntax
+- Removed unnecessary `matched_pending` metadata from enriched transactions
+- Fixed hook logic for tracking matched pending transactions
 
 ## [1.2.0] - 2026-01-15
 

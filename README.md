@@ -12,13 +12,15 @@ Beanschedule is a [beangulp](https://github.com/beancount/beangulp) hook that in
 - **Pattern Discovery** - Auto-detect recurring transaction patterns from your ledger
 - **Automatic Matching** - Fuzzy matching with weighted scoring (payee 40%, amount 40%, date 20%)
 - **Transaction Enrichment** - Add metadata, tags, and complete posting splits to imported transactions
+- **Pending Transactions** - Stage one-time transactions awaiting posting and auto-enrich on import
+- **Skip Markers** - Mark scheduled transactions as intentionally skipped to avoid duplicate warnings
 - **Forecast Generation** - Generate future transactions for budgeting and visualization (Beancount plugin)
 - **Missing Transaction Detection** - Create placeholder transactions for expected payments that didn't occur
 - **Flexible Recurrence Patterns** - Monthly, bi-monthly, weekly, bi-weekly, yearly, and custom intervals
 - **Loan Amortization** - Automatic principal/interest splits with static or ledger-driven balance modes
 - **Smart Amount Matching** - Fixed amounts with tolerance, range matching, or null amounts
 - **Beangulp Integration** - Drop-in hook for your existing import workflow
-- **CLI Tools** - Validate, test, debug, and auto-discover schedules with built-in commands
+- **CLI Tools** - Validate, test, debug, auto-discover schedules, manage pending transactions
 - **Preserves ML Training Data** - Compatible with smart_importer for machine learning predictions
 
 ## Quick Start
@@ -713,7 +715,7 @@ See the [examples/](examples/) directory for:
 
 ## Contributing
 
-Contributions are welcome! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
+Contributions are welcome! Please open an issue or pull request on GitHub. (CONTRIBUTING.md coming in v1.5.0)
 
 ## License
 
