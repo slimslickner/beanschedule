@@ -162,6 +162,33 @@ class TestLoadPendingTransactions:
         finally:
             file_path.unlink()
 
+    def test_warning_on_semicolon_comments(self, caplog):
+        """Test warning is issued when file contains ;; comments."""
+        import logging
+
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".beancount", delete=False) as f:
+            f.write("""
+2026-02-20 ! "Amazon" "Wireless headphones"
+  #pending
+  Assets:Checking  -89.99 USD  ;; This is a comment
+  Expenses:Electronics  89.99 USD
+""")
+            f.flush()
+            file_path = Path(f.name)
+
+        try:
+            with caplog.at_level(logging.WARNING):
+                pending = load_pending_transactions(file_path)
+                assert len(pending) == 1
+
+            # Check that warning was logged
+            assert any(
+                "contains ;; comments" in record.message and "narration:" in record.message
+                for record in caplog.records
+            )
+        finally:
+            file_path.unlink()
+
 
 class TestMatchPendingTransaction:
     """Test pending transaction matching."""
