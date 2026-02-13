@@ -1177,6 +1177,27 @@ class TestStatefulAmortization:
 
     def test_stateful_monthly_compounding(self, tmp_path, monkeypatch):
         """Should derive P/I from actual ledger balance, not original terms."""
+        # Mock today to be before the first forecast date (2026-02-04)
+        # so the test doesn't depend on the current date
+        # We need to patch where date is actually used (in the schedules module)
+        from datetime import date as dt_date
+        from datetime import timedelta as dt_timedelta
+        from dateutil.relativedelta import relativedelta as dt_relativedelta
+
+        mock_today_value = dt_date(2026, 1, 15)
+
+        class MockDate:
+            """Wrapper for date that allows mocking today()."""
+
+            @staticmethod
+            def today():
+                return mock_today_value
+
+            def __new__(cls, year, month, day):
+                return dt_date(year, month, day)
+
+        monkeypatch.setattr("beanschedule.plugins.schedules.date", MockDate)
+
         schedule_yaml = tmp_path / "schedules.yaml"
         schedule_yaml.write_text(self._schedule_yaml("MONTHLY"))
         monkeypatch.chdir(tmp_path)
@@ -1220,6 +1241,25 @@ class TestStatefulAmortization:
 
     def test_stateful_daily_compounding(self, tmp_path, monkeypatch):
         """Daily compounding should use actual days between payment dates."""
+        # Mock today to be before the first forecast date (2026-02-04)
+        # so the test doesn't depend on the current date
+        # We need to patch where date is actually used (in the schedules module)
+        from datetime import date as dt_date
+
+        mock_today_value = dt_date(2026, 1, 15)
+
+        class MockDate:
+            """Wrapper for date that allows mocking today()."""
+
+            @staticmethod
+            def today():
+                return mock_today_value
+
+            def __new__(cls, year, month, day):
+                return dt_date(year, month, day)
+
+        monkeypatch.setattr("beanschedule.plugins.schedules.date", MockDate)
+
         schedule_yaml = tmp_path / "schedules.yaml"
         schedule_yaml.write_text(self._schedule_yaml("DAILY"))
         monkeypatch.chdir(tmp_path)
