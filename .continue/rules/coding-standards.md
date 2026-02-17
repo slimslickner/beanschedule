@@ -8,9 +8,9 @@ description: Coding patterns, standards, and best practices for beanschedule
 
 From `pyproject.toml`:
 
-- **Formatter**: Ruff (100 char line length)
-- **Linter**: Ruff strict mode (E,F,I,N,UP,B,A,COM,C4,DTZ,ISC,ICN,G,PIE,T20,Q,RSE,RET,SLF,SIM,TID,ARG,PTH,ERA,PL,RUF)
-- **Type Checker**: mypy (not strict, enforces basic types)
+- **Formatter**: Ruff (88 char line length)
+- **Linter**: Ruff
+- **Type Checker**: ty (Astral's type checker)
 - **Tests**: pytest 85%+ coverage target
 
 Run checks:
@@ -18,7 +18,7 @@ Run checks:
 ```bash
 uv run ruff check beanschedule/ tests/    # Lint
 uv run ruff format beanschedule/ tests/   # Format
-uv run mypy beanschedule/                 # Type check
+uv run ty check                           # Type check
 ```
 
 ## Key Code Patterns
@@ -151,7 +151,7 @@ Optional on simple internal functions, required on complex ones.
 When reviewing, check:
 
 1. ✅ Tests added/updated for the change
-2. ✅ No new ruff/mypy violations
+2. ✅ No new ruff/ty violations
 3. ✅ Type hints on public functions
 4. ✅ Deferred logging (no f-strings in logger calls)
 5. ✅ No unnecessary abstraction or error handling
