@@ -238,13 +238,24 @@ Focus: Code quality, documentation, CI/CD
   - [x] Simplified format (#pending tag only, no metadata required)
   - [x] Documentation and examples
 
-### v1.5.0 - Enhanced Flexibility (Planned)
+### v1.5.0 - Enhanced Flexibility & PyPI Publishing (Planned)
+
+**Core Features:**
 
 - [ ] Optional account matching (match any account if not specified)
 - [ ] Schedule statistics command (coverage report, match rates)
 - [ ] Advanced amortization (ARM, balloon payments, interest-only periods)
 - [ ] CONTRIBUTING.md documentation
 - [ ] CODE_OF_CONDUCT.md documentation
+
+**Distribution:**
+
+- [ ] Publish to PyPI (move from GitHub-only installation)
+  - [ ] Set up PyPI account and project
+  - [ ] Configure build system (pyproject.toml with build backend)
+  - [ ] Add release automation (GitHub Actions for PyPI publish)
+  - [ ] Create release notes and versioning strategy
+  - [ ] Update README to use `pip install beanschedule`
 
 ### v2.0.0+ - Future Vision
 
