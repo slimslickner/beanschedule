@@ -193,7 +193,9 @@ class TestTransactionTemplate:
 
     def test_metadata_requires_schedule_id(self):
         """Test that metadata must contain schedule_id."""
-        with pytest.raises(ValueError, match="metadata must contain 'schedule_id' field"):
+        with pytest.raises(
+            ValueError, match="metadata must contain 'schedule_id' field"
+        ):
             TransactionTemplate(
                 payee="Test",
                 metadata={"other_key": "value"},
@@ -209,7 +211,9 @@ class TestTransactionTemplate:
 
     def test_empty_metadata_fails(self):
         """Test that empty metadata dict fails."""
-        with pytest.raises(ValueError, match="metadata must contain 'schedule_id' field"):
+        with pytest.raises(
+            ValueError, match="metadata must contain 'schedule_id' field"
+        ):
             TransactionTemplate(
                 payee="Test",
                 metadata={},
@@ -505,7 +509,9 @@ class TestAmortizationConfig:
         """Should reject negative extra principal."""
         from beanschedule.schema import AmortizationConfig
 
-        with pytest.raises(ValidationError, match="extra_principal must be non-negative"):
+        with pytest.raises(
+            ValidationError, match="extra_principal must be non-negative"
+        ):
             AmortizationConfig(
                 principal=Decimal("100000"),
                 annual_rate=Decimal("0.06"),
@@ -620,7 +626,9 @@ class TestAmortizationOverride:
         """Should reject negative extra principal."""
         from beanschedule.schema import AmortizationOverride
 
-        with pytest.raises(ValidationError, match="extra_principal must be non-negative"):
+        with pytest.raises(
+            ValidationError, match="extra_principal must be non-negative"
+        ):
             AmortizationOverride(
                 effective_date=date(2029, 1, 1),
                 extra_principal=Decimal("-50"),
@@ -651,6 +659,7 @@ class TestAmortizationConfigWithOverrides:
                 ),
             ],
         )
+        assert config.overrides is not None
         assert len(config.overrides) == 2
         assert config.overrides[0].effective_date == date(2029, 1, 1)
         assert config.overrides[1].effective_date == date(2034, 1, 1)
@@ -685,7 +694,7 @@ class TestStatefulAmortizationConfig:
             annual_rate=Decimal("0.065"),
             balance_from_ledger=True,
             monthly_payment=Decimal("450.00"),
-            compounding="DAILY",
+            compounding=CompoundingFrequency.DAILY,
         )
         assert config.compounding == CompoundingFrequency.DAILY
 

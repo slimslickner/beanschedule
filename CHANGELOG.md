@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [1.4.0] - 2026-02-08
 
 ### Added
+
 - Configurable forecast settings to control forecasting behavior
   - `forecast_months`: extend end_date by N months (default 3)
   - `min_forecast_date`: override start date for forecasting
@@ -28,6 +29,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Simplified format using just `#pending` tag (no metadata required)
 
 ### Fixed
+
 - Plugin parameter handling for Beancount config dict/JSON syntax
 - Test fixture isolation with forecast_months=0 by default
 - Pending transaction removal now correctly matches by pending transaction details (date, payee, amount)
@@ -38,22 +40,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [1.2.0] - 2026-01-15
 
 ### Added
+
 - Stateful amortization with `balance_from_ledger` mode for dynamic loan balance computation
 - Compounding support (MONTHLY and DAILY) for accurate interest calculations
 - `beanschedule amortize` command for standalone amortization schedule generation
 - Cleared + pending transaction balance computation for accurate starting balance
 
 ### Fixed
+
 - Amortization calendar printing with proper formatting
 - Amount-tolerance matcher tests for edge cases
 - `make_schedule` fixture kwargs handling
 
 ### Changed
+
 - Improved amortization accuracy with ledger-driven balance tracking
 
 ## [1.1.0] - 2025-12-20
 
 ### Added
+
 - `beanschedule detect` - Auto-detect recurring transaction patterns from ledger
 - `beanschedule create` - Interactive schedule creation from ledger transactions
 - `beanschedule show` - Display detailed schedule information
@@ -66,12 +72,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Integration tests with realistic examples
 
 ### Fixed
+
 - Pattern detection accuracy improvements
 - CLI output formatting enhancements
 
 ## [1.0.0] - 2025-11-10
 
 ### Added
+
 - Core transaction matching with weighted scoring algorithm
 - Payee matching with regex patterns and fuzzy matching
 - Amount matching (exact, tolerance, range-based)
@@ -90,6 +98,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Loan amortization with static mode
 
 ### Features
+
 - Pattern Discovery - Auto-detect recurring transaction patterns
 - Automatic Matching - Fuzzy matching with weighted scoring
 - Transaction Enrichment - Add metadata, tags, and complete posting splits
@@ -106,6 +115,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## Unreleased
 
 ### Planned
+
 - Dry-run mode for preview before commit
 - ONCE frequency for ad-hoc transactions
 - Quick schedule creation wizard

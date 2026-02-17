@@ -26,7 +26,9 @@ def print_schedule_table(schedules: list) -> None:
     payee_width = min(payee_width, 30)  # Cap at 30
 
     # Print header
-    click.echo(f"{'ID':<{id_width}}  {'Status':<8}  {'Frequency':<12}  {'Payee':<{payee_width}}")
+    click.echo(
+        f"{'ID':<{id_width}}  {'Status':<8}  {'Frequency':<12}  {'Payee':<{payee_width}}"
+    )
     click.echo("-" * (id_width + 8 + 12 + payee_width + 6))
 
     # Print schedules
@@ -35,7 +37,9 @@ def print_schedule_table(schedules: list) -> None:
         frequency = s.recurrence.frequency.value
         payee = (s.transaction.payee or "")[:payee_width]
 
-        click.echo(f"{s.id:<{id_width}}  {status:<8}  {frequency:<12}  {payee:<{payee_width}}")
+        click.echo(
+            f"{s.id:<{id_width}}  {status:<8}  {frequency:<12}  {payee:<{payee_width}}"
+        )
 
     click.echo(f"\nTotal: {len(schedules)} schedules")
 
@@ -73,9 +77,7 @@ def print_amortization_table(dated_splits):
     Args:
         dated_splits: List of (date, PaymentSplit) tuples, sorted by date.
     """
-    header = (
-        f"{'#':>4} {'Date':>12} {'Payment':>12} {'Principal':>12} {'Interest':>12} {'Balance':>14}"
-    )
+    header = f"{'#':>4} {'Date':>12} {'Payment':>12} {'Principal':>12} {'Interest':>12} {'Balance':>14}"
     click.echo(header)
     click.echo("-" * len(header))
 

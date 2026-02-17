@@ -1,15 +1,13 @@
 """Tests for pending transaction support."""
 
 import tempfile
-from datetime import date, timedelta
+from datetime import date
 from decimal import Decimal
 from pathlib import Path
 
-import pytest
 from beancount.core import amount as bc_amount
 from beancount.core import data
 
-from beanschedule.schema import Posting
 from beanschedule.pending import (
     PendingTransaction,
     enrich_from_pending,
@@ -19,6 +17,7 @@ from beanschedule.pending import (
     match_pending_transaction,
     remove_pending_transactions,
 )
+from beanschedule.schema import Posting
 
 
 class TestPendingTransaction:
@@ -107,7 +106,9 @@ class TestLoadPendingTransactions:
 
     def test_load_valid_file(self):
         """Test loading valid pending transactions file."""
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".beancount", delete=False) as f:
+        with tempfile.NamedTemporaryFile(
+            mode="w", suffix=".beancount", delete=False
+        ) as f:
             f.write("""
 2026-02-20 ! "Amazon" "Wireless headphones"
   #pending
@@ -141,7 +142,9 @@ class TestLoadPendingTransactions:
 
     def test_load_file_with_non_pending(self):
         """Test loading file ignores non-pending transactions."""
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".beancount", delete=False) as f:
+        with tempfile.NamedTemporaryFile(
+            mode="w", suffix=".beancount", delete=False
+        ) as f:
             f.write("""
 2026-02-20 * "Normal transaction"
   Assets:Checking  -50.00 USD
@@ -166,7 +169,9 @@ class TestLoadPendingTransactions:
         """Test warning is issued when file contains ;; comments."""
         import logging
 
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".beancount", delete=False) as f:
+        with tempfile.NamedTemporaryFile(
+            mode="w", suffix=".beancount", delete=False
+        ) as f:
             f.write("""
 2026-02-20 ! "Amazon" "Wireless headphones"
   #pending
@@ -183,7 +188,8 @@ class TestLoadPendingTransactions:
 
             # Check that warning was logged
             assert any(
-                "contains ;; comments" in record.message and "narration:" in record.message
+                "contains ;; comments" in record.message
+                and "narration:" in record.message
                 for record in caplog.records
             )
         finally:
@@ -384,7 +390,9 @@ class TestEnrichFromPending:
         assert enriched.narration == "Headphones"
         assert len(enriched.postings) == 3
         assert enriched.postings[1].account == "Expenses:Electronics:Audio"
+        assert enriched.postings[1].units is not None
         assert enriched.postings[1].units.number == Decimal("85.00")
+        assert enriched.postings[1].meta is not None
         assert enriched.postings[1].meta["narration"] == "Bose QuietComfort 45"
         assert enriched.meta["pending_matched_date"] == "2026-02-20"
 
@@ -433,7 +441,9 @@ class TestEnrichFromPending:
 
         enriched = enrich_from_pending(txn, pending)
 
+        assert enriched.postings[1].meta is not None
         assert enriched.postings[1].meta["narration"] == "Food items"
+        assert enriched.postings[2].meta is not None
         assert enriched.postings[2].meta["narration"] == "Household supplies"
 
 
@@ -442,7 +452,9 @@ class TestRemovePendingTransactions:
 
     def test_remove_single_transaction(self):
         """Test removing a single pending transaction."""
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".beancount", delete=False) as f:
+        with tempfile.NamedTemporaryFile(
+            mode="w", suffix=".beancount", delete=False
+        ) as f:
             f.write("""
 2026-02-20 ! "Amazon" "Headphones"
   #pending
@@ -484,7 +496,9 @@ class TestRemovePendingTransactions:
 
     def test_remove_multiple_transactions(self):
         """Test removing multiple pending transactions."""
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".beancount", delete=False) as f:
+        with tempfile.NamedTemporaryFile(
+            mode="w", suffix=".beancount", delete=False
+        ) as f:
             f.write("""
 2026-02-20 ! "Amazon" "Item 1"
   #pending
@@ -535,7 +549,9 @@ class TestRemovePendingTransactions:
 
     def test_remove_nonexistent_transaction(self):
         """Test removing nonexistent transaction doesn't error."""
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".beancount", delete=False) as f:
+        with tempfile.NamedTemporaryFile(
+            mode="w", suffix=".beancount", delete=False
+        ) as f:
             f.write("""
 2026-02-20 ! "Amazon" "Headphones"
   #pending

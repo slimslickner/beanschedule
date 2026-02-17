@@ -25,15 +25,13 @@ import os
 from datetime import date as date_type
 from decimal import Decimal
 from pathlib import Path
-from typing import Optional
 
 from beancount import loader as bc_loader
 from beancount.core import amount as bc_amount
 from beancount.core import data
 from beancount.parser import printer as bc_printer
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field
 
-from . import constants
 from .schema import Posting as PostingTemplate
 
 logger = logging.getLogger(__name__)
@@ -50,12 +48,14 @@ class PendingTransaction(BaseModel):
     amount: Decimal = Field(..., description="Amount to match (exact)")
     payee: str = Field(..., description="Payee name")
     narration: str = Field(..., description="Transaction narration")
-    postings: list[PostingTemplate] = Field(..., description="Pre-defined posting splits")
+    postings: list[PostingTemplate] = Field(
+        ..., description="Pre-defined posting splits"
+    )
 
     model_config = ConfigDict(frozen=False)
 
 
-def find_pending_file() -> Optional[Path]:
+def find_pending_file() -> Path | None:
     """
     Find pending transaction file.
 
@@ -137,7 +137,7 @@ def load_pending_transactions(file_path: Path) -> list[PendingTransaction]:
             logger.warning(
                 "Pending file contains ;; comments. "
                 "Consider using posting-level 'narration:' metadata instead for better integration. "
-                "Example: Assets:Checking  -50.00 USD\n  narration: \"Your description here\""
+                'Example: Assets:Checking  -50.00 USD\n  narration: "Your description here"'
             )
 
         # Prepend auto_accounts plugin directive (in-memory only, doesn't modify file)
@@ -172,11 +172,12 @@ def load_pending_transactions(file_path: Path) -> list[PendingTransaction]:
             continue
 
         account = entry.postings[0].account
-        if not entry.postings[0].units:
+        first_units = entry.postings[0].units
+        if not first_units or first_units.number is None:
             logger.warning("Pending transaction has no amount: %s", entry.date)
             continue
 
-        amount_value = entry.postings[0].units.number
+        amount_value = first_units.number
 
         # Convert beancount postings to Posting schema
         postings = []
@@ -208,7 +209,9 @@ def load_pending_transactions(file_path: Path) -> list[PendingTransaction]:
             pending_txns.append(pending)
             logger.debug("Loaded pending transaction: %s - %s", entry.date, entry.payee)
         except Exception as e:
-            logger.error("Failed to create PendingTransaction for %s: %s", entry.date, e)
+            logger.error(
+                "Failed to create PendingTransaction for %s: %s", entry.date, e
+            )
             continue
 
     logger.info("Loaded %d pending transaction(s)", len(pending_txns))
@@ -219,7 +222,7 @@ def match_pending_transaction(
     txn: data.Transaction,
     pending_transactions: list[PendingTransaction],
     window_days: int = DEFAULT_PENDING_WINDOW_DAYS,
-) -> Optional[PendingTransaction]:
+) -> PendingTransaction | None:
     """
     Match imported transaction against pending transactions.
 
@@ -294,7 +297,8 @@ def enrich_from_pending(
     narration = pending.narration or txn.narration
 
     # Apply pending postings (replace imported postings)
-    currency = txn.postings[0].units.currency if txn.postings else "USD"
+    first_units = txn.postings[0].units if txn.postings else None
+    currency = first_units.currency if first_units else "USD"
 
     new_postings = []
     for p in pending.postings:
@@ -316,7 +320,9 @@ def enrich_from_pending(
         )
         new_postings.append(posting)
 
-    logger.debug("Enriched transaction with pending template (%d postings)", len(new_postings))
+    logger.debug(
+        "Enriched transaction with pending template (%d postings)", len(new_postings)
+    )
 
     return txn._replace(
         meta=new_meta,
@@ -340,7 +346,9 @@ def remove_pending_transactions(
         matched_pending: List of matched PendingTransaction objects to remove
     """
     logger.info(
-        "Removing %d matched pending transaction(s) from %s", len(matched_pending), file_path
+        "Removing %d matched pending transaction(s) from %s",
+        len(matched_pending),
+        file_path,
     )
 
     try:
@@ -367,7 +375,9 @@ def remove_pending_transactions(
             )
             if entry_key in remove_set:
                 removed_count += 1
-                logger.debug("Removing pending transaction: %s - %s", entry.date, entry.payee)
+                logger.debug(
+                    "Removing pending transaction: %s - %s", entry.date, entry.payee
+                )
                 continue
 
         kept_entries.append(entry)
@@ -377,6 +387,10 @@ def remove_pending_transactions(
         with open(file_path, "w") as f:
             for entry in kept_entries:
                 bc_printer.print_entry(entry, file=f)
-        logger.info("Removed %d matched pending transaction(s) from %s", removed_count, file_path)
+        logger.info(
+            "Removed %d matched pending transaction(s) from %s",
+            removed_count,
+            file_path,
+        )
     except Exception as e:
         logger.error("Failed to write pending file after removal %s: %s", file_path, e)

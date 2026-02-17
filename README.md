@@ -132,7 +132,7 @@ Create `schedules/_config.yaml`:
 fuzzy_match_threshold: 0.80
 default_date_window_days: 3
 default_amount_tolerance_percent: 0.02
-placeholder_flag: '!'
+placeholder_flag: "!"
 ```
 
 Create `schedules/rent.yaml`:
@@ -158,13 +158,13 @@ transaction:
     schedule_id: rent-payment
   postings:
     - account: Assets:Bank:Checking
-      amount: null  # Use imported amount
+      amount: null # Use imported amount
     - account: Expenses:Housing:Rent
       amount: null
 missing_transaction:
   create_placeholder: true
-  flag: '!'
-  narration_prefix: '[MISSING]'
+  flag: "!"
+  narration_prefix: "[MISSING]"
 ```
 
 ### Step 2: Integrate with Beangulp
@@ -254,12 +254,12 @@ plugin "beanschedule.plugins.schedules" "{
 }"
 ```
 
-**In schedules/_config.yaml:**
+**In schedules/\_config.yaml:**
 
 ```yaml
-forecast_months: 6              # How many months forward to forecast (default: 3)
-min_forecast_date: 2026-01-01   # Override start date for forecasting (optional)
-include_past_dates: false       # Generate placeholders for historical missing dates (default: false)
+forecast_months: 6 # How many months forward to forecast (default: 3)
+min_forecast_date: 2026-01-01 # Override start date for forecasting (optional)
+include_past_dates: false # Generate placeholders for historical missing dates (default: false)
 ```
 
 Configuration parameters:
@@ -378,7 +378,7 @@ Define detailed posting templates with fixed amounts:
 ```yaml
 postings:
   - account: Assets:Bank:Checking
-    amount: null  # Use imported amount
+    amount: null # Use imported amount
   - account: Income:Salary:Gross
     amount: -3200.00
   - account: Expenses:Taxes:Federal
@@ -425,8 +425,8 @@ amortization:
   balance_from_ledger: true
   annual_rate: 0.06
   monthly_payment: 200.00
-  compounding: DAILY          # DAILY or MONTHLY
-  extra_principal: 50.00      # optional
+  compounding: DAILY # DAILY or MONTHLY
+  extra_principal: 50.00 # optional
 transaction:
   postings:
     - account: Assets:Bank:Checking
@@ -568,6 +568,7 @@ The hook provides comprehensive logging for pending transaction processing:
 ```
 
 This helps you track:
+
 - ✓ Which pending transactions were loaded
 - ✓ Real-time matches as imports process
 - ⚠ Summary of unmatched pending transactions with relative dates
@@ -593,7 +594,7 @@ beanschedule skip utility-payment 2024-04-01 --reason "Prepaid for 2 months"
 
 ```beancount
 2024-03-01 S "Landlord" "[SKIPPED] Prepaid for 2 months"
-  schedule_id: rent-payment
+  schedule_id: "rent-payment"
   schedule_skipped: "Prepaid for 2 months"
   Assets:Bank:Checking
 ```

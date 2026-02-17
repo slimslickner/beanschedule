@@ -29,7 +29,9 @@ class TestMonthlyOnDays:
         schedule = Schedule(
             id="paycheck",
             enabled=True,
-            match=MatchCriteria(account="Assets:Checking", payee_pattern=".*EMPLOYER.*"),
+            match=MatchCriteria(
+                account="Assets:Checking", payee_pattern=".*EMPLOYER.*"
+            ),
             recurrence=RecurrenceRule(
                 frequency=FrequencyType.MONTHLY_ON_DAYS,
                 start_date=date(2024, 1, 1),

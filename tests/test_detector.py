@@ -6,29 +6,31 @@ from decimal import Decimal
 from beancount.core import data
 
 from beanschedule.detector import (
-    RecurrenceDetector,
-    GapAnalysis,
     FrequencyDetection,
+    GapAnalysis,
+    RecurrenceDetector,
 )
-from beanschedule.types import FrequencyType, DayOfWeek
+from beanschedule.types import DayOfWeek, FrequencyType
 
 
 def make_transaction(date_, payee, account, amount_value, currency="USD", **kwargs):
     """Create a beancount Transaction with a single posting."""
-    from beancount.core import data, amount
+    from beancount.core import amount, data
 
     meta = data.new_metadata(kwargs.get("filename", "test"), 0)
     for key, value in kwargs.items():
         if key not in ["filename", "narration", "tags", "links"]:
             meta[key] = value
-    posting_amount = amount.Amount(amount_value, currency) if amount_value is not None else None
+    posting_amount = (
+        amount.Amount(amount_value, currency) if amount_value is not None else None
+    )
     posting = data.Posting(
         account=account,
         units=posting_amount,
-        cost=kwargs.get("cost", None),
-        price=kwargs.get("price", None),
-        flag=kwargs.get("flag", None),
-        meta=kwargs.get("meta", None),
+        cost=kwargs.get("cost"),
+        price=kwargs.get("price"),
+        flag=kwargs.get("flag"),
+        meta=kwargs.get("meta"),
     )
     return data.Transaction(
         meta=meta,
@@ -44,16 +46,18 @@ def make_transaction(date_, payee, account, amount_value, currency="USD", **kwar
 
 def make_posting(account, amount_value, currency="USD", **kwargs):
     """Create a beancount Posting with amount."""
-    from beancount.core import data, amount
+    from beancount.core import amount, data
 
-    posting_amount = amount.Amount(amount_value, currency) if amount_value is not None else None
+    posting_amount = (
+        amount.Amount(amount_value, currency) if amount_value is not None else None
+    )
     return data.Posting(
         account=account,
         units=posting_amount,
-        cost=kwargs.get("cost", None),
-        price=kwargs.get("price", None),
-        flag=kwargs.get("flag", None),
-        meta=kwargs.get("meta", None),
+        cost=kwargs.get("cost"),
+        price=kwargs.get("price"),
+        flag=kwargs.get("flag"),
+        meta=kwargs.get("meta"),
     )
 
 
@@ -226,7 +230,10 @@ class TestTransactionGrouping:
 
         assert len(groups) == 1
         # Both variants should be captured
-        assert "AMAZON INC" in groups[0].payee_variants or "AMAZON" in groups[0].payee_variants
+        assert (
+            "AMAZON INC" in groups[0].payee_variants
+            or "AMAZON" in groups[0].payee_variants
+        )
 
     def test_no_grouping_without_postings(self):
         """Test that transactions without postings are filtered."""
@@ -239,8 +246,8 @@ class TestTransactionGrouping:
             flag="*",
             payee="Test Payee",
             narration="Test",
-            tags=set(),
-            links=set(),
+            tags=frozenset(),
+            links=frozenset(),
             postings=[],  # No postings
         )
 

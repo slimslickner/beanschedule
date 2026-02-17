@@ -27,13 +27,13 @@ Usage Patterns:
 import re
 from collections import defaultdict
 from datetime import date
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING
 
 from beancount.core import data
 
 if TYPE_CHECKING:
-    from .schema import Schedule
     from .recurrence import RecurrenceEngine
+    from .schema import Schedule
 
 
 def get_scheduled_dates_from_entries(
@@ -115,7 +115,7 @@ def get_transactions_by_schedule_id(
 
 
 def build_date_index(
-    ledger_entries: Optional[list[data.Directive]],
+    ledger_entries: list[data.Directive] | None,
 ) -> dict[date, list[data.Transaction]]:
     """Build an index mapping dates to transactions for fast lookups.
 
@@ -263,7 +263,9 @@ def generate_all_schedule_occurrences(
         )
 
         for expected_date in expected_dates:
-            occurrences_by_account[schedule.match.account].append((schedule, expected_date))
+            occurrences_by_account[schedule.match.account].append(
+                (schedule, expected_date)
+            )
 
     return occurrences_by_account
 
@@ -298,7 +300,9 @@ def filter_occurrences_by_existing_transactions(
         Filtered list of dates, with dates that have actual transactions removed.
         Returns unmodified list if no actual transactions exist.
     """
-    covered_dates = get_scheduled_dates_from_entries(entries, schedule_id, include_forecast=False)
+    covered_dates = get_scheduled_dates_from_entries(
+        entries, schedule_id, include_forecast=False
+    )
     return [d for d in occurrence_dates if d not in covered_dates]
 
 

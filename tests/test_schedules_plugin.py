@@ -86,7 +86,9 @@ class TestSchedulesPlugin:
         options_map = {"filename": str(sample_schedule_yaml.parent / "main.bean")}
 
         # Run plugin with explicit config file
-        result_entries, errors = schedules([], options_map, config=str(sample_schedule_yaml))
+        result_entries, errors = schedules(
+            [], options_map, config=str(sample_schedule_yaml)
+        )
 
         # Should have generated forecast transactions
         assert len(result_entries) > 0, "Should generate forecast transactions"
@@ -110,19 +112,27 @@ class TestSchedulesPlugin:
         # Check postings
         assert len(forecast_txn.postings) == 2
         assert forecast_txn.postings[0].account == "Expenses:Housing:Rent"
-        assert forecast_txn.postings[0].units == amount.Amount(Decimal("1500.00"), "USD")
+        assert forecast_txn.postings[0].units == amount.Amount(
+            Decimal("1500.00"), "USD"
+        )
         assert forecast_txn.postings[1].account == "Assets:Checking"
         # Balancing posting should be calculated (negative of the first posting)
-        assert forecast_txn.postings[1].units == amount.Amount(Decimal("-1500.00"), "USD")
+        assert forecast_txn.postings[1].units == amount.Amount(
+            Decimal("-1500.00"), "USD"
+        )
 
     def test_plugin_skips_disabled_schedules(self, disabled_schedule_yaml):
         """Should not generate forecasts for disabled schedules."""
         options_map = {"filename": str(disabled_schedule_yaml.parent / "main.bean")}
 
-        result_entries, errors = schedules([], options_map, config=str(disabled_schedule_yaml))
+        result_entries, errors = schedules(
+            [], options_map, config=str(disabled_schedule_yaml)
+        )
 
         # Should not generate any forecasts
-        assert len(result_entries) == 0, "Should not generate forecasts for disabled schedules"
+        assert len(result_entries) == 0, (
+            "Should not generate forecasts for disabled schedules"
+        )
         assert len(errors) == 0
 
     def test_plugin_handles_missing_yaml(self, tmp_path):
@@ -203,7 +213,9 @@ class TestSchedulesPlugin:
         """Should generate forecasts for multiple months (12 months configured)."""
         options_map = {"filename": str(sample_schedule_yaml.parent / "main.bean")}
 
-        result_entries, errors = schedules([], options_map, config=str(sample_schedule_yaml))
+        result_entries, errors = schedules(
+            [], options_map, config=str(sample_schedule_yaml)
+        )
 
         # Should generate 12 months of forecasts (configured in fixture)
         forecast_txns = [e for e in result_entries if isinstance(e, data.Transaction)]
@@ -251,7 +263,9 @@ schedules:
 
         # Should generate 2 forecasts per month (5th and 20th)
         forecast_txns = [e for e in result_entries if isinstance(e, data.Transaction)]
-        assert len(forecast_txns) >= 24, "Should generate at least 24 forecasts (2 per month)"
+        assert len(forecast_txns) >= 24, (
+            "Should generate at least 24 forecasts (2 per month)"
+        )
 
         # Check days
         days = {txn.date.day for txn in forecast_txns}
@@ -334,7 +348,11 @@ schedules:
         result_entries, errors = schedules([], options_map, config=str(schedule_yaml))
 
         assert len(errors) == 0
-        forecasts = [e for e in result_entries if isinstance(e, data.Transaction) and e.flag == "#"]
+        forecasts = [
+            e
+            for e in result_entries
+            if isinstance(e, data.Transaction) and e.flag == "#"
+        ]
         # With forecast_months=1, should have fewer forecasts than default (3 months)
         assert len(forecasts) >= 1
         # All forecasts should be within 1 month (+ 1 day for tomorrow start)
@@ -371,7 +389,9 @@ schedules:
         )
 
         options_map = {"filename": str(tmp_path / "main.bean")}
-        result_entries, errors = schedules([], options_map, config=str(invalid_schedule))
+        result_entries, errors = schedules(
+            [], options_map, config=str(invalid_schedule)
+        )
 
         # Should handle gracefully (pydantic validation will catch it)
         assert len(errors) > 0
@@ -416,7 +436,9 @@ schedules:
         options_map = {"filename": str(tmp_path / "main.bean")}
 
         # Use relative path from ledger location
-        result_entries, errors = schedules([], options_map, config="config/schedules.yaml")
+        result_entries, errors = schedules(
+            [], options_map, config="config/schedules.yaml"
+        )
 
         # Should resolve correctly and generate forecasts
         assert len(result_entries) > 0
@@ -428,7 +450,6 @@ class TestPluginFileMetadata:
 
     def test_single_file_mode_sets_filename(self, tmp_path, monkeypatch):
         """Should set filename metadata to schedules.yaml for single file mode."""
-        import os
 
         schedule_yaml = tmp_path / "schedules.yaml"
         schedule_yaml.write_text(
@@ -471,7 +492,6 @@ schedules:
 
     def test_directory_mode_sets_individual_filenames(self, tmp_path, monkeypatch):
         """Should set filename to individual schedule files in directory mode."""
-        import os
         from beanschedule import loader
 
         # Create schedules directory
@@ -539,7 +559,9 @@ transaction:
         monkeypatch.chdir(tmp_path)
 
         # Mock auto-discovery to find our directory
-        monkeypatch.setattr(loader, "find_schedules_location", lambda: ("dir", schedules_dir))
+        monkeypatch.setattr(
+            loader, "find_schedules_location", lambda: ("dir", schedules_dir)
+        )
 
         options_map = {"filename": str(tmp_path / "main.bean")}
         result_entries, errors = schedules([], options_map)
@@ -549,8 +571,12 @@ transaction:
         assert len(errors) == 0
 
         # Check that different schedules have different source files
-        rent_forecasts = [e for e in result_entries if e.meta.get("schedule_id") == "rent-monthly"]
-        paycheck_forecasts = [e for e in result_entries if e.meta.get("schedule_id") == "paycheck"]
+        rent_forecasts = [
+            e for e in result_entries if e.meta.get("schedule_id") == "rent-monthly"
+        ]
+        paycheck_forecasts = [
+            e for e in result_entries if e.meta.get("schedule_id") == "paycheck"
+        ]
 
         assert len(rent_forecasts) > 0
         assert len(paycheck_forecasts) > 0
@@ -565,7 +591,6 @@ transaction:
 
     def test_filename_respects_display_base_env_var(self, tmp_path, monkeypatch):
         """Should respect BEANSCHEDULE_DISPLAY_BASE for relative paths."""
-        import os
 
         # Create nested structure
         config_dir = tmp_path / "config"
@@ -1181,8 +1206,6 @@ class TestStatefulAmortization:
         # so the test doesn't depend on the current date
         # We need to patch where date is actually used (in the schedules module)
         from datetime import date as dt_date
-        from datetime import timedelta as dt_timedelta
-        from dateutil.relativedelta import relativedelta as dt_relativedelta
 
         mock_today_value = dt_date(2026, 1, 15)
 
@@ -1208,7 +1231,11 @@ class TestStatefulAmortization:
         )
 
         assert len(errors) == 0
-        forecasts = [e for e in result_entries if isinstance(e, data.Transaction) and e.flag == "#"]
+        forecasts = [
+            e
+            for e in result_entries
+            if isinstance(e, data.Transaction) and e.flag == "#"
+        ]
         assert len(forecasts) > 0
 
         # ── first forecast: 2026-02-04 ────────────────────────────────────
@@ -1270,7 +1297,11 @@ class TestStatefulAmortization:
         )
         assert len(errors) == 0
 
-        forecasts = [e for e in result_entries if isinstance(e, data.Transaction) and e.flag == "#"]
+        forecasts = [
+            e
+            for e in result_entries
+            if isinstance(e, data.Transaction) and e.flag == "#"
+        ]
         first = forecasts[0]
         assert first.date == date(2026, 2, 4)
 
@@ -1292,7 +1323,9 @@ class TestStatefulAmortization:
     def test_stateful_with_extra_principal(self, tmp_path, monkeypatch):
         """Extra principal should increase principal posting and total payment."""
         schedule_yaml = tmp_path / "schedules.yaml"
-        schedule_yaml.write_text(self._schedule_yaml("MONTHLY", extra_principal="50.00"))
+        schedule_yaml.write_text(
+            self._schedule_yaml("MONTHLY", extra_principal="50.00")
+        )
         monkeypatch.chdir(tmp_path)
 
         options_map = {"filename": str(tmp_path / "main.bean")}
@@ -1301,7 +1334,11 @@ class TestStatefulAmortization:
         )
         assert len(errors) == 0
 
-        forecasts = [e for e in result_entries if isinstance(e, data.Transaction) and e.flag == "#"]
+        forecasts = [
+            e
+            for e in result_entries
+            if isinstance(e, data.Transaction) and e.flag == "#"
+        ]
         first = forecasts[0]
         postings = {p.account: p.units.number for p in first.postings}
 
@@ -1336,7 +1373,9 @@ class TestStatefulAmortization:
                 ),
                 data.Posting(
                     self.LIABILITY_ACCOUNT,
-                    amount.Amount(Decimal("500.00"), "USD"),  # would lower balance if counted
+                    amount.Amount(
+                        Decimal("500.00"), "USD"
+                    ),  # would lower balance if counted
                     None,
                     None,
                     None,
@@ -1367,7 +1406,9 @@ class TestStatefulAmortization:
         ]
         assert forecasts[0].meta["amortization_interest"] == "47.74"
 
-    def test_stateful_no_cleared_transactions_skips_schedule(self, tmp_path, monkeypatch):
+    def test_stateful_no_cleared_transactions_skips_schedule(
+        self, tmp_path, monkeypatch
+    ):
         """Schedule should be silently skipped when liability has no cleared postings."""
         schedule_yaml = tmp_path / "schedules.yaml"
         schedule_yaml.write_text(self._schedule_yaml("MONTHLY"))
@@ -1395,13 +1436,16 @@ class TestStatefulAmortization:
             ],
         )
 
-        result_entries, errors = schedules([phantom], options_map, config=str(schedule_yaml))
+        result_entries, errors = schedules(
+            [phantom], options_map, config=str(schedule_yaml)
+        )
         # No hard errors — just a warning log and skip
         assert len(errors) == 0
         # No new forecasts generated for this schedule
         new_forecasts = [
             e
             for e in result_entries
-            if isinstance(e, data.Transaction) and e.meta.get("schedule_id") == "test-loan"
+            if isinstance(e, data.Transaction)
+            and e.meta.get("schedule_id") == "test-loan"
         ]
         assert len(new_forecasts) == 0

@@ -139,6 +139,7 @@ uv add --dev black pytest
 ```
 
 To deactivate and switch back to system Python:
+
 ```bash
 deactivate
 ```
@@ -156,17 +157,17 @@ uv run beanschedule validate
 
 ## Key Dependencies
 
-| Dependency | Role | Version |
-|------------|------|---------|
-| `beancount` | Ledger parsing | 3.2.0+ |
-| `beangulp` | Hook integration | 0.2.0+ |
-| `pydantic` | Data validation | 2.0.0+ |
-| `pyyaml` | Schedule loading | 6.0+ |
-| `python-dateutil` | Date math | 2.8.0+ |
-| `click` | CLI framework | 8.0.0+ |
-| `pytest` | Testing | 7.0.0+ |
-| `ruff` | Linting & formatting | 0.14.13+ |
-| `mypy` | Type checking | 1.0.0+ |
+| Dependency        | Role                 | Version  |
+| ----------------- | -------------------- | -------- |
+| `beancount`       | Ledger parsing       | 3.2.0+   |
+| `beangulp`        | Hook integration     | 0.2.0+   |
+| `pydantic`        | Data validation      | 2.0.0+   |
+| `pyyaml`          | Schedule loading     | 6.0+     |
+| `python-dateutil` | Date math            | 2.8.0+   |
+| `click`           | CLI framework        | 8.0.0+   |
+| `pytest`          | Testing              | 7.0.0+   |
+| `ruff`            | Linting & formatting | 0.14.13+ |
+| `mypy`            | Type checking        | 1.0.0+   |
 
 ## Python Version
 
@@ -174,6 +175,7 @@ uv run beanschedule validate
 - **Tested**: 3.11, 3.12, 3.13
 
 Check version:
+
 ```bash
 python --version
 ```

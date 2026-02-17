@@ -68,8 +68,10 @@ def validate(path: str):
         # Try loading as file or directory
         schedule_file = load_schedules_from_path(path_obj)
         if schedule_file is None:
-            click.echo(f"Error: Path is neither a file nor a directory: {path_obj}", err=True)
-            sys.exit(1)
+            click.echo(
+                f"Error: Path is neither a file nor a directory: {path_obj}", err=True
+            )
+            raise SystemExit(1)
 
         # Count schedules
         num_schedules = len(schedule_file.schedules)
@@ -85,7 +87,10 @@ def validate(path: str):
         schedule_ids = [s.id for s in schedule_file.schedules]
         duplicates = [sid for sid in schedule_ids if schedule_ids.count(sid) > 1]
         if duplicates:
-            click.echo(f"\n⚠ Warning: Duplicate schedule IDs found: {set(duplicates)}", err=True)
+            click.echo(
+                f"\n⚠ Warning: Duplicate schedule IDs found: {set(duplicates)}",
+                err=True,
+            )
             sys.exit(1)
 
         click.echo("\nAll schedules are valid!")
@@ -123,8 +128,10 @@ def list_schedules(path: str, output_format: str, enabled_only: bool):
         # Load schedules
         schedule_file = load_schedules_from_path(path_obj)
         if schedule_file is None:
-            click.echo(f"Error: Path is neither a file nor a directory: {path_obj}", err=True)
-            sys.exit(1)
+            click.echo(
+                f"Error: Path is neither a file nor a directory: {path_obj}", err=True
+            )
+            raise SystemExit(1)
 
         # Filter schedules
         schedules = schedule_file.schedules
@@ -185,13 +192,15 @@ def generate(schedule_id: str, start_date, end_date, schedules_path: str):
         schedule_file = load_schedules_from_path(path_obj)
         if schedule_file is None:
             click.echo(f"Error: Path not found: {path_obj}", err=True)
-            sys.exit(1)
+            raise SystemExit(1)
 
         # Find schedule by ID
-        schedule = next((s for s in schedule_file.schedules if s.id == schedule_id), None)
+        schedule = next(
+            (s for s in schedule_file.schedules if s.id == schedule_id), None
+        )
         if schedule is None:
             click.echo(f"Error: Schedule '{schedule_id}' not found", err=True)
-            sys.exit(1)
+            raise SystemExit(1)
 
         # Generate occurrences using shared utility (consistent with hook & plugin)
         from beanschedule.utils import generate_schedule_occurrences
@@ -264,7 +273,7 @@ def show(  # noqa: PLR0912, PLR0915
         schedule_file = load_schedules_from_path(path_obj)
         if schedule_file is None:
             click.echo(f"Error: Path not found: {path_obj}", err=True)
-            sys.exit(1)
+            raise SystemExit(1)
 
         # Find schedule by ID
         schedule = next(
@@ -273,7 +282,7 @@ def show(  # noqa: PLR0912, PLR0915
         )
         if schedule is None:
             click.echo(f"Error: Schedule '{schedule_id}' not found", err=True)
-            sys.exit(1)
+            raise SystemExit(1)
 
         # Determine date range for occurrences
         # NOTE: For consistency with the plugin's duplicate prevention, we start from
@@ -282,13 +291,19 @@ def show(  # noqa: PLR0912, PLR0915
         today = date.today()  # noqa: DTZ011
         from_date = today + timedelta(days=1) if from_date is None else from_date.date()
 
-        to_date = from_date + timedelta(days=count * 45) if to_date is None else to_date.date()
+        to_date = (
+            from_date + timedelta(days=count * 45)
+            if to_date is None
+            else to_date.date()
+        )
 
         # Generate occurrences using shared utility (consistent with hook & plugin)
         from beanschedule.utils import generate_schedule_occurrences
 
         engine = RecurrenceEngine()
-        occurrences = generate_schedule_occurrences(schedule, engine, from_date, to_date)
+        occurrences = generate_schedule_occurrences(
+            schedule, engine, from_date, to_date
+        )
 
         # Display schedule information
         status = "✓ enabled" if schedule.enabled else "✗ disabled"
@@ -435,13 +450,15 @@ def amortize(  # noqa: PLR0912, PLR0915, PLR0913
         schedule_file = load_schedules_from_path(path_obj)
         if schedule_file is None:
             click.echo(f"Error: Path not found: {path_obj}", err=True)
-            sys.exit(1)
+            raise SystemExit(1)
 
         # Find schedule by ID
-        schedule = next((s for s in schedule_file.schedules if s.id == schedule_id), None)
+        schedule = next(
+            (s for s in schedule_file.schedules if s.id == schedule_id), None
+        )
         if schedule is None:
             click.echo(f"Error: Schedule '{schedule_id}' not found", err=True)
-            sys.exit(1)
+            raise SystemExit(1)
 
         # Check if schedule has amortization configured
         if schedule.amortization is None:
@@ -449,13 +466,15 @@ def amortize(  # noqa: PLR0912, PLR0915, PLR0913
                 f"Error: Schedule '{schedule_id}' does not have amortization configured",
                 err=True,
             )
-            click.echo("\nAdd an 'amortization' section to your schedule YAML:", err=True)
+            click.echo(
+                "\nAdd an 'amortization' section to your schedule YAML:", err=True
+            )
             click.echo("  amortization:", err=True)
             click.echo("    principal: 300000.00", err=True)
             click.echo("    annual_rate: 0.0675", err=True)
             click.echo("    term_months: 360", err=True)
             click.echo("    start_date: 2024-01-01", err=True)
-            sys.exit(1)
+            raise SystemExit(1)
 
         # ── stateful mode: read balance from ledger ──────────────────────────
         if schedule.amortization.balance_from_ledger:
@@ -464,7 +483,7 @@ def amortize(  # noqa: PLR0912, PLR0915, PLR0913
                     "Error: --ledger is required for stateful amortization schedules",
                     err=True,
                 )
-                sys.exit(1)
+                raise SystemExit(1)
 
             from decimal import Decimal  # noqa: PLC0415
 
@@ -484,7 +503,7 @@ def amortize(  # noqa: PLR0912, PLR0915, PLR0913
                     f"Error: No posting with role='principal' in schedule '{schedule_id}'",
                     err=True,
                 )
-                sys.exit(1)
+                raise SystemExit(1)
 
             balances = build_liability_balance_index(entries, {principal_account})
             if principal_account not in balances:
@@ -513,6 +532,7 @@ def amortize(  # noqa: PLR0912, PLR0915, PLR0913
             # Determine occurrence dates: use payment_day_of_month if set, otherwise transaction
             # recurrence
             from copy import deepcopy  # noqa: PLC0415
+
             from beanschedule.utils import generate_schedule_occurrences
 
             engine = RecurrenceEngine()
@@ -520,7 +540,9 @@ def amortize(  # noqa: PLR0912, PLR0915, PLR0913
                 # Create a temporary schedule with payment_day_of_month as the recurrence day
                 # This ensures the recurrence engine generates dates on actual payment dates
                 amort_schedule = deepcopy(schedule)
-                amort_schedule.recurrence.day_of_month = schedule.amortization.payment_day_of_month
+                amort_schedule.recurrence.day_of_month = (
+                    schedule.amortization.payment_day_of_month
+                )
                 occurrences = generate_schedule_occurrences(
                     amort_schedule, engine, forecast_start, forecast_end
                 )
@@ -562,7 +584,9 @@ def amortize(  # noqa: PLR0912, PLR0915, PLR0913
                     f"Interest Rate: {schedule.amortization.annual_rate * 100:.3f}% "
                     f"({schedule.amortization.compounding.value})",
                 )
-                click.echo(f"Monthly Payment: ${schedule.amortization.monthly_payment:,.2f}")
+                click.echo(
+                    f"Monthly Payment: ${schedule.amortization.monthly_payment:,.2f}"
+                )
                 if schedule.amortization.extra_principal:
                     click.echo(
                         f"Extra Principal: ${schedule.amortization.extra_principal:,.2f}/month",
@@ -570,7 +594,9 @@ def amortize(  # noqa: PLR0912, PLR0915, PLR0913
                 click.echo(
                     f"Forecast Horizon: {horizon_months} months ({len(all_dated_splits)} payments)",
                 )
-                if all_dated_splits and all_dated_splits[-1][1].remaining_balance == Decimal("0"):
+                if all_dated_splits and all_dated_splits[-1][
+                    1
+                ].remaining_balance == Decimal("0"):
                     click.echo("Loan pays off within forecast horizon")
 
         # ── static mode: derive from original loan terms ─────────────────────
@@ -605,7 +631,9 @@ def amortize(  # noqa: PLR0912, PLR0915, PLR0913
             if output_format == "table" or summary_only:
                 click.echo(f"Schedule: {schedule.id}")
                 click.echo(f"Loan Amount: ${schedule.amortization.principal:,.2f}")
-                click.echo(f"Interest Rate: {schedule.amortization.annual_rate * 100:.3f}%")
+                click.echo(
+                    f"Interest Rate: {schedule.amortization.annual_rate * 100:.3f}%"
+                )
                 click.echo(
                     f"Term: {schedule.amortization.term_months} months "
                     f"({schedule.amortization.term_months // 12} years)",
@@ -726,7 +754,9 @@ def create(  # noqa: PLR0912, PLR0915
 
         # Filter transactions by date
         target = target_date.date()
-        transactions = [e for e in entries if isinstance(e, data.Transaction) and e.date == target]
+        transactions = [
+            e for e in entries if isinstance(e, data.Transaction) and e.date == target
+        ]
 
         if not transactions:
             click.echo(f"No transactions found on {target}", err=True)
@@ -740,12 +770,13 @@ def create(  # noqa: PLR0912, PLR0915
             for i, txn in enumerate(transactions, 1):
                 first_posting = txn.postings[0] if txn.postings else None
                 amount_str = (
-                    f"{first_posting.units}" if first_posting and first_posting.units else "?"
+                    f"{first_posting.units}"
+                    if first_posting and first_posting.units
+                    else "?"
                 )
                 account_str = first_posting.account if first_posting else "?"
                 click.echo(
-                    f"  {i}. {txn.payee or '(no payee)':<25} "
-                    f"{txn.narration:<20} {account_str:<30} {amount_str}",
+                    f"  {i}. {txn.payee or '(no payee)':<25} {txn.narration:<20} {account_str:<30} {amount_str}",
                 )
 
             # Prompt for selection
@@ -1044,7 +1075,9 @@ def detect(  # noqa: PLR0912, PLR0915, PLR0913
             sys.exit(1)
 
         if not (0.0 <= amount_tolerance <= 1.0):
-            click.echo("Error: --amount-tolerance must be between 0.0 and 1.0", err=True)
+            click.echo(
+                "Error: --amount-tolerance must be between 0.0 and 1.0", err=True
+            )
             sys.exit(1)
 
         if min_occurrences < 2:  # noqa: PLR2004
@@ -1071,12 +1104,17 @@ def detect(  # noqa: PLR0912, PLR0915, PLR0913
             min_confidence=confidence,
         )
 
-        click.echo(f"Analyzing {len(entries)} ledger entries...")
-        candidates = detector.detect(entries)
+        transactions = [e for e in entries if isinstance(e, data.Transaction)]
+        click.echo(
+            f"Analyzing {len(transactions)} transactions ({len(entries)} total entries)..."
+        )
+        candidates = detector.detect(transactions)
 
         if not candidates:
             click.echo("No recurring patterns detected.")
-            click.echo("Try adjusting thresholds: lower --confidence or --min-occurrences")
+            click.echo(
+                "Try adjusting thresholds: lower --confidence or --min-occurrences"
+            )
             sys.exit(0)
 
         # Filter out schedules that already exist
@@ -1086,14 +1124,18 @@ def detect(  # noqa: PLR0912, PLR0915, PLR0913
             existing_ids = {s.id for s in schedule_file.schedules}
             skipped_ids = {c.schedule_id for c in candidates} & existing_ids
             if skipped_ids:
-                candidates = [c for c in candidates if c.schedule_id not in existing_ids]
+                candidates = [
+                    c for c in candidates if c.schedule_id not in existing_ids
+                ]
                 click.echo(
                     f"\nSkipped {len(skipped_ids)} already-existing schedule(s): "
                     + ", ".join(sorted(skipped_ids)),
                 )
 
         if not candidates:
-            click.echo("No new recurring patterns detected (all matched existing schedules).")
+            click.echo(
+                "No new recurring patterns detected (all matched existing schedules)."
+            )
             sys.exit(0)
 
         # Display results
@@ -1113,7 +1155,9 @@ def detect(  # noqa: PLR0912, PLR0915, PLR0913
             click.echo("Examples for top patterns:\n")
             for candidate in candidates[:3]:
                 cmd = f"  beanschedule create --ledger {ledger_path} --date {candidate.first_date}"
-                click.echo(f"  {candidate.confidence * 100:.0f}% confidence - {candidate.payee}")
+                click.echo(
+                    f"  {candidate.confidence * 100:.0f}% confidence - {candidate.payee}"
+                )
                 click.echo(f"  {cmd}")
                 click.echo()
 
@@ -1212,7 +1256,9 @@ missing_transaction:
     click.echo(f"\n✓ Initialized schedule directory: {output_path}")
     click.echo("\nNext steps:")
     click.echo("  1. Edit the example schedule file or create your own")
-    click.echo("  2. Validate your schedules: beanschedule validate " + str(output_path))
+    click.echo(
+        "  2. Validate your schedules: beanschedule validate " + str(output_path)
+    )
     click.echo("  3. Integrate with beangulp: import beanschedule in your config.py")
 
 
@@ -1285,15 +1331,17 @@ def skip(
         beanschedule skip --select --ledger ledger.beancount
     """
     try:
-        from beanschedule.constants import META_SCHEDULE_ID, META_SCHEDULE_SKIPPED
-        from beanschedule.loader import load_schedules_from_path, get_enabled_schedules
-        from beanschedule.hook import schedule_hook
-        from beancount import loader as beancount_loader
         from pathlib import Path
+
+        from beancount import loader as beancount_loader
+
+        from beanschedule.loader import get_enabled_schedules, load_schedules_from_path
 
         # Determine schedules path
         if schedules_path is None:
-            schedules_path = "schedules.yaml" if Path("schedules.yaml").exists() else "schedules"
+            schedules_path = (
+                "schedules.yaml" if Path("schedules.yaml").exists() else "schedules"
+            )
 
         path_obj = Path(schedules_path)
 
@@ -1301,16 +1349,18 @@ def skip(
         schedule_file = load_schedules_from_path(path_obj)
         if schedule_file is None:
             click.echo(f"Error: Could not load schedules from {path_obj}", err=True)
-            sys.exit(1)
+            raise SystemExit(1)
 
         # Interactive selection mode
         if select:
             if not ledger:
                 click.echo("Error: --ledger is required with --select", err=True)
-                sys.exit(1)
+                raise SystemExit(1)
 
             ledger_path = Path(ledger)
-            entries, load_errors, _options = beancount_loader.load_file(str(ledger_path))
+            entries, load_errors, _options = beancount_loader.load_file(
+                str(ledger_path)
+            )
             for err in load_errors:
                 logger.warning("Ledger load warning: %s", err)
 
@@ -1323,8 +1373,8 @@ def skip(
 
             # Find missing schedules using hook logic
             enabled_schedules = get_enabled_schedules(schedule_file)
-            from beanschedule.utils import generate_all_schedule_occurrences
             from beanschedule.recurrence import RecurrenceEngine
+            from beanschedule.utils import generate_all_schedule_occurrences
 
             recurrence_engine = RecurrenceEngine()
             expected_occurrences = generate_all_schedule_occurrences(
@@ -1353,7 +1403,9 @@ def skip(
             missing.sort(key=lambda x: x[1])
 
             # Display options and let user select
-            click.echo("\nMissing scheduled transactions (sorted by date, oldest first):\n")
+            click.echo(
+                "\nMissing scheduled transactions (sorted by date, oldest first):\n"
+            )
             for i, (sched, exp_date) in enumerate(missing, 1):
                 # Mark overdue items with asterisk
                 overdue = " *" if exp_date < today else ""
@@ -1404,10 +1456,12 @@ def skip(
                 sys.exit(1)
 
             # Find the schedule
-            schedule = next((s for s in schedule_file.schedules if s.id == schedule_id), None)
+            schedule = next(
+                (s for s in schedule_file.schedules if s.id == schedule_id), None
+            )
             if schedule is None:
                 click.echo(f"Error: Schedule '{schedule_id}' not found", err=True)
-                sys.exit(1)
+                raise SystemExit(1)
 
             # Parse dates
             parsed_dates = []
@@ -1415,7 +1469,10 @@ def skip(
                 try:
                     parsed_dates.append(date.fromisoformat(date_str))
                 except ValueError:
-                    click.echo(f"Error: Invalid date format '{date_str}'. Use YYYY-MM-DD", err=True)
+                    click.echo(
+                        f"Error: Invalid date format '{date_str}'. Use YYYY-MM-DD",
+                        err=True,
+                    )
                     sys.exit(1)
 
             # Generate skip markers
@@ -1468,7 +1525,7 @@ def _generate_skip_marker(schedule, skip_date: date, reason: str | None = None) 
     # Format transaction with standard flag (*) and #skipped tag
     lines = [
         f'{skip_date.isoformat()} * "{payee}" "{narration}"',
-        f"  #skipped",
+        "  #skipped",
         f'  {META_SCHEDULE_ID}: "{schedule.id}"',
         f'  {META_SCHEDULE_SKIPPED}: "true"',
         f"  {account}  0 USD",

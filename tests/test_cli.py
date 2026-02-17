@@ -274,7 +274,9 @@ class TestListCommand:
 
     def test_list_enabled_only_filter(self, cli_runner, schedules_yaml_file):
         """Test listing only enabled schedules."""
-        result = cli_runner.invoke(main, ["list", str(schedules_yaml_file), "--enabled-only"])
+        result = cli_runner.invoke(
+            main, ["list", str(schedules_yaml_file), "--enabled-only"]
+        )
         assert result.exit_code == 0
         assert "monthly-rent" in result.output
         assert "biweekly-paycheck" in result.output
@@ -283,7 +285,9 @@ class TestListCommand:
 
     def test_list_json_format(self, cli_runner, schedules_yaml_file):
         """Test listing schedules in JSON format."""
-        result = cli_runner.invoke(main, ["list", str(schedules_yaml_file), "--format", "json"])
+        result = cli_runner.invoke(
+            main, ["list", str(schedules_yaml_file), "--format", "json"]
+        )
         assert result.exit_code == 0
         data = json.loads(result.output)
         assert isinstance(data, list)
@@ -292,7 +296,9 @@ class TestListCommand:
 
     def test_list_csv_format(self, cli_runner, schedules_yaml_file):
         """Test listing schedules in CSV format."""
-        result = cli_runner.invoke(main, ["list", str(schedules_yaml_file), "--format", "csv"])
+        result = cli_runner.invoke(
+            main, ["list", str(schedules_yaml_file), "--format", "csv"]
+        )
         assert result.exit_code == 0
         lines = result.output.strip().split("\n")
         assert lines[0] == "ID,Enabled,Frequency,Payee,Account,Amount"
@@ -325,7 +331,9 @@ class TestListCommand:
 
     def test_list_invalid_format(self, cli_runner, schedules_yaml_file):
         """Test list command with invalid format."""
-        result = cli_runner.invoke(main, ["list", str(schedules_yaml_file), "--format", "invalid"])
+        result = cli_runner.invoke(
+            main, ["list", str(schedules_yaml_file), "--format", "invalid"]
+        )
         assert result.exit_code != 0
 
 
@@ -352,7 +360,9 @@ class TestGenerateCommand:
                 import traceback
 
                 traceback.print_exception(
-                    type(result.exception), result.exception, result.exception.__traceback__
+                    type(result.exception),
+                    result.exception,
+                    result.exception.__traceback__,
                 )
         assert result.exit_code == 0
         assert "Schedule: monthly-rent" in result.output
@@ -436,7 +446,7 @@ class TestGenerateCommand:
             yaml.dump(schedule_data, f)
 
         # Change to temp directory and test
-        result = cli_runner.invoke(
+        cli_runner.invoke(
             main,
             [
                 "generate",
@@ -634,7 +644,15 @@ schedules:
 """)
 
         result = cli_runner.invoke(
-            main, ["amortize", "test-loan", "--schedules-path", str(schedules_file), "--limit", "3"]
+            main,
+            [
+                "amortize",
+                "test-loan",
+                "--schedules-path",
+                str(schedules_file),
+                "--limit",
+                "3",
+            ],
         )
 
         assert result.exit_code == 0
@@ -682,7 +700,13 @@ schedules:
 
         result = cli_runner.invoke(
             main,
-            ["amortize", "test-loan", "--schedules-path", str(schedules_file), "--summary-only"],
+            [
+                "amortize",
+                "test-loan",
+                "--schedules-path",
+                str(schedules_file),
+                "--summary-only",
+            ],
         )
 
         assert result.exit_code == 0

@@ -101,7 +101,9 @@ class TestScheduleHook:
 class TestHookEntryFormats:
     """Tests for different beangulp entry formats."""
 
-    def test_hook_with_4_tuple_format(self, sample_transaction, sample_schedule, global_config):
+    def test_hook_with_4_tuple_format(
+        self, sample_transaction, sample_schedule, global_config
+    ):
         """Test hook with 4-tuple format: (filepath, entries, account, importer)."""
         txn = sample_transaction(
             date(2024, 1, 15),
@@ -165,7 +167,9 @@ class TestTransactionMatching:
         assert "schedule_matched_date" in matched_txn.meta
         assert "schedule_confidence" in matched_txn.meta
 
-    def test_hook_no_match_keeps_original(self, sample_transaction, sample_schedule, global_config):
+    def test_hook_no_match_keeps_original(
+        self, sample_transaction, sample_schedule, global_config
+    ):
         """Test hook keeps original transaction when no match."""
         txn = sample_transaction(
             date(2024, 1, 15),
@@ -270,7 +274,9 @@ class TestTransactionMatching:
 class TestTransactionEnrichment:
     """Tests for transaction enrichment with schedule metadata."""
 
-    def test_enrichment_adds_metadata(self, sample_transaction, sample_schedule, global_config):
+    def test_enrichment_adds_metadata(
+        self, sample_transaction, sample_schedule, global_config
+    ):
         """Test that enrichment adds schedule metadata."""
         txn = sample_transaction(
             date(2024, 1, 15),
@@ -299,7 +305,9 @@ class TestTransactionEnrichment:
         assert "schedule_matched_date" in matched_txn.meta
         assert matched_txn.meta["schedule_matched_date"] == "2024-01-15"
 
-    def test_enrichment_merges_tags(self, sample_transaction, sample_schedule, global_config):
+    def test_enrichment_merges_tags(
+        self, sample_transaction, sample_schedule, global_config
+    ):
         """Test that enrichment merges tags."""
         txn = sample_transaction(
             date(2024, 1, 15),
@@ -330,7 +338,9 @@ class TestTransactionEnrichment:
         assert "original" in matched_txn.tags
         assert "schedule-tag" in matched_txn.tags
 
-    def test_enrichment_overrides_payee(self, sample_transaction, sample_schedule, global_config):
+    def test_enrichment_overrides_payee(
+        self, sample_transaction, sample_schedule, global_config
+    ):
         """Test that enrichment can override payee."""
         txn = sample_transaction(
             date(2024, 1, 15),
@@ -830,7 +840,9 @@ class TestAmortizationEnrichment:
         total = principal + interest
         assert total == Decimal("1995.68")  # Should equal monthly payment
 
-    def test_amortization_with_escrow(self, sample_transaction, sample_schedule, global_config):
+    def test_amortization_with_escrow(
+        self, sample_transaction, sample_schedule, global_config
+    ):
         """Test amortization with explicit escrow postings."""
         from decimal import Decimal
 
@@ -850,7 +862,9 @@ class TestAmortizationEnrichment:
             make_posting_template("Assets:Bank:Checking", None, role="payment"),
             make_posting_template("Expenses:Housing:Interest", None, role="interest"),
             make_posting_template("Liabilities:Mortgage", None, role="principal"),
-            make_posting_template("Expenses:Housing:Insurance", Decimal("150"), role="escrow"),
+            make_posting_template(
+                "Expenses:Housing:Insurance", Decimal("150"), role="escrow"
+            ),
         ]
 
         schedule = sample_schedule(
@@ -910,7 +924,11 @@ class TestAmortizationEnrichment:
 
         # Verify escrow posting has explicit amount
         escrow_posting = next(
-            (p for p in enriched_txn.postings if p.account == "Expenses:Housing:Insurance"),
+            (
+                p
+                for p in enriched_txn.postings
+                if p.account == "Expenses:Housing:Insurance"
+            ),
             None,
         )
         assert escrow_posting is not None
@@ -927,7 +945,9 @@ class TestAmortizationEnrichment:
         assert interest_posting.units.number > Decimal("0")
         assert principal_posting.units.number > Decimal("0")
 
-    def test_no_amortization_unchanged(self, sample_transaction, sample_schedule, global_config):
+    def test_no_amortization_unchanged(
+        self, sample_transaction, sample_schedule, global_config
+    ):
         """Regression test: non-amortization schedules are unchanged."""
         # Create regular schedule without amortization
         schedule = sample_schedule(

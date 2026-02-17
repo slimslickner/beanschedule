@@ -12,14 +12,7 @@ The `schedules/` directory contains 10 example schedule files showing different 
 2. **rent-payment.yaml** - Monthly rent payment to RiverBank Properties (matches real transactions)
 3. **utilities-electric.yaml** - Monthly electric bill from EDISON POWER (matches real transactions)
 
-**Schedules for reference/customization** (disabled - no matching data in example ledger):
-4. **mortgage-payment.yaml** - Monthly mortgage with interest, escrow, and principal split
-5. **utilities-water.yaml** - Quarterly water bill (interval-based)
-6. **subscription-streaming.yaml** - Monthly streaming subscription ($14.99)
-7. **subscription-annual.yaml** - Annual cloud storage subscription
-8. **insurance-auto.yaml** - Monthly auto insurance with policy metadata
-9. **credit-card-payment.yaml** - Monthly credit card payment (variable amount)
-10. **loan-payment-biweekly.yaml** - Bi-weekly student loan payment on Fridays
+**Schedules for reference/customization** (disabled - no matching data in example ledger): 4. **mortgage-payment.yaml** - Monthly mortgage with interest, escrow, and principal split 5. **utilities-water.yaml** - Quarterly water bill (interval-based) 6. **subscription-streaming.yaml** - Monthly streaming subscription ($14.99) 7. **subscription-annual.yaml** - Annual cloud storage subscription 8. **insurance-auto.yaml** - Monthly auto insurance with policy metadata 9. **credit-card-payment.yaml** - Monthly credit card payment (variable amount) 10. **loan-payment-biweekly.yaml** - Bi-weekly student loan payment on Fridays
 
 ## Recurrence Types Demonstrated
 

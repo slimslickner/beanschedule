@@ -3,7 +3,6 @@
 import logging
 import os
 from pathlib import Path
-from typing import Optional
 
 import yaml
 
@@ -13,7 +12,7 @@ from .schema import GlobalConfig, Schedule, ScheduleFile
 logger = logging.getLogger(__name__)
 
 
-def find_schedules_location() -> Optional[tuple[str, Path]]:
+def find_schedules_location() -> tuple[str, Path] | None:
     """
     Locate schedules configuration (directory or file).
 
@@ -71,7 +70,7 @@ def find_schedules_location() -> Optional[tuple[str, Path]]:
     return None
 
 
-def find_schedules_file() -> Optional[Path]:
+def find_schedules_file() -> Path | None:
     """
     Locate schedules.yaml file.
 
@@ -98,7 +97,7 @@ def find_schedules_file() -> Optional[Path]:
     return None
 
 
-def load_schedules_from_path(path: Path) -> Optional[ScheduleFile]:
+def load_schedules_from_path(path: Path) -> ScheduleFile | None:
     """Load schedules from a file or directory path.
 
     Routes to load_schedules_file() or load_schedules_from_directory()
@@ -117,7 +116,7 @@ def load_schedules_from_path(path: Path) -> Optional[ScheduleFile]:
     return None
 
 
-def load_schedule_from_file(filepath: Path) -> Optional[Schedule]:
+def load_schedule_from_file(filepath: Path) -> Schedule | None:
     """
     Load a single schedule from an individual YAML file.
 
@@ -175,7 +174,7 @@ def load_schedule_from_file(filepath: Path) -> Optional[Schedule]:
         raise
 
 
-def load_schedules_from_directory(dirpath: Path) -> Optional[ScheduleFile]:
+def load_schedules_from_directory(dirpath: Path) -> ScheduleFile | None:
     """
     Load all schedules from a directory structure.
 
@@ -207,7 +206,9 @@ def load_schedules_from_directory(dirpath: Path) -> Optional[ScheduleFile]:
                 config = GlobalConfig(**config_data)
                 logger.debug("Loaded global config from: %s", config_path)
         except (yaml.YAMLError, ValueError, TypeError, KeyError) as e:
-            logger.warning("Failed to load config from '%s', using defaults: %s", config_path, e)
+            logger.warning(
+                "Failed to load config from '%s', using defaults: %s", config_path, e
+            )
 
     # Load all schedule files
     schedules = []
@@ -262,7 +263,7 @@ def load_schedules_from_directory(dirpath: Path) -> Optional[ScheduleFile]:
     return schedule_file
 
 
-def load_schedules_file(filepath: Optional[Path] = None) -> Optional[ScheduleFile]:
+def load_schedules_file(filepath: Path | None = None) -> ScheduleFile | None:
     """
     Load and validate schedules (supports both directory and file formats).
 
@@ -369,7 +370,7 @@ def load_schedules_file(filepath: Optional[Path] = None) -> Optional[ScheduleFil
         raise
 
 
-def get_enabled_schedules(schedule_file: Optional[ScheduleFile]) -> list[Schedule]:
+def get_enabled_schedules(schedule_file: ScheduleFile | None) -> list[Schedule]:
     """
     Get list of enabled schedules.
 

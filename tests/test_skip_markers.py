@@ -3,12 +3,10 @@
 from datetime import date
 from decimal import Decimal
 
-from beancount.core import amount, data
-
 from beanschedule.constants import META_SCHEDULE_ID, META_SCHEDULE_SKIPPED
 from beanschedule.hook import _is_skip_marker, schedule_hook
 from beanschedule.schema import ScheduleFile
-from tests.conftest import make_posting, make_transaction, make_transaction_with_postings
+from tests.conftest import make_transaction
 
 
 class TestSkipMarkerDetection:
@@ -135,7 +133,9 @@ class TestSkipMarkerPreventsPlaceholder:
         assert len(result) > 0
         assert result[0][1][0] == skip_marker
 
-    def test_skip_marker_with_schedule_id_metadata(self, sample_schedule, global_config):
+    def test_skip_marker_with_schedule_id_metadata(
+        self, sample_schedule, global_config
+    ):
         """Skip marker with explicit schedule_id metadata is recognized."""
         schedule = sample_schedule(schedule_id="test-schedule")
         schedule_file = ScheduleFile(schedules=[schedule], config=global_config)

@@ -25,7 +25,9 @@ class TestTransactionMatcher:
 class TestPayeeMatching:
     """Tests for payee matching."""
 
-    def test_exact_payee_match(self, sample_transaction, sample_schedule, global_config):
+    def test_exact_payee_match(
+        self, sample_transaction, sample_schedule, global_config
+    ):
         """Test exact payee match."""
         matcher = TransactionMatcher(global_config)
 
@@ -44,7 +46,9 @@ class TestPayeeMatching:
         score = matcher._payee_score(txn, schedule)
         assert score > 0.95
 
-    def test_fuzzy_payee_match(self, sample_transaction, sample_schedule, global_config):
+    def test_fuzzy_payee_match(
+        self, sample_transaction, sample_schedule, global_config
+    ):
         """Test fuzzy payee matching."""
         matcher = TransactionMatcher(global_config)
 
@@ -63,7 +67,9 @@ class TestPayeeMatching:
         score = matcher._payee_score(txn, schedule)
         assert 0.7 < score < 1.0
 
-    def test_regex_payee_match(self, sample_transaction, sample_schedule, global_config):
+    def test_regex_payee_match(
+        self, sample_transaction, sample_schedule, global_config
+    ):
         """Test regex payee matching."""
         matcher = TransactionMatcher(global_config)
 
@@ -101,7 +107,9 @@ class TestPayeeMatching:
         score = matcher._payee_score(txn, schedule)
         assert score == 0.0
 
-    def test_payee_case_insensitive(self, sample_transaction, sample_schedule, global_config):
+    def test_payee_case_insensitive(
+        self, sample_transaction, sample_schedule, global_config
+    ):
         """Test that payee matching is case-insensitive."""
         matcher = TransactionMatcher(global_config)
 
@@ -143,7 +151,9 @@ class TestPayeeMatching:
 class TestAmountMatching:
     """Tests for amount matching."""
 
-    def test_exact_amount_match(self, sample_transaction, sample_schedule, global_config):
+    def test_exact_amount_match(
+        self, sample_transaction, sample_schedule, global_config
+    ):
         """Test exact amount match."""
         matcher = TransactionMatcher(global_config)
 
@@ -163,7 +173,9 @@ class TestAmountMatching:
         score = matcher._amount_score(txn, schedule)
         assert score == 1.0
 
-    def test_amount_within_tolerance(self, sample_transaction, sample_schedule, global_config):
+    def test_amount_within_tolerance(
+        self, sample_transaction, sample_schedule, global_config
+    ):
         """Test amount within tolerance."""
         matcher = TransactionMatcher(global_config)
 
@@ -186,7 +198,9 @@ class TestAmountMatching:
         score = matcher._amount_score(txn, schedule)
         assert 0.0 < score < 1.0
 
-    def test_amount_outside_tolerance(self, sample_transaction, sample_schedule, global_config):
+    def test_amount_outside_tolerance(
+        self, sample_transaction, sample_schedule, global_config
+    ):
         """Test amount outside tolerance."""
         matcher = TransactionMatcher(global_config)
 
@@ -209,7 +223,9 @@ class TestAmountMatching:
         score = matcher._amount_score(txn, schedule)
         assert score == 0.0
 
-    def test_amount_range_match(self, sample_transaction, sample_schedule, global_config):
+    def test_amount_range_match(
+        self, sample_transaction, sample_schedule, global_config
+    ):
         """Test amount within range."""
         matcher = TransactionMatcher(global_config)
 
@@ -231,7 +247,9 @@ class TestAmountMatching:
         score = matcher._amount_score(txn, schedule)
         assert score == 1.0
 
-    def test_null_amount_matches_anything(self, sample_transaction, sample_schedule, global_config):
+    def test_null_amount_matches_anything(
+        self, sample_transaction, sample_schedule, global_config
+    ):
         """Test that null amount matches any amount."""
         matcher = TransactionMatcher(global_config)
 
@@ -297,7 +315,9 @@ class TestDateMatching:
         score = matcher._date_score(txn, schedule, date(2024, 1, 15))
         assert score == 1.0
 
-    def test_date_within_window(self, sample_transaction, sample_schedule, global_config):
+    def test_date_within_window(
+        self, sample_transaction, sample_schedule, global_config
+    ):
         """Test date within window."""
         matcher = TransactionMatcher(global_config)
 
@@ -314,7 +334,9 @@ class TestDateMatching:
         score = matcher._date_score(txn, schedule, date(2024, 1, 15))
         assert 0.0 < score < 1.0
 
-    def test_date_outside_window(self, sample_transaction, sample_schedule, global_config):
+    def test_date_outside_window(
+        self, sample_transaction, sample_schedule, global_config
+    ):
         """Test date outside window."""
         matcher = TransactionMatcher(global_config)
 
@@ -335,7 +357,9 @@ class TestDateMatching:
 class TestAccountMatching:
     """Tests for account matching (required)."""
 
-    def test_account_match_required(self, sample_transaction, sample_schedule, global_config):
+    def test_account_match_required(
+        self, sample_transaction, sample_schedule, global_config
+    ):
         """Test that account match is required."""
         matcher = TransactionMatcher(global_config)
 
@@ -371,7 +395,9 @@ class TestAccountMatching:
         # Different account should return False
         assert matcher._account_matches(txn, schedule) is False
 
-    def test_account_mismatch_fails_score(self, sample_transaction, sample_schedule, global_config):
+    def test_account_mismatch_fails_score(
+        self, sample_transaction, sample_schedule, global_config
+    ):
         """Test that account mismatch results in 0.0 score."""
         matcher = TransactionMatcher(global_config)
 
@@ -396,7 +422,9 @@ class TestAccountMatching:
 class TestWeightedScoring:
     """Tests for weighted score calculation."""
 
-    def test_perfect_match_score(self, sample_transaction, sample_schedule, global_config):
+    def test_perfect_match_score(
+        self, sample_transaction, sample_schedule, global_config
+    ):
         """Test perfect match gives score of 1.0."""
         matcher = TransactionMatcher(global_config)
 
@@ -416,7 +444,9 @@ class TestWeightedScoring:
         score = matcher.calculate_match_score(txn, schedule, date(2024, 1, 15))
         assert abs(score - 1.0) < 0.01
 
-    def test_partial_match_score(self, sample_transaction, sample_schedule, global_config):
+    def test_partial_match_score(
+        self, sample_transaction, sample_schedule, global_config
+    ):
         """Test partial match gives score between 0 and 1."""
         matcher = TransactionMatcher(global_config)
 
@@ -437,7 +467,9 @@ class TestWeightedScoring:
         score = matcher.calculate_match_score(txn, schedule, date(2024, 1, 15))
         assert 0.0 < score < 1.0
 
-    def test_weighting_formula(self, sample_transaction, sample_schedule, global_config):
+    def test_weighting_formula(
+        self, sample_transaction, sample_schedule, global_config
+    ):
         """Test that weighted scoring formula is correct (40% payee, 40% amount, 20% date)."""
         matcher = TransactionMatcher(global_config)
 
@@ -488,7 +520,9 @@ class TestFindBestMatch:
         assert result[0].id == schedule.id
         assert result[2] > global_config.fuzzy_match_threshold
 
-    def test_no_match_below_threshold(self, sample_transaction, sample_schedule, global_config):
+    def test_no_match_below_threshold(
+        self, sample_transaction, sample_schedule, global_config
+    ):
         """Test that candidates below threshold return None."""
         matcher = TransactionMatcher(global_config)
 
@@ -547,7 +581,9 @@ class TestFindBestMatch:
         # Should return one of the schedules (both should score similarly)
         assert result[0].id in [schedule1.id, schedule2.id]
 
-    def test_threshold_boundary(self, sample_transaction, sample_schedule, global_config):
+    def test_threshold_boundary(
+        self, sample_transaction, sample_schedule, global_config
+    ):
         """Test behavior at threshold boundary (0.80)."""
         matcher = TransactionMatcher(global_config)
 
