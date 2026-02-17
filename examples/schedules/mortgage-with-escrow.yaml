@@ -40,7 +40,6 @@ transaction:
       amount: null # Calculated from amortization schedule
       role: principal # Explicitly mark as principal reduction
 
-    # FIXED (manually specified, change yearly):
     - account: Expenses:Housing:Property-Tax-Escrow
       amount: 350.00 # Update this annually when escrow changes
       narration: "Property tax escrow"
