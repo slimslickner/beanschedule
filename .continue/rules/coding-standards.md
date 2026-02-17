@@ -14,6 +14,7 @@ From `pyproject.toml`:
 - **Tests**: pytest 85%+ coverage target
 
 Run checks:
+
 ```bash
 uv run ruff check beanschedule/ tests/    # Lint
 uv run ruff format beanschedule/ tests/   # Format
@@ -148,6 +149,7 @@ Optional on simple internal functions, required on complex ones.
 ## Code Reviews
 
 When reviewing, check:
+
 1. ✅ Tests added/updated for the change
 2. ✅ No new ruff/mypy violations
 3. ✅ Type hints on public functions

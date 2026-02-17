@@ -11,7 +11,6 @@ from dataclasses import dataclass, field
 from datetime import date
 from decimal import Decimal
 from difflib import SequenceMatcher
-from typing import Optional
 
 from beancount.core import data
 
@@ -34,13 +33,13 @@ class TransactionGroup:
     payee_variants: list[str] = field(default_factory=list)
     """All payee variants found in group."""
 
-    amount_min: Decimal = field(default=None)
+    amount_min: Decimal | None = field(default=None)
     """Minimum amount in group."""
 
-    amount_max: Decimal = field(default=None)
+    amount_max: Decimal | None = field(default=None)
     """Maximum amount in group."""
 
-    amount_avg: Decimal = field(default=None)
+    amount_avg: Decimal | None = field(default=None)
     """Average amount in group."""
 
     transactions: list[data.Transaction] = field(default_factory=list)
@@ -98,19 +97,19 @@ class FrequencyDetection:
     frequency: FrequencyType
     """Detected frequency type."""
 
-    day_of_month: Optional[int] = None
+    day_of_month: int | None = None
     """Day of month for MONTHLY/YEARLY."""
 
-    month: Optional[int] = None
+    month: int | None = None
     """Month for YEARLY."""
 
-    day_of_week: Optional[DayOfWeek] = None
+    day_of_week: DayOfWeek | None = None
     """Day of week for WEEKLY."""
 
     interval: int = 1
     """Interval for WEEKLY (e.g., 2 for biweekly)."""
 
-    interval_months: Optional[int] = None
+    interval_months: int | None = None
     """Month interval for INTERVAL frequency."""
 
     confidence_penalty: float = 0.0
@@ -121,22 +120,22 @@ class FrequencyDetection:
         if self.frequency == FrequencyType.WEEKLY:
             if self.interval == 1:
                 return "Weekly"
-            elif self.interval == 2:
+            if self.interval == 2:
                 return "Bi-weekly"
-            elif self.interval == 4:
+            if self.interval == 4:
                 return "Monthly (weekly pattern)"
             return f"Every {self.interval} weeks"
-        elif self.frequency == FrequencyType.MONTHLY:
+        if self.frequency == FrequencyType.MONTHLY:
             return "Monthly"
-        elif self.frequency == FrequencyType.BIMONTHLY:
+        if self.frequency == FrequencyType.BIMONTHLY:
             return "Bi-monthly"
-        elif self.frequency == FrequencyType.INTERVAL:
+        if self.frequency == FrequencyType.INTERVAL:
             if self.interval_months == 3:
                 return "Quarterly"
-            elif self.interval_months == 6:
+            if self.interval_months == 6:
                 return "Semi-annually"
             return f"Every {self.interval_months} months"
-        elif self.frequency == FrequencyType.YEARLY:
+        if self.frequency == FrequencyType.YEARLY:
             return "Yearly"
         return self.frequency.value
 
@@ -172,10 +171,10 @@ class RecurringCandidate:
     transaction_count: int = 0
     """Number of transactions in group."""
 
-    first_date: date = None
+    first_date: date | None = None
     """Earliest transaction date."""
 
-    last_date: date = None
+    last_date: date | None = None
     """Latest transaction date."""
 
     expected_occurrences: int = 0
@@ -221,7 +220,9 @@ class RecurrenceDetector:
 
         # Filter to only Transaction entries and those with postings
         valid_txns = [
-            t for t in transactions if isinstance(t, data.Transaction) and t.postings and t.payee
+            t
+            for t in transactions
+            if isinstance(t, data.Transaction) and t.postings and t.payee
         ]
 
         if not valid_txns:
@@ -229,7 +230,9 @@ class RecurrenceDetector:
 
         # Phase 1: Group similar transactions
         groups = self.group_transactions(valid_txns)
-        logger.info("Grouped %d transactions into %d groups", len(valid_txns), len(groups))
+        logger.info(
+            "Grouped %d transactions into %d groups", len(valid_txns), len(groups)
+        )
 
         if not groups:
             return []
@@ -285,7 +288,9 @@ class RecurrenceDetector:
 
         return candidates
 
-    def group_transactions(self, transactions: list[data.Transaction]) -> list[TransactionGroup]:
+    def group_transactions(
+        self, transactions: list[data.Transaction]
+    ) -> list[TransactionGroup]:
         """Group transactions by account, payee (fuzzy), and amount (tolerance).
 
         Hierarchical grouping:
@@ -317,6 +322,8 @@ class RecurrenceDetector:
                 placed = False
                 for payee_group in payee_groups:
                     canonical_payee = payee_group[0].payee
+                    if txn.payee is None or canonical_payee is None:
+                        continue
                     score = self._fuzzy_match(txn.payee, canonical_payee)
                     if score >= self.fuzzy_threshold:
                         payee_group.append(txn)
@@ -332,17 +339,27 @@ class RecurrenceDetector:
 
                 for txn in payee_group:
                     # Extract amount from first posting (ignoring currency)
-                    if not txn.postings[0].units:
+                    units = txn.postings[0].units
+                    if not units or units.number is None:
                         continue
-                    txn_amount = abs(txn.postings[0].units.number)
+                    txn_amount = abs(units.number)
 
                     # Find amount group with tolerance match
                     placed = False
                     for amount_group in amount_groups:
-                        group_amount = abs(amount_group[0].postings[0].units.number)
-                        tolerance = group_amount * Decimal(str(self.amount_tolerance_pct))
+                        ref_units = amount_group[0].postings[0].units
+                        if not ref_units or ref_units.number is None:
+                            continue
+                        group_amount = abs(ref_units.number)
+                        tolerance = group_amount * Decimal(
+                            str(self.amount_tolerance_pct)
+                        )
 
-                        if group_amount - tolerance <= txn_amount <= group_amount + tolerance:
+                        if (
+                            group_amount - tolerance
+                            <= txn_amount
+                            <= group_amount + tolerance
+                        ):
                             amount_group.append(txn)
                             placed = True
                             break
@@ -384,7 +401,9 @@ class RecurrenceDetector:
         amounts = [
             abs(t.postings[0].units.number)
             for t in sorted_txns
-            if t.postings and t.postings[0].units
+            if t.postings
+            and t.postings[0].units
+            and t.postings[0].units.number is not None
         ]
         amount_min = min(amounts) if amounts else None
         amount_max = max(amounts) if amounts else None
@@ -443,7 +462,7 @@ class RecurrenceDetector:
 
     def detect_frequency(
         self, gap_analysis: GapAnalysis, group: TransactionGroup
-    ) -> Optional[FrequencyDetection]:
+    ) -> FrequencyDetection | None:
         """Detect recurrence frequency from gap analysis.
 
         Maps median gap to frequency type:
@@ -478,7 +497,11 @@ class RecurrenceDetector:
             )
 
         # Bi-weekly (14 days)
-        if constants.BIWEEKLY_GAP_RANGE[0] <= median_gap <= constants.BIWEEKLY_GAP_RANGE[1]:
+        if (
+            constants.BIWEEKLY_GAP_RANGE[0]
+            <= median_gap
+            <= constants.BIWEEKLY_GAP_RANGE[1]
+        ):
             day_of_week = self._get_most_common_weekday(group.dates)
             return FrequencyDetection(
                 frequency=FrequencyType.WEEKLY,
@@ -488,7 +511,11 @@ class RecurrenceDetector:
             )
 
         # Monthly (28-32 days)
-        if constants.MONTHLY_GAP_RANGE[0] <= median_gap <= constants.MONTHLY_GAP_RANGE[1]:
+        if (
+            constants.MONTHLY_GAP_RANGE[0]
+            <= median_gap
+            <= constants.MONTHLY_GAP_RANGE[1]
+        ):
             day_of_month = self._get_most_common_day_of_month(group.dates)
             return FrequencyDetection(
                 frequency=FrequencyType.MONTHLY,
@@ -497,7 +524,11 @@ class RecurrenceDetector:
             )
 
         # Quarterly (88-92 days, ~3 months)
-        if constants.QUARTERLY_GAP_RANGE[0] <= median_gap <= constants.QUARTERLY_GAP_RANGE[1]:
+        if (
+            constants.QUARTERLY_GAP_RANGE[0]
+            <= median_gap
+            <= constants.QUARTERLY_GAP_RANGE[1]
+        ):
             day_of_month = self._get_most_common_day_of_month(group.dates)
             return FrequencyDetection(
                 frequency=FrequencyType.INTERVAL,
@@ -554,7 +585,9 @@ class RecurrenceDetector:
         # Sample size: penalize small sample sizes
         # 3 = 0.8, 5 = 0.9, 10+ = 1.0
         sample_size_score = min(
-            1.0, constants.SAMPLE_SIZE_INTERCEPT + (group.count / constants.SAMPLE_SIZE_DENOMINATOR)
+            1.0,
+            constants.SAMPLE_SIZE_INTERCEPT
+            + (group.count / constants.SAMPLE_SIZE_DENOMINATOR),
         )
 
         # Weighted combination
@@ -598,11 +631,14 @@ class RecurrenceDetector:
         counter = Counter(days)
         # Handle month-end dates (28, 29, 30, 31)
         month_end_days = (
-            counter.get(28, 0) + counter.get(29, 0) + counter.get(30, 0) + counter.get(31, 0)
+            counter.get(28, 0)
+            + counter.get(29, 0)
+            + counter.get(30, 0)
+            + counter.get(31, 0)
         )
         if month_end_days > len(dates) // 2:
             return 28  # End of month
-        return max(counter, key=counter.get) if counter else 1
+        return max(counter, key=lambda k: counter.get(k, 0)) if counter else 1
 
     def _get_most_common_weekday(self, dates: list[date]) -> DayOfWeek:
         """Get the most common day of week from dates."""
@@ -622,7 +658,7 @@ class RecurrenceDetector:
             for d in dates
         ]
         counter = Counter(weekdays)
-        return max(counter, key=counter.get)
+        return max(counter, key=lambda k: counter.get(k, 0))
 
     def _get_most_common_month_day(self, dates: list[date]) -> tuple[int, int]:
         """Get the most common month and day from dates."""
@@ -633,8 +669,8 @@ class RecurrenceDetector:
         month_counter = Counter(months)
         day_counter = Counter(days)
         return (
-            max(month_counter, key=month_counter.get),
-            max(day_counter, key=day_counter.get),
+            max(month_counter, key=lambda k: month_counter.get(k, 0)),
+            max(day_counter, key=lambda k: day_counter.get(k, 0)),
         )
 
     def _estimate_expected_occurrences(
@@ -658,7 +694,9 @@ class RecurrenceDetector:
             return (days_between // 7) // frequency.interval + 1
 
         if frequency.frequency == FrequencyType.MONTHLY:
-            months = (end_date.year - start_date.year) * 12 + (end_date.month - start_date.month)
+            months = (end_date.year - start_date.year) * 12 + (
+                end_date.month - start_date.month
+            )
             return months + 1
 
         if frequency.frequency == FrequencyType.INTERVAL:
@@ -706,6 +744,13 @@ class RecurrenceDetector:
         # Create payee pattern (for now, use canonical payee)
         # In future, could generate regex from variants
         payee_pattern = group.payee_canonical
+
+        # amount_avg is only None when no valid postings exist, which can't happen
+        # for groups that passed the minimum occurrence threshold.
+        if group.amount_avg is None:
+            raise ValueError(
+                f"Group for {group.account}/{group.payee_canonical} has no amount data"
+            )
 
         # Amount tolerance
         amount_tolerance = group.amount_avg * Decimal(str(self.amount_tolerance_pct))

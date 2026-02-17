@@ -15,7 +15,9 @@ logger = logging.getLogger(__name__)
 class RecurrenceEngine:
     """Engine for generating expected dates from recurrence rules."""
 
-    def generate(self, schedule: Schedule, start_date: date, end_date: date) -> list[date]:
+    def generate(
+        self, schedule: Schedule, start_date: date, end_date: date
+    ) -> list[date]:
         """
         Generate expected dates for schedule within date range.
 
@@ -31,7 +33,9 @@ class RecurrenceEngine:
 
         # Determine effective start/end dates
         effective_start = max(recurrence.start_date, start_date)
-        effective_end = min(recurrence.end_date, end_date) if recurrence.end_date else end_date
+        effective_end = (
+            min(recurrence.end_date, end_date) if recurrence.end_date else end_date
+        )
 
         # If range is invalid, return empty
         if effective_start > effective_end:
@@ -39,25 +43,39 @@ class RecurrenceEngine:
 
         try:
             if recurrence.frequency == FrequencyType.MONTHLY:
-                return self._generate_monthly(recurrence, effective_start, effective_end)
+                return self._generate_monthly(
+                    recurrence, effective_start, effective_end
+                )
             if recurrence.frequency == FrequencyType.WEEKLY:
                 return self._generate_weekly(recurrence, effective_start, effective_end)
             if recurrence.frequency == FrequencyType.YEARLY:
                 return self._generate_yearly(recurrence, effective_start, effective_end)
             if recurrence.frequency == FrequencyType.INTERVAL:
-                return self._generate_interval(recurrence, effective_start, effective_end)
+                return self._generate_interval(
+                    recurrence, effective_start, effective_end
+                )
             if recurrence.frequency == FrequencyType.BIMONTHLY:
-                return self._generate_monthly_on_days(recurrence, effective_start, effective_end)
+                return self._generate_monthly_on_days(
+                    recurrence, effective_start, effective_end
+                )
             if recurrence.frequency == FrequencyType.MONTHLY_ON_DAYS:
-                return self._generate_monthly_on_days(recurrence, effective_start, effective_end)
+                return self._generate_monthly_on_days(
+                    recurrence, effective_start, effective_end
+                )
             if recurrence.frequency == FrequencyType.NTH_WEEKDAY:
-                return self._generate_nth_weekday(recurrence, effective_start, effective_end)
+                return self._generate_nth_weekday(
+                    recurrence, effective_start, effective_end
+                )
             if recurrence.frequency == FrequencyType.LAST_DAY_OF_MONTH:
-                return self._generate_last_day_of_month(recurrence, effective_start, effective_end)
+                return self._generate_last_day_of_month(
+                    recurrence, effective_start, effective_end
+                )
             logger.error("Unknown frequency type: %s", recurrence.frequency)
             return []
         except Exception as e:
-            logger.error("Error generating recurrence for schedule %s: %s", schedule.id, e)
+            logger.error(
+                "Error generating recurrence for schedule %s: %s", schedule.id, e
+            )
             return []
 
     def _generate_monthly(
@@ -214,7 +232,9 @@ class RecurrenceEngine:
             List of dates on Nth weekday of each month
         """
         if recurrence.nth_occurrence is None or recurrence.day_of_week is None:
-            logger.error("NTH_WEEKDAY frequency requires nth_occurrence and day_of_week")
+            logger.error(
+                "NTH_WEEKDAY frequency requires nth_occurrence and day_of_week"
+            )
             return []
 
         weekday = WEEKDAY_MAP[recurrence.day_of_week]

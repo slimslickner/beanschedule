@@ -80,17 +80,11 @@ addopts = "-v --cov=beanschedule --cov-report=term-missing --cov-report=html"
 data_file = ".coverage"
 parallel = false
 
-[tool.black]
-line-length = 100
-target-version = ['py311']
-include = '\.pyi?$'
-
 [tool.ruff]
-line-length = 100
-target-version = "py311"
+line-length = 88
 
 [tool.ruff.lint]
-select = ["E", "F", "I", "N", "UP", "B", "A", "COM", "C4", "DTZ", "ISC", "ICN", "G", "PIE", "T20", "Q", "RSE", "RET", "SLF", "SIM", "TID", "ARG", "PTH", "ERA", "PL", "RUF"]
+ignore = ["COM812"]
 
 [tool.mypy]
 python_version = "3.11"

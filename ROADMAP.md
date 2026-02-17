@@ -6,14 +6,14 @@ Roadmap for open-sourcing beanschedule with focus on code quality, documentation
 
 ## Current Status
 
-| Metric | Value | Target |
-|--------|-------|--------|
-| **Version** | v1.4.0 (Released) | v1.5.0 (Next) |
-| **Tests** | 371 passing | 90%+ coverage |
-| **Test Coverage** | 72% | 90%+ |
-| **Type Hints** | ~90% | 100% |
-| **Docstrings** | ~85% | 100% |
-| **Critical Release Blockers** | 10/10 ✅ | N/A |
+| Metric                        | Value             | Target        |
+| ----------------------------- | ----------------- | ------------- |
+| **Version**                   | v1.4.0 (Released) | v1.5.0 (Next) |
+| **Tests**                     | 371 passing       | 90%+ coverage |
+| **Test Coverage**             | 72%               | 90%+          |
+| **Type Hints**                | ~90%              | 100%          |
+| **Docstrings**                | ~85%              | 100%          |
+| **Critical Release Blockers** | 10/10 ✅          | N/A           |
 
 ### What's Working
 
@@ -32,39 +32,39 @@ Roadmap for open-sourcing beanschedule with focus on code quality, documentation
 
 ### Critical (Blocking Release)
 
-| Task | Status | Notes |
-|------|--------|-------|
-| Fix README URLs | ✅ | Changed `yourusername` → `slimslickner` |
-| Fix README Python version | ✅ | Fixed "3.9+" → "3.11+" |
-| Remove dead README links | ✅ | Removed `docs/` references |
-| Create CONTRIBUTING.md | ⏸️ | Deferred: not critical for initial release |
-| Create CHANGELOG.md | ✅ | Created with Keep a Changelog format |
-| Create CODE_OF_CONDUCT.md | ⏸️ | Deferred: not critical for initial release |
-| Create SECURITY.md | ✅ | Created with vulnerability reporting policy |
-| Add GitHub Actions CI | ✅ | Created `.github/workflows/tests.yml` |
-| Move ruff to dev deps | ✅ | Moved from runtime to dev dependencies |
-| Remove dead code | ✅ | Removed `_match_ledger_transactions()` in hook.py |
+| Task                      | Status | Notes                                             |
+| ------------------------- | ------ | ------------------------------------------------- |
+| Fix README URLs           | ✅     | Changed `yourusername` → `slimslickner`           |
+| Fix README Python version | ✅     | Fixed "3.9+" → "3.11+"                            |
+| Remove dead README links  | ✅     | Removed `docs/` references                        |
+| Create CONTRIBUTING.md    | ⏸️     | Deferred: not critical for initial release        |
+| Create CHANGELOG.md       | ✅     | Created with Keep a Changelog format              |
+| Create CODE_OF_CONDUCT.md | ⏸️     | Deferred: not critical for initial release        |
+| Create SECURITY.md        | ✅     | Created with vulnerability reporting policy       |
+| Add GitHub Actions CI     | ✅     | Created `.github/workflows/tests.yml`             |
+| Move ruff to dev deps     | ✅     | Moved from runtime to dev dependencies            |
+| Remove dead code          | ✅     | Removed `_match_ledger_transactions()` in hook.py |
 
 ### High Priority (Should Fix Before Release)
 
-| Task | Status | Notes |
-|------|--------|-------|
-| Create `constants.py` | ✅ | 71 constants extracted, 2-pass refactoring complete, all files using constants |
-| Extract `slugify` to utils.py | ✅ | Circular import risk resolved by moving to utils.py |
-| Add issue templates | ⏸️ | Deferred: Not critical for release |
-| Add PR template | ⏸️ | Deferred: Not critical for release |
-| Consolidate duplicate code | ⏳ | Next: `_generate_bimonthly` == `_generate_monthly_on_days` |
-| Add helper `load_schedules_from_path()` | ⏳ | Next: Reduce CLI duplication |
+| Task                                    | Status | Notes                                                                          |
+| --------------------------------------- | ------ | ------------------------------------------------------------------------------ |
+| Create `constants.py`                   | ✅     | 71 constants extracted, 2-pass refactoring complete, all files using constants |
+| Extract `slugify` to utils.py           | ✅     | Circular import risk resolved by moving to utils.py                            |
+| Add issue templates                     | ⏸️     | Deferred: Not critical for release                                             |
+| Add PR template                         | ⏸️     | Deferred: Not critical for release                                             |
+| Consolidate duplicate code              | ⏳     | Next: `_generate_bimonthly` == `_generate_monthly_on_days`                     |
+| Add helper `load_schedules_from_path()` | ⏳     | Next: Reduce CLI duplication                                                   |
 
 ### Medium Priority (Polish)
 
-| Task | Status | Notes |
-|------|--------|-------|
-| Split cli.py into submodules | ✅ | Split into cli/commands.py, cli/formatters.py, cli/builders.py |
-| Make tests deterministic | ❌ | Inject `today` instead of `date.today()` |
-| Add edge case tests | ❌ | Leap year, empty inputs, boundaries |
-| Add regex complexity validation | ❌ | Prevent ReDoS attacks |
-| Fix type hint gaps | ❌ | ~10% missing |
+| Task                            | Status | Notes                                                          |
+| ------------------------------- | ------ | -------------------------------------------------------------- |
+| Split cli.py into submodules    | ✅     | Split into cli/commands.py, cli/formatters.py, cli/builders.py |
+| Make tests deterministic        | ❌     | Inject `today` instead of `date.today()`                       |
+| Add edge case tests             | ❌     | Leap year, empty inputs, boundaries                            |
+| Add regex complexity validation | ❌     | Prevent ReDoS attacks                                          |
+| Fix type hint gaps              | ❌     | ~10% missing                                                   |
 
 ---
 
@@ -100,10 +100,10 @@ DEFAULT_DATE_WINDOW_DAYS = 3
 
 ### Dead Code to Remove
 
-| File | Function/Code | Reason |
-|------|---------------|--------|
-| `hook.py:448-525` | `_match_ledger_transactions()` | Never called, duplicates `_match_ledger_transactions_lazy()` |
-| `recurrence.py:157-181` | `_generate_bimonthly()` | Identical to `_generate_monthly_on_days()` |
+| File                    | Function/Code                  | Reason                                                       |
+| ----------------------- | ------------------------------ | ------------------------------------------------------------ |
+| `hook.py:448-525`       | `_match_ledger_transactions()` | Never called, duplicates `_match_ledger_transactions_lazy()` |
+| `recurrence.py:157-181` | `_generate_bimonthly()`        | Identical to `_generate_monthly_on_days()`                   |
 
 ### Duplicate Code to Consolidate
 
@@ -139,20 +139,20 @@ def load_schedules_from_path(path: Path) -> Optional[ScheduleFile]:
 
 ### Missing Edge Case Tests
 
-| Module | Test Cases Needed |
-|--------|-------------------|
-| `recurrence.py` | Leap year (Feb 29), DST transitions, end_date == start_date |
-| `matcher.py` | Empty payee strings, None posting units, negative date window |
-| `loader.py` | Circular imports, deeply nested directories, symlinks |
-| `detector.py` | Single transaction groups, all same-day transactions |
+| Module          | Test Cases Needed                                             |
+| --------------- | ------------------------------------------------------------- |
+| `recurrence.py` | Leap year (Feb 29), DST transitions, end_date == start_date   |
+| `matcher.py`    | Empty payee strings, None posting units, negative date window |
+| `loader.py`     | Circular imports, deeply nested directories, symlinks         |
+| `detector.py`   | Single transaction groups, all same-day transactions          |
 
 ### Test Quality Issues
 
-| Issue | Location | Fix |
-|-------|----------|-----|
-| Time-dependent tests | `hook.py:660` | Inject `today` parameter instead of `date.today()` |
-| Deprecated fixture | `conftest.py:119` | `make_match_criteria` uses deprecated `amount` field |
-| Missing assertions | `test_hook.py` | Some tests only check no exception raised |
+| Issue                | Location          | Fix                                                  |
+| -------------------- | ----------------- | ---------------------------------------------------- |
+| Time-dependent tests | `hook.py:660`     | Inject `today` parameter instead of `date.today()`   |
+| Deprecated fixture   | `conftest.py:119` | `make_match_criteria` uses deprecated `amount` field |
+| Missing assertions   | `test_hook.py`    | Some tests only check no exception raised            |
 
 ---
 
@@ -160,12 +160,12 @@ def load_schedules_from_path(path: Path) -> Optional[ScheduleFile]:
 
 ### README.md Issues
 
-| Line | Issue | Fix |
-|------|-------|-----|
-| 6, 583-584 | Wrong username | `yourusername` → `slimslickner` |
-| 552-557 | Dead links | Remove `docs/` references or create directory |
-| 561 | Wrong Python version | "3.9+" → "3.11+" |
-| 571 | Missing file | Create CONTRIBUTING.md |
+| Line       | Issue                | Fix                                           |
+| ---------- | -------------------- | --------------------------------------------- |
+| 6, 583-584 | Wrong username       | `yourusername` → `slimslickner`               |
+| 552-557    | Dead links           | Remove `docs/` references or create directory |
+| 561        | Wrong Python version | "3.9+" → "3.11+"                              |
+| 571        | Missing file         | Create CONTRIBUTING.md                        |
 
 ### Files to Create
 
@@ -180,22 +180,22 @@ def load_schedules_from_path(path: Path) -> Optional[ScheduleFile]:
 
 ### Completed
 
-| Optimization | Impact | Status |
-|--------------|--------|--------|
-| Lazy matching (date index) | 80%+ speedup | ✅ |
-| Regex pattern caching | 40-50% speedup | ✅ |
-| Fuzzy match caching | 10-20% speedup | ✅ |
+| Optimization               | Impact         | Status |
+| -------------------------- | -------------- | ------ |
+| Lazy matching (date index) | 80%+ speedup   | ✅     |
+| Regex pattern caching      | 40-50% speedup | ✅     |
+| Fuzzy match caching        | 10-20% speedup | ✅     |
 
 **Baseline** (M2 MacBook, 14,874 entries, 43 schedules): ~5-10 seconds
 
 ### Remaining Opportunities
 
-| Optimization | Impact | Effort | Priority |
-|--------------|--------|--------|----------|
-| Skip ledger matching when no `schedule_id` | 5-10% | Trivial | High |
-| Recurrence result caching | 10-15% | Low | Medium |
-| Bulk transaction filtering by account | 20-30% | Medium | Medium |
-| Parallel processing | 2-3x | High | Future |
+| Optimization                               | Impact | Effort  | Priority |
+| ------------------------------------------ | ------ | ------- | -------- |
+| Skip ledger matching when no `schedule_id` | 5-10%  | Trivial | High     |
+| Recurrence result caching                  | 10-15% | Low     | Medium   |
+| Bulk transaction filtering by account      | 20-30% | Medium  | Medium   |
+| Parallel processing                        | 2-3x   | High    | Future   |
 
 ---
 

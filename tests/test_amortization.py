@@ -120,7 +120,9 @@ class TestAmortizationSchedule:
         # Total payments = principal + interest
         total_payments = schedule.payment * Decimal("360")
         # Last payment may be different, so allow for some variance
-        assert abs(total_payments - (Decimal("100000") + total_interest)) < Decimal("100")
+        assert abs(total_payments - (Decimal("100000") + total_interest)) < Decimal(
+            "100"
+        )
 
     def test_zero_interest_rate(self):
         """Should handle zero interest rate (interest-free loan)."""

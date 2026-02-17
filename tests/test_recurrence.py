@@ -3,7 +3,7 @@
 from datetime import date
 
 from beanschedule.recurrence import RecurrenceEngine
-from beanschedule.types import FrequencyType, DayOfWeek
+from beanschedule.types import DayOfWeek, FrequencyType
 
 
 class TestMonthlyRecurrence:

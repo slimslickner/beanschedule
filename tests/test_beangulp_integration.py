@@ -2,14 +2,13 @@
 
 import os
 from datetime import date
-from pathlib import Path
 from decimal import Decimal
+from pathlib import Path
 
 import pytest
 import yaml
-
-from beancount.core import amount, data
 from beancount import loader as beancount_loader
+from beancount.core import amount, data
 
 from beanschedule import schedule_hook
 from beanschedule.loader import load_schedules_from_directory
@@ -72,7 +71,9 @@ class TestPerScheduleIntegration:
 
         try:
             schedule_files = self.get_all_example_schedules(example_schedules_dir)
-            assert len(schedule_files) >= 10, f"Expected >=10 schedules, got {len(schedule_files)}"
+            assert len(schedule_files) >= 10, (
+                f"Expected >=10 schedules, got {len(schedule_files)}"
+            )
 
             successfully_tested = 0
 
@@ -104,10 +105,12 @@ class TestPerScheduleIntegration:
                     meta=meta,
                     date=date(2024, 1, 15),
                     flag="*",
-                    payee=payee_pattern.split("|")[0] if "|" in payee_pattern else payee_pattern,
+                    payee=payee_pattern.split("|")[0]
+                    if "|" in payee_pattern
+                    else payee_pattern,
                     narration=f"Synthetic: {schedule_id}",
-                    tags=set(),
-                    links=set(),
+                    tags=frozenset(),
+                    links=frozenset(),
                     postings=[
                         data.Posting(
                             account=account,
@@ -129,14 +132,22 @@ class TestPerScheduleIntegration:
                 )
 
                 # Run hook: synthetic imports + real ledger
-                entries_list = [("synthetic.csv", [synthetic_txn], account, "SyntheticImporter")]
-                result = schedule_hook(entries_list, existing_entries=example_ledger_entries)
+                entries_list = [
+                    ("synthetic.csv", [synthetic_txn], account, "SyntheticImporter")
+                ]
+                result = schedule_hook(
+                    entries_list, existing_entries=example_ledger_entries
+                )
 
                 # Verify hook executed without error
                 assert result is not None, f"Hook failed for schedule {schedule_id}"
-                assert isinstance(result, list), f"Result should be list for {schedule_id}"
+                assert isinstance(result, list), (
+                    f"Result should be list for {schedule_id}"
+                )
 
-            assert successfully_tested > 0, "Should have tested at least one enabled schedule"
+            assert successfully_tested > 0, (
+                "Should have tested at least one enabled schedule"
+            )
 
         finally:
             if "BEANSCHEDULE_DIR" in os.environ:
@@ -150,19 +161,25 @@ class TestPerScheduleIntegration:
 
         try:
             schedule_files = self.get_all_example_schedules(example_schedules_dir)
-            assert len(schedule_files) >= 10, "Should have at least 10 example schedules"
+            assert len(schedule_files) >= 10, (
+                "Should have at least 10 example schedules"
+            )
 
             # Run hook with all schedules and real ledger
             entries_list = [("test.csv", [], "Assets:Checking", "TestImporter")]
 
-            result = schedule_hook(entries_list, existing_entries=example_ledger_entries)
+            result = schedule_hook(
+                entries_list, existing_entries=example_ledger_entries
+            )
 
             # Should complete without error
             assert result is not None
 
             # Should generate placeholders for missing schedules
             schedules_entries = [
-                e for e in result if isinstance(e, tuple) and len(e) >= 2 and e[0] == "<schedules>"
+                e
+                for e in result
+                if isinstance(e, tuple) and len(e) >= 2 and e[0] == "<schedules>"
             ]
             if schedules_entries:
                 placeholders = schedules_entries[0][1]
@@ -219,18 +236,28 @@ class TestExamplesIntegration:
     def test_examples_directory_exists(self, examples_dir):
         """Verify examples directory structure is complete."""
         assert examples_dir.exists(), "examples directory not found"
-        assert (examples_dir / "example.beancount").exists(), "example.beancount not found"
+        assert (examples_dir / "example.beancount").exists(), (
+            "example.beancount not found"
+        )
         assert (examples_dir / "schedules").exists(), "schedules directory not found"
-        assert (examples_dir / "schedules" / "_config.yaml").exists(), "_config.yaml not found"
+        assert (examples_dir / "schedules" / "_config.yaml").exists(), (
+            "_config.yaml not found"
+        )
 
     def test_example_ledger_loads(self, example_ledger_entries):
         """Verify example ledger can be loaded."""
         assert example_ledger_entries is not None
-        assert len(example_ledger_entries) > 100, "example ledger should have many entries"
+        assert len(example_ledger_entries) > 100, (
+            "example ledger should have many entries"
+        )
 
         # Verify it contains transactions
-        transactions = [e for e in example_ledger_entries if isinstance(e, data.Transaction)]
-        assert len(transactions) > 10, "example ledger should have multiple transactions"
+        transactions = [
+            e for e in example_ledger_entries if isinstance(e, data.Transaction)
+        ]
+        assert len(transactions) > 10, (
+            "example ledger should have multiple transactions"
+        )
 
     def test_example_schedules_load(self, example_schedule_file):
         """Verify example schedules can be loaded."""
@@ -255,9 +282,13 @@ class TestExamplesIntegration:
 
         try:
             # No imported entries, just checking against existing ledger
-            entries_list = [("example.beancount", [], "Assets:Checking", "ExampleImporter")]
+            entries_list = [
+                ("example.beancount", [], "Assets:Checking", "ExampleImporter")
+            ]
 
-            result = schedule_hook(entries_list, existing_entries=example_ledger_entries)
+            result = schedule_hook(
+                entries_list, existing_entries=example_ledger_entries
+            )
 
             # Should process without error
             assert result is not None
@@ -273,12 +304,18 @@ class TestExamplesIntegration:
         os.environ["BEANSCHEDULE_DIR"] = str(example_schedules_dir)
 
         try:
-            entries_list = [("example.beancount", [], "Assets:Checking", "ExampleImporter")]
-            result = schedule_hook(entries_list, existing_entries=example_ledger_entries)
+            entries_list = [
+                ("example.beancount", [], "Assets:Checking", "ExampleImporter")
+            ]
+            result = schedule_hook(
+                entries_list, existing_entries=example_ledger_entries
+            )
 
             # Filter for schedules entry (which contains placeholders)
             schedules_entries = [
-                e for e in result if hasattr(e, "flag") and len(e) >= 2 and e[0] == "<schedules>"
+                e
+                for e in result
+                if hasattr(e, "flag") and len(e) >= 2 and e[0] == "<schedules>"
             ]
 
             # Should create placeholder entries for missing scheduled transactions
@@ -294,7 +331,9 @@ class TestExamplesIntegration:
                 for placeholder in placeholder_txns:
                     assert hasattr(placeholder, "flag"), "placeholder should have flag"
                     assert placeholder.flag == "!", "placeholder should have ! flag"
-                    assert "schedule_id" in placeholder.meta, "placeholder should have schedule_id"
+                    assert "schedule_id" in placeholder.meta, (
+                        "placeholder should have schedule_id"
+                    )
         finally:
             if "BEANSCHEDULE_DIR" in os.environ:
                 del os.environ["BEANSCHEDULE_DIR"]
@@ -324,21 +363,27 @@ class TestExamplesIntegration:
             frequencies.add(schedule.recurrence.frequency.value)
 
         # Should have multiple frequency types
-        assert len(frequencies) >= 3, f"should demonstrate multiple frequencies, got: {frequencies}"
+        assert len(frequencies) >= 3, (
+            f"should demonstrate multiple frequencies, got: {frequencies}"
+        )
 
-    def test_example_schedules_cover_different_matching_strategies(self, example_schedule_file):
+    def test_example_schedules_cover_different_matching_strategies(
+        self, example_schedule_file
+    ):
         """Verify example schedules show different amount matching strategies."""
         has_fixed_amount = False
         has_amount_range = False
-        has_null_amount = False
 
         for schedule in example_schedule_file.schedules:
             if schedule.match.amount is not None and schedule.match.amount_min is None:
                 has_fixed_amount = True
-            if schedule.match.amount_min is not None and schedule.match.amount_max is not None:
+            if (
+                schedule.match.amount_min is not None
+                and schedule.match.amount_max is not None
+            ):
                 has_amount_range = True
             if schedule.match.amount is None:
-                has_null_amount = True
+                pass  # null amount is allowed; no assertion needed
 
         assert has_fixed_amount, "examples should show fixed amount with tolerance"
         assert has_amount_range, "examples should show amount range matching"
@@ -352,14 +397,18 @@ class TestExamplesIntegration:
         os.environ["BEANSCHEDULE_DIR"] = str(example_schedules_dir)
 
         try:
-            entries_list = [("example.beancount", [], "Assets:Checking", "ExampleImporter")]
+            entries_list = [
+                ("example.beancount", [], "Assets:Checking", "ExampleImporter")
+            ]
 
             start = time.time()
-            result = schedule_hook(entries_list, existing_entries=example_ledger_entries)
+            schedule_hook(entries_list, existing_entries=example_ledger_entries)
             elapsed = time.time() - start
 
             # Should complete in reasonable time (< 5 seconds with lazy matching)
-            assert elapsed < 5.0, f"hook took {elapsed:.2f}s, should be < 5s with lazy matching"
+            assert elapsed < 5.0, (
+                f"hook took {elapsed:.2f}s, should be < 5s with lazy matching"
+            )
             print(f"Hook completed with example data in {elapsed:.2f}s")
         finally:
             if "BEANSCHEDULE_DIR" in os.environ:

@@ -6,14 +6,17 @@ python = "3.13"
 [env]
 _.file = '.env'
 
+[tasks.ty]
+description = "Type check the project for errors"
+run = "ty check"
 
 [tasks.format-ruff]
 description = "Format Python code with ruff"
-run = "uv run ruff format ."
+run = "uv run ruff check --fix . && uv run ruff format ."
 
 [tasks.format-prettier]
 description = "Format YAML and JSON files with prettier"
-run = "uv run prettier --write '**/*.{yaml,yml,json}'"
+run = "uv run prettier --write '**/*.{yaml,yml,json,md}'"
 
 [tasks.format]
 description = "Run all formatters"

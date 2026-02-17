@@ -50,8 +50,8 @@ from datetime import date, timedelta
 from decimal import Decimal
 from pathlib import Path
 
+from beancount.core import amount, data
 from dateutil.relativedelta import relativedelta
-from beancount.core import amount, data, realization
 
 logger = logging.getLogger(__name__)
 
@@ -153,8 +153,8 @@ def schedules(entries, options_map, config=None):
         elif isinstance(config, str):
             # config could be a file path or a dict string from Beancount
             # Try to parse as Python dict/JSON first
-            import json
             import ast
+            import json
 
             config_str = config.strip()
             parsed_dict = None
@@ -217,15 +217,21 @@ def schedules(entries, options_map, config=None):
         # Override config with plugin parameters if provided
         if forecast_config:
             if "forecast_months" in forecast_config:
-                schedule_file.config.forecast_months = forecast_config["forecast_months"]
+                schedule_file.config.forecast_months = forecast_config[
+                    "forecast_months"
+                ]
             if "min_forecast_date" in forecast_config:
                 min_date_str = forecast_config["min_forecast_date"]
                 if isinstance(min_date_str, str):
-                    schedule_file.config.min_forecast_date = date.fromisoformat(min_date_str)
+                    schedule_file.config.min_forecast_date = date.fromisoformat(
+                        min_date_str
+                    )
                 else:
                     schedule_file.config.min_forecast_date = min_date_str
             if "include_past_dates" in forecast_config:
-                schedule_file.config.include_past_dates = forecast_config["include_past_dates"]
+                schedule_file.config.include_past_dates = forecast_config[
+                    "include_past_dates"
+                ]
 
     except Exception as e:
         error_msg = f"Failed to load schedules: {e}"
@@ -251,11 +257,14 @@ def schedules(entries, options_map, config=None):
     if schedule_file.config.min_forecast_date:
         forecast_start = min(forecast_start, schedule_file.config.min_forecast_date)
         logger.info(
-            "Using configured min_forecast_date: %s", schedule_file.config.min_forecast_date
+            "Using configured min_forecast_date: %s",
+            schedule_file.config.min_forecast_date,
         )
 
     # Calculate forecast_end using forecast_months
-    forecast_months = schedule_file.config.forecast_months or 3  # Fallback to 3 if not set
+    forecast_months = (
+        schedule_file.config.forecast_months or 3
+    )  # Fallback to 3 if not set
     forecast_end = today + relativedelta(months=forecast_months)
     logger.info(
         "Using forecast_months=%d to extend forecast window to: %s",
@@ -277,7 +286,11 @@ def schedules(entries, options_map, config=None):
     # ── stateful-amortization setup (single pass through entries) ─────────
     stateful_accounts: set[str] = set()
     for schedule in schedule_file.schedules:
-        if schedule.enabled and schedule.amortization and schedule.amortization.balance_from_ledger:
+        if (
+            schedule.enabled
+            and schedule.amortization
+            and schedule.amortization.balance_from_ledger
+        ):
             principal_account = _get_principal_account(schedule)
             if principal_account:
                 stateful_accounts.add(principal_account)
@@ -285,7 +298,9 @@ def schedules(entries, options_map, config=None):
     from beanschedule.amortization import build_liability_balance_index
 
     liability_balances = (
-        build_liability_balance_index(entries, stateful_accounts) if stateful_accounts else {}
+        build_liability_balance_index(entries, stateful_accounts)
+        if stateful_accounts
+        else {}
     )
 
     # ── per-schedule forecast generation ──────────────────────────────────
@@ -309,7 +324,9 @@ def schedules(entries, options_map, config=None):
                 current = forecast_start
                 try:
                     if current.day <= schedule.amortization.payment_day_of_month:
-                        current = current.replace(day=schedule.amortization.payment_day_of_month)
+                        current = current.replace(
+                            day=schedule.amortization.payment_day_of_month
+                        )
                     else:
                         current = (current + relativedelta(months=1)).replace(
                             day=schedule.amortization.payment_day_of_month
@@ -332,7 +349,9 @@ def schedules(entries, options_map, config=None):
                         import calendar
 
                         last_day = calendar.monthrange(current.year, current.month)[1]
-                        current = (current + relativedelta(months=1)).replace(day=last_day)
+                        current = (current + relativedelta(months=1)).replace(
+                            day=last_day
+                        )
 
                 logger.debug(
                     "Loan %s: Using custom amortization payment day (day %d)",
@@ -381,7 +400,9 @@ def schedules(entries, options_map, config=None):
                             )
 
                         # Use amort_occurrences if available (payment_day_of_month), else use regular occurrences
-                        split_dates = amort_occurrences if amort_occurrences else occurrences
+                        split_dates = (
+                            amort_occurrences if amort_occurrences else occurrences
+                        )
 
                         amort_splits = compute_stateful_splits(
                             monthly_payment=schedule.amortization.monthly_payment,  # type: ignore[arg-type]
@@ -390,7 +411,8 @@ def schedules(entries, options_map, config=None):
                             starting_balance=balance,
                             starting_date=balance_date,
                             occurrence_dates=split_dates,
-                            extra_principal=schedule.amortization.extra_principal or Decimal("0"),
+                            extra_principal=schedule.amortization.extra_principal
+                            or Decimal("0"),
                         )
                     else:
                         logger.info(
@@ -418,7 +440,9 @@ def schedules(entries, options_map, config=None):
                 )
                 forecast_entries.append(forecast_txn)
 
-            logger.debug("Generated %d forecast(s) for %s", len(forecast_dates), schedule.id)
+            logger.debug(
+                "Generated %d forecast(s) for %s", len(forecast_dates), schedule.id
+            )
 
         except Exception as e:
             error_msg = f"Failed to generate forecasts for {schedule.id}: {e}"
@@ -448,7 +472,9 @@ def _get_active_amortization_override(amortization_config, occurrence_date):
 
     # Find the most recent override that is <= occurrence_date
     active_override = None
-    for override in sorted(amortization_config.overrides, key=lambda x: x.effective_date):
+    for override in sorted(
+        amortization_config.overrides, key=lambda x: x.effective_date
+    ):
         if override.effective_date <= occurrence_date:
             active_override = override
         else:
@@ -468,7 +494,9 @@ def _get_principal_account(schedule) -> str | None:
     return None
 
 
-def _create_forecast_transaction(schedule, occurrence_date, global_config, amort_splits=None):
+def _create_forecast_transaction(
+    schedule, occurrence_date, global_config, amort_splits=None
+):
     """Create a forecast transaction from a schedule.
 
     Args:
@@ -529,7 +557,9 @@ def _create_forecast_transaction(schedule, occurrence_date, global_config, amort
         from beanschedule.amortization import AmortizationSchedule
 
         # Check for active override for this occurrence date
-        active_override = _get_active_amortization_override(schedule.amortization, occurrence_date)
+        active_override = _get_active_amortization_override(
+            schedule.amortization, occurrence_date
+        )
 
         # Determine effective parameters (base + overrides)
         if active_override:
@@ -582,7 +612,9 @@ def _create_forecast_transaction(schedule, occurrence_date, global_config, amort
 
             # Add amortization metadata
             meta["amortization_payment_number"] = payment_number
-            meta["amortization_balance_after"] = str(amortization_split.remaining_balance)
+            meta["amortization_balance_after"] = str(
+                amortization_split.remaining_balance
+            )
             meta["amortization_principal"] = str(amortization_split.principal)
             meta["amortization_interest"] = str(amortization_split.interest)
 
@@ -622,7 +654,10 @@ def _create_forecast_transaction(schedule, occurrence_date, global_config, amort
 
     # Validation: if all amounts are null AND no amortization, that's an error
     # (With amortization, null amounts are OK as long as they have roles)
-    if len(null_amount_indices) == len(schedule.transaction.postings) and not schedule.amortization:
+    if (
+        len(null_amount_indices) == len(schedule.transaction.postings)
+        and not schedule.amortization
+    ):
         raise ValueError(
             f"Schedule {schedule.id}: All postings have null amounts. "
             f"At least one posting must specify an amount."
@@ -630,7 +665,9 @@ def _create_forecast_transaction(schedule, occurrence_date, global_config, amort
 
     # Calculate amounts for all non-payment postings first
     total_non_payment = sum(specified_amounts)  # Fixed amounts (e.g., escrow)
-    total_non_payment += sum(amortized_amounts.values())  # Amortized amounts (principal, interest)
+    total_non_payment += sum(
+        amortized_amounts.values()
+    )  # Amortized amounts (principal, interest)
 
     # Second pass: create postings
     for idx, posting_template in enumerate(schedule.transaction.postings):
@@ -660,7 +697,9 @@ def _create_forecast_transaction(schedule, occurrence_date, global_config, amort
                     posting_amount_value = -sum(specified_amounts)
             else:
                 # Non-payment account with null - must be balancing posting
-                balancing_posting_idx = null_amount_indices[0] if null_amount_indices else None
+                balancing_posting_idx = (
+                    null_amount_indices[0] if null_amount_indices else None
+                )
                 if idx == balancing_posting_idx and not amortization_split:
                     posting_amount_value = -sum(specified_amounts)
 
@@ -675,11 +714,10 @@ def _create_forecast_transaction(schedule, occurrence_date, global_config, amort
                     f"Valid roles: 'payment', 'interest', 'principal', 'escrow'. "
                     f"See POSTING_ROLES.md for details."
                 )
-            else:
-                raise ValueError(
-                    f"Schedule {schedule.id}: Could not determine amount for posting "
-                    f"to account '{posting_template.account}' (index {idx})"
-                )
+            raise ValueError(
+                f"Schedule {schedule.id}: Could not determine amount for posting "
+                f"to account '{posting_template.account}' (index {idx})"
+            )
 
         posting_amount = amount.Amount(
             Decimal(posting_amount_value),

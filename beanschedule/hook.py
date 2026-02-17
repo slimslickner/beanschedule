@@ -3,33 +3,30 @@
 import logging
 from collections import defaultdict
 from datetime import date, timedelta
+from datetime import date as date_type
 from decimal import Decimal
-from typing import Optional
 
 from beancount.core import amount, data
 
 from . import constants
 from .amortization import (
-    AmortizationSchedule,
     PaymentSplit,
     build_liability_balance_index,
     compute_stateful_splits,
 )
 from .loader import get_enabled_schedules, load_schedules_file
 from .matcher import TransactionMatcher
-from .recurrence import RecurrenceEngine
-from .schema import Schedule
 from .pending import (
+    enrich_from_pending,
     find_pending_file,
     load_pending_transactions,
     match_pending_transaction,
-    enrich_from_pending,
     remove_pending_transactions,
 )
+from .recurrence import RecurrenceEngine
+from .schema import GlobalConfig, Schedule
 from .utils import (
-    build_date_index,
     generate_all_schedule_occurrences,
-    generate_schedule_occurrences,
 )
 
 logger = logging.getLogger(__name__)
@@ -37,7 +34,7 @@ logger = logging.getLogger(__name__)
 
 def schedule_hook(
     extracted_entries_list: list,
-    existing_entries: Optional[list[data.Directive]] = None,
+    existing_entries: list[data.Directive] | None = None,
 ) -> list:
     """
     Beangulp hook for scheduled transaction matching and enrichment.
@@ -130,7 +127,9 @@ def schedule_hook(
             pending_transactions = load_pending_transactions(pending_file_path)
             if pending_transactions:
                 logger.info("=" * 70)
-                logger.info("PENDING TRANSACTIONS - LOADED (%d)", len(pending_transactions))
+                logger.info(
+                    "PENDING TRANSACTIONS - LOADED (%d)", len(pending_transactions)
+                )
                 logger.info("=" * 70)
                 for pending in sorted(pending_transactions, key=lambda p: p.date):
                     logger.info(
@@ -148,9 +147,13 @@ def schedule_hook(
             pending_transactions = []
 
     # Step 2: Extract date range from all transactions (imported + ledger)
-    date_range = _extract_date_range(extracted_entries_list, ledger_entries, schedule_file.config)
+    date_range = _extract_date_range(
+        extracted_entries_list, ledger_entries, schedule_file.config
+    )
     if date_range is None:
-        logger.info("No transactions found in imports or ledger, returning entries unchanged")
+        logger.info(
+            "No transactions found in imports or ledger, returning entries unchanged"
+        )
         return extracted_entries_list
 
     # If we have no imported entries but have ledger entries, still process schedules
@@ -179,9 +182,6 @@ def schedule_hook(
     matched_occurrences = set()
     matched_details = []  # Track matched transactions for summary
 
-    # Build date index for lazy matching (O(n) once vs O(n*m) per lookup)
-    date_index = build_date_index(ledger_entries) if ledger_entries else {}
-
     # First, match any transactions already in the ledger (to avoid false missing warnings)
     if ledger_entries:
         ledger_matched = _match_ledger_transactions_lazy(
@@ -190,7 +190,9 @@ def schedule_hook(
             enabled_schedules,
         )
         matched_occurrences.update(ledger_matched)
-        logger.debug("Matched %d transactions from existing ledger", len(ledger_matched))
+        logger.debug(
+            "Matched %d transactions from existing ledger", len(ledger_matched)
+        )
 
     for item in extracted_entries_list:
         # Beangulp format: (filepath, entries, account, importer_wrapper)
@@ -201,8 +203,12 @@ def schedule_hook(
         for entry in entries:
             if isinstance(entry, data.Transaction):
                 # Try to match this transaction
-                account_str = entry.postings[0].account if entry.postings else "no postings"
-                units_str = str(entry.postings[0].units) if entry.postings else "no amount"
+                account_str = (
+                    entry.postings[0].account if entry.postings else "no postings"
+                )
+                units_str = (
+                    str(entry.postings[0].units) if entry.postings else "no amount"
+                )
                 logger.debug(
                     "Checking transaction: %s | %s | %s | %s",
                     entry.date,
@@ -241,13 +247,16 @@ def schedule_hook(
                     if schedule.amortization and ledger_entries:
                         # Find the next amortization date based on ledger history
                         amort_result = _compute_amortization_split(
-                            schedule, ledger_entries, recurrence_engine, start_date, end_date
+                            schedule,
+                            ledger_entries,
+                            recurrence_engine,
+                            start_date,
+                            end_date,
                         )
                         if amort_result:
                             amort_split, split_lookup_date = amort_result
                             logger.debug(
-                                "  Amortization: %s - "
-                                "principal=%.2f, interest=%.2f, balance_after=%.2f",
+                                "  Amortization: %s - principal=%.2f, interest=%.2f, balance_after=%.2f",
                                 split_lookup_date,
                                 amort_split.principal,
                                 amort_split.interest,
@@ -255,16 +264,24 @@ def schedule_hook(
                             )
                         else:
                             logger.debug(
-                                "  Amortization: could not compute split for %s", schedule.id
+                                "  Amortization: could not compute split for %s",
+                                schedule.id,
                             )
                     # Enrich transaction
                     enriched_txn = _enrich_transaction(
-                        entry, schedule, expected_date, score, amort_split, split_lookup_date
+                        entry,
+                        schedule,
+                        expected_date,
+                        score,
+                        amort_split,
+                        split_lookup_date,
                     )
                     modified_entries.append(enriched_txn)
                     # Mark occurrence as matched
                     matched_occurrences.add((schedule.id, expected_date))
-                    matched_details.append((entry.date, schedule.transaction.payee, schedule.id))
+                    matched_details.append(
+                        (entry.date, schedule.transaction.payee, schedule.id)
+                    )
                 else:
                     # No match, keep original
                     logger.debug("  No match found")
@@ -308,33 +325,42 @@ def schedule_hook(
         logger.warning("=" * 70)
         for placeholder in sorted(placeholders, key=lambda p: p.date):
             schedule_id = placeholder.meta.get(constants.META_SCHEDULE_ID, "unknown")
-            expected_date = placeholder.meta.get(constants.META_SCHEDULE_EXPECTED_DATE, "unknown")
-            logger.warning("  • %s - %s (%s)", expected_date, placeholder.payee, schedule_id)
+            expected_date = placeholder.meta.get(
+                constants.META_SCHEDULE_EXPECTED_DATE, "unknown"
+            )
+            logger.warning(
+                "  • %s - %s (%s)", expected_date, placeholder.payee, schedule_id
+            )
         logger.warning("=" * 70)
 
     # NEW: Remove matched pending transactions from file and log summary
     if matched_pending_entries and pending_file_path:
         try:
             remove_pending_transactions(pending_file_path, matched_pending_entries)
-            logger.info("Removed %d matched pending transaction(s)", len(matched_pending_entries))
+            logger.info(
+                "Removed %d matched pending transaction(s)",
+                len(matched_pending_entries),
+            )
         except Exception as e:
             logger.error("Failed to remove matched pending transactions: %s", e)
 
     # Log summary of unmatched pending transactions
     if pending_transactions:
-        matched_ids = {(entry.date, entry.payee, entry.amount) for entry in matched_pending_entries}
+        matched_ids = {
+            (entry.date, entry.payee, entry.amount) for entry in matched_pending_entries
+        }
         unmatched = [
-            p for p in pending_transactions if (p.date, p.payee, p.amount) not in matched_ids
+            p
+            for p in pending_transactions
+            if (p.date, p.payee, p.amount) not in matched_ids
         ]
 
         if unmatched:
-            from datetime import date as date_type
-
             logger.warning("=" * 70)
             logger.warning("PENDING TRANSACTIONS - UNMATCHED (%d open)", len(unmatched))
             logger.warning("=" * 70)
             for pending in sorted(unmatched, key=lambda p: p.date):
-                days_diff = (pending.date - date_type.today()).days
+                days_diff = (pending.date - date_type.today()).days  # noqa: DTZ011
                 if days_diff > 0:
                     age_str = f"in {days_diff} days"
                 elif days_diff == 0:
@@ -354,7 +380,9 @@ def schedule_hook(
             logger.info("All pending transactions matched and removed")
 
     # Log final summary
-    _log_summary(enabled_schedules, matched_occurrences, placeholders, start_date, end_date)
+    _log_summary(
+        enabled_schedules, matched_occurrences, placeholders, start_date, end_date
+    )
 
     logger.info("schedule_hook completed")
     return modified_entries_list
@@ -362,9 +390,9 @@ def schedule_hook(
 
 def _extract_date_range(
     extracted_entries_list,
-    ledger_entries: Optional[list[data.Directive]] = None,
+    ledger_entries: list[data.Directive] | None = None,
     config=None,
-) -> Optional[tuple[date, date]]:
+) -> tuple[date, date] | None:
     """
     Extract min/max date range from all transactions (imported + ledger).
 
@@ -380,7 +408,6 @@ def _extract_date_range(
     Returns:
         Tuple of (start_date, end_date) with buffers and forecast extension, or None if no transactions
     """
-    from .schema import GlobalConfig
 
     # Use default config if not provided
     if config is None:
@@ -424,14 +451,16 @@ def _extract_date_range(
         from dateutil.relativedelta import relativedelta
 
         max_date = max_date + relativedelta(months=config.forecast_months)
-        logger.info("Extended forecast by %d month(s) to: %s", config.forecast_months, max_date)
+        logger.info(
+            "Extended forecast by %d month(s) to: %s", config.forecast_months, max_date
+        )
     else:
         max_date = max_date + buffer
 
     return (min_date, max_date)
 
 
-def _get_principal_account(schedule: Schedule) -> Optional[str]:
+def _get_principal_account(schedule: Schedule) -> str | None:
     """Return the account with role='principal' from a schedule's postings, or None."""
     if not schedule.transaction.postings:
         return None
@@ -443,7 +472,7 @@ def _get_principal_account(schedule: Schedule) -> Optional[str]:
 
 def _find_last_schedule_transaction(
     ledger_entries: list[data.Directive], schedule_id: str
-) -> Optional[data.Transaction]:
+) -> data.Transaction | None:
     """Find the most recent transaction in ledger with matching schedule_id.
 
     Args:
@@ -467,7 +496,7 @@ def _compute_amortization_split(
     recurrence_engine: RecurrenceEngine,
     start_date: date,
     end_date: date,
-) -> Optional[tuple[PaymentSplit, date]]:
+) -> tuple[PaymentSplit, date] | None:
     """Compute amortization split for the next payment.
 
     Finds the last posted transaction for this schedule, calculates the next
@@ -520,9 +549,15 @@ def _compute_amortization_split(
     next_amort_date = next_amort_dates[0]
 
     # Get current balance from ledger
-    liability_balances = build_liability_balance_index(ledger_entries, {principal_account})
+    liability_balances = build_liability_balance_index(
+        ledger_entries, {principal_account}
+    )
     if principal_account not in liability_balances:
-        logger.debug("Schedule %s: no balance found for account %s", schedule.id, principal_account)
+        logger.debug(
+            "Schedule %s: no balance found for account %s",
+            schedule.id,
+            principal_account,
+        )
         return None
 
     balance, balance_date = liability_balances[principal_account]
@@ -531,6 +566,10 @@ def _compute_amortization_split(
         return None
 
     # Compute split for the next amortization date
+    # monthly_payment is guaranteed non-None by Pydantic validator when balance_from_ledger=True
+    if schedule.amortization.monthly_payment is None:
+        logger.debug("Schedule %s: monthly_payment is not set", schedule.id)
+        return None
     try:
         splits = compute_stateful_splits(
             monthly_payment=schedule.amortization.monthly_payment,
@@ -543,13 +582,14 @@ def _compute_amortization_split(
         )
         if next_amort_date in splits:
             return (splits[next_amort_date], next_amort_date)
-        else:
-            logger.debug(
-                "Schedule %s: could not compute split for %s", schedule.id, next_amort_date
-            )
-            return None
+        logger.debug(
+            "Schedule %s: could not compute split for %s", schedule.id, next_amort_date
+        )
+        return None
     except Exception as e:
-        logger.error("Schedule %s: error computing amortization split: %s", schedule.id, e)
+        logger.error(
+            "Schedule %s: error computing amortization split: %s", schedule.id, e
+        )
         return None
 
 
@@ -557,7 +597,7 @@ def _match_transaction(
     transaction: data.Transaction,
     expected_occurrences: dict[str, list[tuple[Schedule, date]]],
     matcher: TransactionMatcher,
-) -> Optional[tuple[Schedule, date, float]]:
+) -> tuple[Schedule, date, float] | None:
     """
     Match transaction to best matching schedule.
 
@@ -587,7 +627,9 @@ def _match_transaction(
     if existing_schedule_id:
         # Try to find matching schedule in candidates
         matching_candidates = [
-            (sched, exp_date) for sched, exp_date in candidates if sched.id == existing_schedule_id
+            (sched, exp_date)
+            for sched, exp_date in candidates
+            if sched.id == existing_schedule_id
         ]
 
         if matching_candidates:
@@ -705,7 +747,9 @@ def _match_ledger_transactions_lazy(
                 if days_diff <= date_window:
                     matched.add((schedule_id, expected_date))
                     if is_skip:
-                        skip_reason = entry.meta.get(constants.META_SCHEDULE_SKIPPED, "")
+                        skip_reason = entry.meta.get(
+                            constants.META_SCHEDULE_SKIPPED, ""
+                        )
                         logger.info(
                             "Detected skip marker for %s on %s%s",
                             schedule_id,
@@ -734,8 +778,8 @@ def _enrich_transaction(
     schedule: Schedule,
     expected_date: date,
     score: float,
-    amortization_split: Optional[PaymentSplit] = None,
-    split_lookup_date: Optional[date] = None,
+    amortization_split: PaymentSplit | None = None,
+    split_lookup_date: date | None = None,
 ) -> data.Transaction:
     """
     Enrich transaction with schedule metadata, tags, and postings.
@@ -753,7 +797,9 @@ def _enrich_transaction(
     """
     # Copy existing metadata and add schedule info
     new_meta = transaction.meta.copy()
-    new_meta[constants.META_SCHEDULE_ID] = schedule.transaction.metadata[constants.META_SCHEDULE_ID]
+    new_meta[constants.META_SCHEDULE_ID] = schedule.transaction.metadata[
+        constants.META_SCHEDULE_ID
+    ]
     new_meta[constants.META_SCHEDULE_MATCHED_DATE] = expected_date.isoformat()
     new_meta[constants.META_SCHEDULE_CONFIDENCE] = f"{score:.2f}"
 
@@ -764,14 +810,20 @@ def _enrich_transaction(
 
     # Add amortization metadata if present
     if amortization_split is not None:
-        new_meta[constants.META_AMORTIZATION_PRINCIPAL] = str(amortization_split.principal)
-        new_meta[constants.META_AMORTIZATION_INTEREST] = str(amortization_split.interest)
+        new_meta[constants.META_AMORTIZATION_PRINCIPAL] = str(
+            amortization_split.principal
+        )
+        new_meta[constants.META_AMORTIZATION_INTEREST] = str(
+            amortization_split.interest
+        )
         new_meta[constants.META_AMORTIZATION_BALANCE_AFTER] = str(
             amortization_split.remaining_balance
         )
         # Add the date that was used for split lookup (for debugging date mapping)
         if split_lookup_date is not None:
-            new_meta[constants.META_AMORTIZATION_LINKED_DATE] = split_lookup_date.isoformat()
+            new_meta[constants.META_AMORTIZATION_LINKED_DATE] = (
+                split_lookup_date.isoformat()
+            )
         # Only add payment_number for static mode (when it's non-zero)
         if amortization_split.payment_number > 0:
             new_meta[constants.META_AMORTIZATION_PAYMENT_NUMBER] = str(
@@ -789,7 +841,9 @@ def _enrich_transaction(
 
     # Handle postings
     if schedule.transaction.postings:
-        new_postings = _apply_schedule_postings(transaction, schedule, amortization_split)
+        new_postings = _apply_schedule_postings(
+            transaction, schedule, amortization_split
+        )
     else:
         new_postings = transaction.postings
 
@@ -805,7 +859,7 @@ def _enrich_transaction(
 def _apply_schedule_postings(
     transaction: data.Transaction,
     schedule: Schedule,
-    amortization_split: Optional[PaymentSplit] = None,
+    amortization_split: PaymentSplit | None = None,
 ) -> list[data.Posting]:
     """
     Apply schedule posting template to transaction.
@@ -830,7 +884,9 @@ def _apply_schedule_postings(
     if transaction.postings:
         original_amount = transaction.postings[0].units
 
-    currency = original_amount.currency if original_amount else constants.DEFAULT_CURRENCY
+    currency = (
+        original_amount.currency if original_amount else constants.DEFAULT_CURRENCY
+    )
 
     new_postings = []
     for posting_template in schedule.transaction.postings:
@@ -847,29 +903,34 @@ def _apply_schedule_postings(
             elif posting_template.role == "escrow":
                 # Escrow has explicit amount from template
                 if posting_template.amount is not None:
-                    posting_amount = amount.Amount(Decimal(str(posting_template.amount)), currency)
+                    posting_amount = amount.Amount(
+                        Decimal(str(posting_template.amount)), currency
+                    )
                 else:
                     posting_amount = None
             elif posting_template.amount is not None:
                 # Explicit amount from template (no role, or non-amortization role)
-                posting_amount = amount.Amount(Decimal(str(posting_template.amount)), currency)
+                posting_amount = amount.Amount(
+                    Decimal(str(posting_template.amount)), currency
+                )
             elif posting_template.account == transaction.postings[0].account:
                 # No amount, matches imported account → use imported amount
                 posting_amount = original_amount
             else:
                 # No amount, doesn't match imported account → let beancount balance
                 posting_amount = None
-        else:
-            # No amortization split - use original logic
-            if posting_template.amount is None:
-                # Use imported amount (or None for second+ postings)
-                if posting_template.account == transaction.postings[0].account:
-                    posting_amount = original_amount
-                else:
-                    posting_amount = None
+        # No amortization split - use original logic
+        elif posting_template.amount is None:
+            # Use imported amount (or None for second+ postings)
+            if posting_template.account == transaction.postings[0].account:
+                posting_amount = original_amount
             else:
-                # Use schedule amount
-                posting_amount = amount.Amount(Decimal(str(posting_template.amount)), currency)
+                posting_amount = None
+        else:
+            # Use schedule amount
+            posting_amount = amount.Amount(
+                Decimal(str(posting_template.amount)), currency
+            )
 
         # Build posting metadata (for comments)
         posting_meta = None
@@ -915,6 +976,7 @@ def _create_placeholders(
         List of placeholder transactions for overdue/imminent missing transactions
     """
     from datetime import date as date_type
+
     from .schema import GlobalConfig
 
     # Use default config if not provided
@@ -935,20 +997,23 @@ def _create_placeholders(
                 continue
 
             # Check if we should create placeholder based on date
-            date_window = schedule.match.date_window_days or constants.DEFAULT_DATE_WINDOW_DAYS
+            date_window = (
+                schedule.match.date_window_days or constants.DEFAULT_DATE_WINDOW_DAYS
+            )
 
             if config.include_past_dates:
                 # include_past_dates: create placeholders for any missing date (past or future)
                 # Still skip dates far in the future that aren't due yet
                 if expected_date > today + timedelta(days=date_window):
                     continue
-            else:
-                # Default behavior: only create for overdue/imminent (today or past)
-                if expected_date > today + timedelta(days=date_window):
-                    continue
+            # Default behavior: only create for overdue/imminent (today or past)
+            elif expected_date > today + timedelta(days=date_window):
+                continue
 
             # Create placeholder transaction
-            placeholder = _create_placeholder_transaction(schedule, expected_date, placeholder_flag)
+            placeholder = _create_placeholder_transaction(
+                schedule, expected_date, placeholder_flag
+            )
             placeholders.append(placeholder)
 
     return placeholders
@@ -1011,7 +1076,9 @@ def _log_summary(
         )
 
     logger.info("=" * 70)
-    logger.info("TOTAL: %d/%d scheduled transaction(s) matched", total_matched, total_expected)
+    logger.info(
+        "TOTAL: %d/%d scheduled transaction(s) matched", total_matched, total_expected
+    )
 
     logger.info("=" * 70)
 
@@ -1034,7 +1101,9 @@ def _create_placeholder_transaction(
     """
     # Build metadata
     meta = data.new_metadata(constants.SYNTHETIC_SCHEDULES_SOURCE, 0)
-    meta[constants.META_SCHEDULE_ID] = schedule.transaction.metadata[constants.META_SCHEDULE_ID]
+    meta[constants.META_SCHEDULE_ID] = schedule.transaction.metadata[
+        constants.META_SCHEDULE_ID
+    ]
     meta[constants.META_SCHEDULE_PLACEHOLDER] = constants.PLACEHOLDER_FLAG_TRUE
     meta[constants.META_SCHEDULE_EXPECTED_DATE] = expected_date.isoformat()
 
@@ -1092,7 +1161,7 @@ def _create_placeholder_transaction(
         flag=placeholder_flag,
         payee=schedule.transaction.payee or "",
         narration=narration,
-        tags=set(schedule.transaction.tags or []),
-        links=set(),
+        tags=frozenset(schedule.transaction.tags or []),
+        links=frozenset(),
         postings=postings,
     )

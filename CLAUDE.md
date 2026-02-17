@@ -17,6 +17,7 @@ Guide for Claude Code when working on this repository.
 Beanschedule is a **beangulp hook** that automatically matches imported bank transactions to scheduled/recurring transactions and enriches them with posting details, metadata, and tags.
 
 **Key Components**:
+
 - `schema.py` - Pydantic data models
 - `matcher.py` - Scoring algorithm (payee + amount + date)
 - `recurrence.py` - Date generation (MONTHLY, WEEKLY, YEARLY, etc.)
@@ -43,6 +44,18 @@ uv run ruff check beanschedule/ tests/ && uv run mypy beanschedule/
 
 See `.continue/rules/setup-and-commands.md` for full reference.
 
+## Code Quality Checks
+
+**REQUIRED**: After every Python code change, run the following checks and ensure they all pass with zero errors:
+
+```bash
+uv run ruff check --fix beanschedule/ tests/
+uv run ruff format beanschedule/ tests/
+uv run ty check
+```
+
+These checks ensure code style consistency, proper formatting, and type safety. All three must resolve with zero errors before committing changes.
+
 ## Important Notes
 
 1. **CLI Testing**: Use Click's `CliRunner` in tests, NOT manual `uv run beanschedule` commands during development. Manual testing is only for end-user validation.
@@ -67,6 +80,7 @@ See `.continue/rules/architecture.md` for full architecture details.
 ## v1.4.0 Status (Current)
 
 ✅ **Completed in v1.4.0**:
+
 - Skip markers for intentionally skipped scheduled transactions
 - Configurable forecast settings (forecast_months, min_forecast_date, include_past_dates)
 - Pending transactions feature (one-time staging, auto-matching, auto-removal)

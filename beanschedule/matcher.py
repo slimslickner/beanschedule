@@ -5,7 +5,6 @@ import re
 from datetime import date
 from decimal import Decimal
 from difflib import SequenceMatcher
-from typing import Optional
 
 from beancount.core import data
 
@@ -82,7 +81,9 @@ class TransactionMatcher:
 
         return total_score
 
-    def _account_matches(self, transaction: data.Transaction, schedule: Schedule) -> bool:
+    def _account_matches(
+        self, transaction: data.Transaction, schedule: Schedule
+    ) -> bool:
         """Check if transaction account matches schedule account exactly."""
         if not transaction.postings:
             return False
@@ -190,14 +191,22 @@ class TransactionMatcher:
         if not transaction.postings:
             return 0.0
 
-        # Get amount from first posting
-        txn_amount = transaction.postings[0].units.number
+        # Get amount from first posting; posting may have no units or a None number
+        first_posting = transaction.postings[0]
+        if not first_posting.units or first_posting.units.number is None:
+            return 0.0
+        txn_amount = first_posting.units.number
 
         match_criteria = schedule.match
 
         # Check if using amount range
-        if match_criteria.amount_min is not None and match_criteria.amount_max is not None:
-            if match_criteria.amount_min <= txn_amount <= match_criteria.amount_max:
+        if (
+            match_criteria.amount_min is not None
+            and match_criteria.amount_max is not None
+        ):
+            amount_min = match_criteria.amount_min
+            amount_max = match_criteria.amount_max
+            if amount_min <= txn_amount <= amount_max:
                 return 1.0
             return 0.0
 
@@ -228,7 +237,7 @@ class TransactionMatcher:
         score = 1.0 - float(diff / tolerance)
         return max(0.0, min(1.0, score))
 
-    def _get_expected_amount_from_postings(self, schedule: Schedule) -> Optional[Decimal]:
+    def _get_expected_amount_from_postings(self, schedule: Schedule) -> Decimal | None:
         """
         Get expected amount from schedule postings by finding the posting
         that matches the schedule's match account.
@@ -274,7 +283,9 @@ class TransactionMatcher:
             Score from 0.0 to 1.0 (1.0 at exact match, 0.0 outside window).
         """
         txn_date = transaction.date
-        window_days = schedule.match.date_window_days or self.config.default_date_window_days
+        window_days = (
+            schedule.match.date_window_days or self.config.default_date_window_days
+        )
 
         diff_days = abs((txn_date - expected_date).days)
 
@@ -292,7 +303,7 @@ class TransactionMatcher:
         self,
         transaction: data.Transaction,
         candidates: list[tuple[Schedule, date]],
-    ) -> Optional[tuple[Schedule, date, float]]:
+    ) -> tuple[Schedule, date, float] | None:
         """
         Find best matching schedule for transaction.
 

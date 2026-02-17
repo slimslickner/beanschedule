@@ -376,7 +376,9 @@ def compute_stateful_splits(
     return splits
 
 
-def build_liability_balance_index(entries, accounts: set[str]) -> dict[str, tuple[Decimal, date]]:
+def build_liability_balance_index(
+    entries, accounts: set[str]
+) -> dict[str, tuple[Decimal, date]]:
     """Compute (remaining_balance, most_recent_date) for each tracked liability account.
 
     Uses beancount's realization engine to correctly compute account balances,

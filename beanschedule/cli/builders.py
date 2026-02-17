@@ -87,7 +87,9 @@ def extract_transaction_details(txn: data.Transaction) -> dict[str, Any]:
     for posting in txn.postings:
         posting_dict = {
             "account": posting.account,
-            "amount": float(posting.units.number) if posting.units else None,
+            "amount": float(posting.units.number)
+            if posting.units and posting.units.number is not None
+            else None,
             "narration": posting.meta.get("narration") if posting.meta else None,
         }
         postings.append(posting_dict)
@@ -97,7 +99,9 @@ def extract_transaction_details(txn: data.Transaction) -> dict[str, Any]:
         "payee": txn.payee,
         "narration": txn.narration,
         "account": first_posting.account,
-        "amount": float(first_posting.units.number) if first_posting.units else None,
+        "amount": float(first_posting.units.number)
+        if first_posting.units and first_posting.units.number is not None
+        else None,
         "tags": list(txn.tags),
         "postings": postings,
     }
@@ -142,7 +146,9 @@ def build_schedule_dict(  # noqa: PLR0913
         "match": {
             "account": txn_details["account"],
             "payee_pattern": payee_pattern,
-            "amount": float(txn_details["amount"]) if txn_details["amount"] is not None else None,
+            "amount": float(txn_details["amount"])
+            if txn_details["amount"] is not None
+            else None,
             "amount_tolerance": float(amount_tolerance),
             "amount_min": None,
             "amount_max": None,
@@ -255,8 +261,7 @@ def save_detected_schedules(candidates: list, output_dir: Path) -> int:
         with output_file.open("w") as f:
             f.write(f"# Auto-detected {candidate.frequency.formatted_name()} pattern\n")
             f.write(
-                f"# Confidence: {candidate.confidence * 100:.0f}% "
-                f"({candidate.transaction_count} transactions)\n",
+                f"# Confidence: {candidate.confidence * 100:.0f}% ({candidate.transaction_count} transactions)\n",
             )
             f.write(f"# Date range: {candidate.first_date} to {candidate.last_date}\n")
             f.write(f"# Payee: {candidate.payee}\n\n")

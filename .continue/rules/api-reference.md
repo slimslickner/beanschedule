@@ -11,6 +11,7 @@ description: Complete API reference for all beanschedule modules and classes
 Pydantic v2 models with validation. All use `model_validate()` or constructor.
 
 **GlobalConfig** - Matching thresholds and behavior
+
 ```python
 class GlobalConfig(BaseModel):
     match_threshold: float = 0.75  # Min score to match
@@ -19,6 +20,7 @@ class GlobalConfig(BaseModel):
 ```
 
 **MatchCriteria** - What to match against
+
 ```python
 class MatchCriteria(BaseModel):
     account: str  # e.g., "Assets:Bank:Checking" (required)
@@ -28,6 +30,7 @@ class MatchCriteria(BaseModel):
 ```
 
 **AmountCriteria** - Amount matching rules
+
 ```python
 class AmountCriteria(BaseModel):
     # One of:
@@ -37,6 +40,7 @@ class AmountCriteria(BaseModel):
 ```
 
 **RecurrenceRule** - How often the transaction occurs
+
 ```python
 class RecurrenceRule(BaseModel):
     frequency: FrequencyType  # MONTHLY, WEEKLY, YEARLY, BIMONTHLY, INTERVAL
@@ -47,6 +51,7 @@ class RecurrenceRule(BaseModel):
 ```
 
 **Schedule** - Complete schedule definition
+
 ```python
 class Schedule(BaseModel):
     id: str
@@ -58,6 +63,7 @@ class Schedule(BaseModel):
 ```
 
 **ScheduleFile** - Loaded YAML file
+
 ```python
 class ScheduleFile(BaseModel):
     config: GlobalConfig
@@ -99,6 +105,7 @@ class TransactionMatcher:
 ```
 
 **Scoring Breakdown** (0.0-1.0 per component):
+
 - **Payee** (40%): Exact match > fuzzy match (difflib) > regex match > no match
 - **Amount** (40%): Exact match > within tolerance > within range > no match
 - **Date** (20%): Exact match > within window > outside window
@@ -126,6 +133,7 @@ class RecurrenceEngine:
 ```
 
 **Frequency Types** (from `FrequencyType` enum):
+
 - `MONTHLY` - Day of month (e.g., 15th each month)
 - `WEEKLY` - Day of week (e.g., every Tuesday)
 - `YEARLY` - Specific date (e.g., Dec 25)
@@ -137,6 +145,7 @@ class RecurrenceEngine:
 ### loader.py — YAML Loading
 
 **File Modes**:
+
 1. Single file: `schedules.yaml`
 2. Directory: `schedules/` with `_config.yaml` + `*.yaml` files
 
@@ -264,6 +273,7 @@ def init(output: str):
 ```
 
 **Testing CLI**: Use Click's `CliRunner` (not manual execution):
+
 ```python
 from click.testing import CliRunner
 from beanschedule.cli import main
@@ -389,6 +399,7 @@ beanschedule pending list
 ```
 
 **Format Notes:**
+
 - Flag: `!` (indicates pending transaction)
 - Tag: `#pending` (required for identification)
 - Postings: Define splits with optional per-posting narrations
@@ -443,6 +454,7 @@ export BEANSCHEDULE_PENDING=/path/to/my/pending.beancount
 ### Overview
 
 Sometimes you need to mark a scheduled transaction as **intentionally skipped** for a specific date without creating a placeholder warning. For example:
+
 - Credit card with $0 balance that month (no transfer needed)
 - Subscription temporarily paused
 - One-time travel exception
@@ -452,6 +464,7 @@ Beanschedule supports skip markers — special transactions in your ledger that 
 ### Skip Marker Patterns
 
 A transaction is recognized as a skip marker if it has **any of**:
+
 1. **#skipped tag** — Transaction has `#skipped` tag
 2. **schedule_skipped metadata** — Transaction has `schedule_skipped` metadata key
 3. **Flag 'S'** — Transaction flag set to `S` (for "Skipped") - note: 'S' is not a standard Beancount flag, so use tags/metadata instead
@@ -471,6 +484,7 @@ Add this to your Beancount ledger:
 Note: The posting must include an amount (e.g., `0 USD`) for Beancount to properly parse the transaction.
 
 **Fields**:
+
 - **Date**: The expected occurrence date
 - **Flag**: `S` (identifies as skip marker)
 - **Payee**: Your schedule's payee name
@@ -523,6 +537,7 @@ beanschedule skip --select --ledger ledger.beancount --output skips.beancount
 ```
 
 The interactive mode:
+
 1. Scans your ledger for expected scheduled transactions
 2. Identifies missing occurrences (expected but not found)
 3. Displays them in a numbered list with dates
@@ -531,15 +546,18 @@ The interactive mode:
 
 **CLI Options**:
 
-*Direct Mode:*
+_Direct Mode:_
+
 - `SCHEDULE_ID`: ID of the schedule to skip
 - `DATES`: One or more dates to skip (format: YYYY-MM-DD)
 
-*Interactive Mode:*
+_Interactive Mode:_
+
 - `--select`: Enable interactive selection from missing transactions
 - `--ledger, -l`: Ledger file to scan (required with --select)
 
-*Common Options:*
+_Common Options:_
+
 - `--reason, -r`: Reason for skipping (added to narration)
 - `--output, -o`: File to append to (default: stdout)
 - `--schedules-path, -s`: Path to schedules.yaml or schedules/ directory (auto-discovered if not specified)
@@ -559,6 +577,7 @@ The `beanschedule skip` CLI command generates:
 ### How It Works
 
 When the hook runs:
+
 1. It loads expected occurrences for each schedule
 2. It scans existing ledger entries for transactions with `schedule_id` metadata
 3. If a transaction is detected as a skip marker (flag 'S', #skipped tag, or schedule_skipped metadata):
@@ -570,6 +589,7 @@ When the hook runs:
 ### Examples
 
 **Credit card with zero balance** (no transfer needed):
+
 ```beancount
 2026-02-15 * "Capital One Payment" "[SKIPPED] $0 balance this month"
   #skipped
@@ -579,6 +599,7 @@ When the hook runs:
 ```
 
 **Gym membership pause** (traveling):
+
 ```beancount
 2026-07-15 * "24 Hour Fitness" "[SKIPPED] Traveling in Europe"
   #skipped
@@ -588,6 +609,7 @@ When the hook runs:
 ```
 
 **Using metadata instead of tag** (alternative style):
+
 ```beancount
 2026-03-01 * "Landlord" "[SKIPPED] Prepaid two months in advance"
   schedule_id: "rent-payment"
@@ -598,12 +620,14 @@ When the hook runs:
 ### When to Use Skip Markers
 
 ✓ **Use skip markers for**:
+
 - One-time skipped occurrences
 - Documented exceptions (reason is visible in ledger)
 - When you want to keep the schedule unchanged
 - When you want a permanent audit trail
 
 ✗ **Don't use skip markers for**:
+
 - Disabling all future occurrences (use `enabled: false` in schedule YAML instead)
 - Multiple months at a time (pause the schedule temporarily)
 - Recurring skips (add explicit dates to schedule's recurrence rule)
@@ -617,4 +641,7 @@ INFO: Detected skip marker for credit-card-payment on 2026-02-15 ($0 balance)
 ```
 
 This helps you verify skips are being recognized correctly.
+
+```
+
 ```

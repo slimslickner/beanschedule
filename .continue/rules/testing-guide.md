@@ -8,15 +8,15 @@ description: Guide to testing beanschedule with pytest and fixtures
 
 77 tests, 86% coverage:
 
-| File | Tests | Status | Focus |
-|------|-------|--------|-------|
-| `test_schema.py` | 34 | ✅ Complete | Pydantic model validation |
-| `test_matcher.py` | 28 | ✅ Complete | Scoring algorithm |
-| `test_hook.py` | 15 | ✅ Complete | Beangulp integration |
-| `test_recurrence.py` | — | Pending | Date generation |
-| `test_loader.py` | — | Pending | YAML loading |
-| `test_cli.py` | — | Pending | CLI commands |
-| `test_beangulp_integration.py` | — | Pending | End-to-end flow |
+| File                           | Tests | Status      | Focus                     |
+| ------------------------------ | ----- | ----------- | ------------------------- |
+| `test_schema.py`               | 34    | ✅ Complete | Pydantic model validation |
+| `test_matcher.py`              | 28    | ✅ Complete | Scoring algorithm         |
+| `test_hook.py`                 | 15    | ✅ Complete | Beangulp integration      |
+| `test_recurrence.py`           | —     | Pending     | Date generation           |
+| `test_loader.py`               | —     | Pending     | YAML loading              |
+| `test_cli.py`                  | —     | Pending     | CLI commands              |
+| `test_beangulp_integration.py` | —     | Pending     | End-to-end flow           |
 
 ## Running Tests
 
@@ -160,6 +160,7 @@ def test_validate_command():
 ```
 
 **Why**: CliRunner tests are:
+
 - Faster (no subprocess)
 - More reliable (no environment issues)
 - Don't require package installation
@@ -191,6 +192,7 @@ def test_real_examples(temp_schedule_dir):
 - Skip: tedious boilerplate, obvious paths
 
 Check coverage:
+
 ```bash
 uv run pytest tests/ --cov=beanschedule --cov-report=html
 # Open htmlcov/index.html

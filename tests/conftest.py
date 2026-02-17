@@ -17,7 +17,7 @@ from beanschedule.schema import (
     ScheduleFile,
     TransactionTemplate,
 )
-from beanschedule.types import DayOfWeek, FrequencyType
+from beanschedule.types import DayOfWeek, FlagType, FrequencyType
 
 # ============================================================================
 # Transaction and Posting Builders
@@ -26,19 +26,21 @@ from beanschedule.types import DayOfWeek, FrequencyType
 
 def make_posting(
     account: str,
-    amount_value: Decimal,
+    amount_value: Decimal | None,
     currency: str = "USD",
     **kwargs,
 ) -> data.Posting:
     """Create a beancount Posting with amount."""
-    posting_amount = amount.Amount(amount_value, currency) if amount_value is not None else None
+    posting_amount = (
+        amount.Amount(amount_value, currency) if amount_value is not None else None
+    )
     return data.Posting(
         account=account,
         units=posting_amount,
-        cost=kwargs.get("cost", None),
-        price=kwargs.get("price", None),
-        flag=kwargs.get("flag", None),
-        meta=kwargs.get("meta", None),
+        cost=kwargs.get("cost"),
+        price=kwargs.get("price"),
+        flag=kwargs.get("flag"),
+        meta=kwargs.get("meta"),
     )
 
 
@@ -46,7 +48,7 @@ def make_transaction(
     date_: date,
     payee: str,
     account: str,
-    amount_value: Decimal,
+    amount_value: Decimal | None,
     currency: str = "USD",
     **kwargs,
 ) -> data.Transaction:
@@ -66,8 +68,8 @@ def make_transaction(
         flag=kwargs.get("flag", "*"),
         payee=payee,
         narration=kwargs.get("narration", "Test transaction"),
-        tags=kwargs.get("tags", set()),
-        links=kwargs.get("links", set()),
+        tags=frozenset(kwargs.get("tags", frozenset())),
+        links=frozenset(kwargs.get("links", frozenset())),
         postings=[posting],
     )
 
@@ -91,8 +93,8 @@ def make_transaction_with_postings(
         flag=kwargs.get("flag", "*"),
         payee=payee,
         narration=kwargs.get("narration", "Test transaction"),
-        tags=kwargs.get("tags", set()),
-        links=kwargs.get("links", set()),
+        tags=frozenset(kwargs.get("tags", frozenset())),
+        links=frozenset(kwargs.get("links", frozenset())),
         postings=postings,
     )
 
@@ -107,8 +109,8 @@ def make_match_criteria(
     payee_pattern: str = "Test Payee",
     amount: Decimal = Decimal("-100.00"),
     amount_tolerance: Decimal = Decimal("5.00"),
-    amount_min: Decimal = None,
-    amount_max: Decimal = None,
+    amount_min: Decimal | None = None,
+    amount_max: Decimal | None = None,
     date_window_days: int = 3,
     **kwargs,
 ) -> MatchCriteria:
@@ -127,13 +129,13 @@ def make_match_criteria(
 def make_recurrence_rule(
     frequency: FrequencyType = FrequencyType.MONTHLY,
     start_date: date = date(2024, 1, 1),
-    end_date: date = None,
-    day_of_month: int = 15,
-    month: int = None,
-    day_of_week: DayOfWeek = None,
+    end_date: date | None = None,
+    day_of_month: int | None = 15,
+    month: int | None = None,
+    day_of_week: DayOfWeek | None = None,
     interval: int = 1,
-    days_of_month: list[int] = None,
-    interval_months: int = None,
+    days_of_month: list[int] | None = None,
+    interval_months: int | None = None,
     **kwargs,
 ) -> RecurrenceRule:
     """Create RecurrenceRule with sensible defaults for the given frequency."""
@@ -152,8 +154,8 @@ def make_recurrence_rule(
 
 def make_posting_template(
     account: str,
-    amount: Decimal = None,
-    narration: str = None,
+    amount: Decimal | None = None,
+    narration: str | None = None,
     role: str | None = None,
 ) -> Posting:
     """Create a transaction posting template."""
@@ -166,11 +168,11 @@ def make_posting_template(
 
 
 def make_transaction_template(
-    payee: str = None,
-    narration: str = None,
-    tags: list[str] = None,
+    payee: str | None = None,
+    narration: str | None = None,
+    tags: list[str] | None = None,
     schedule_id: str = "test-schedule",
-    postings: list[Posting] = None,
+    postings: list[Posting] | None = None,
     **kwargs,
 ) -> TransactionTemplate:
     """Create TransactionTemplate with sensible defaults."""
@@ -246,9 +248,9 @@ def make_global_config(
     fuzzy_match_threshold: float = 0.80,
     default_date_window_days: int = 3,
     default_amount_tolerance_percent: float = 0.02,
-    placeholder_flag: str = "!",
+    placeholder_flag: FlagType = "!",
     forecast_months: int = 0,
-    min_forecast_date: date = None,
+    min_forecast_date: date | None = None,
     include_past_dates: bool = False,
     **kwargs,
 ) -> GlobalConfig:
@@ -269,8 +271,8 @@ def make_global_config(
 
 
 def make_schedule_file(
-    schedules: list[Schedule] = None,
-    config: GlobalConfig = None,
+    schedules: list[Schedule] | None = None,
+    config: GlobalConfig | None = None,
 ) -> ScheduleFile:
     """Create a ScheduleFile with schedules and config."""
     if schedules is None:
@@ -389,7 +391,9 @@ def assert_transaction_enriched(txn: data.Transaction, expected_schedule_id: str
     """Assert that a transaction has been enriched with schedule metadata."""
     assert "schedule_id" in txn.meta, "Missing schedule_id in metadata"
     assert txn.meta["schedule_id"] == expected_schedule_id
-    assert "schedule_matched_date" in txn.meta, "Missing schedule_matched_date in metadata"
+    assert "schedule_matched_date" in txn.meta, (
+        "Missing schedule_matched_date in metadata"
+    )
     assert "schedule_confidence" in txn.meta, "Missing schedule_confidence in metadata"
 
 
@@ -407,6 +411,5 @@ def assert_posting_amounts(txn: data.Transaction, expected_amounts: dict[str, De
     for account, expected_amount in expected_amounts.items():
         assert account in posting_amounts, f"Missing posting for account {account}"
         assert posting_amounts[account] == expected_amount, (
-            f"Amount mismatch for {account}: "
-            f"expected {expected_amount}, got {posting_amounts[account]}"
+            f"Amount mismatch for {account}: expected {expected_amount}, got {posting_amounts[account]}"
         )

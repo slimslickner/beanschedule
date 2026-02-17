@@ -3,7 +3,7 @@
 from datetime import date
 from decimal import Decimal
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -16,21 +16,21 @@ class MatchCriteria(BaseModel):
 
     account: str = Field(..., description="Account to match (exact)")
     payee_pattern: str = Field(..., description="Payee pattern (regex or fuzzy)")
-    amount: Optional[Decimal] = Field(
+    amount: Decimal | None = Field(
         None,
         description="[DEPRECATED] Expected amount - prefer specifying amount in postings instead. "
         "Amount is now derived from the posting for the matched account.",
     )
-    amount_tolerance: Optional[Decimal] = Field(None, description="Amount tolerance (±)")
-    amount_min: Optional[Decimal] = Field(None, description="Minimum amount for range")
-    amount_max: Optional[Decimal] = Field(None, description="Maximum amount for range")
-    date_window_days: Optional[int] = Field(
+    amount_tolerance: Decimal | None = Field(None, description="Amount tolerance (±)")
+    amount_min: Decimal | None = Field(None, description="Minimum amount for range")
+    amount_max: Decimal | None = Field(None, description="Maximum amount for range")
+    date_window_days: int | None = Field(
         constants.DEFAULT_DATE_WINDOW_DAYS, description="Date matching window (±days)"
     )
 
     @field_validator("amount_tolerance")
     @classmethod
-    def validate_amount_tolerance(cls, v: Optional[Decimal]) -> Optional[Decimal]:
+    def validate_amount_tolerance(cls, v: Decimal | None) -> Decimal | None:
         """Ensure amount_tolerance is positive."""
         if v is not None and v < 0:
             raise ValueError("amount_tolerance must be positive")
@@ -38,7 +38,7 @@ class MatchCriteria(BaseModel):
 
     @field_validator("date_window_days")
     @classmethod
-    def validate_date_window(cls, v: Optional[int]) -> Optional[int]:
+    def validate_date_window(cls, v: int | None) -> int | None:
         """Ensure date_window_days is positive."""
         if v is not None and v < 0:
             raise ValueError("date_window_days must be positive")
@@ -50,50 +50,54 @@ class RecurrenceRule(BaseModel):
 
     frequency: FrequencyType = Field(..., description="Recurrence frequency")
     start_date: date = Field(..., description="Start date for recurrence")
-    end_date: Optional[date] = Field(None, description="End date (null = ongoing)")
+    end_date: date | None = Field(None, description="End date (null = ongoing)")
 
     # Monthly/Yearly
-    day_of_month: Optional[int] = Field(None, description="Day of month (1-31)")
-    month: Optional[int] = Field(None, description="Month for yearly (1-12)")
+    day_of_month: int | None = Field(None, description="Day of month (1-31)")
+    month: int | None = Field(None, description="Month for yearly (1-12)")
 
     # Weekly
-    day_of_week: Optional[DayOfWeek] = Field(None, description="Day of week")
-    interval: Optional[int] = Field(1, description="Interval (e.g., 2 for bi-weekly)")
+    day_of_week: DayOfWeek | None = Field(None, description="Day of week")
+    interval: int | None = Field(1, description="Interval (e.g., 2 for bi-weekly)")
 
     # Bi-monthly / MONTHLY_ON_DAYS
-    days_of_month: Optional[list[int]] = Field(
+    days_of_month: list[int] | None = Field(
         None, description="Days of month (for BIMONTHLY/MONTHLY_ON_DAYS)"
     )
 
     # Interval (every X months)
-    interval_months: Optional[int] = Field(None, description="Month interval")
+    interval_months: int | None = Field(None, description="Month interval")
 
     # NTH_WEEKDAY (e.g., 2nd Tuesday)
-    nth_occurrence: Optional[int] = Field(
+    nth_occurrence: int | None = Field(
         None, description="Nth occurrence of weekday (1-5, -1 for last)"
     )
 
     @field_validator("day_of_month")
     @classmethod
-    def validate_day_of_month(cls, v: Optional[int]) -> Optional[int]:
+    def validate_day_of_month(cls, v: int | None) -> int | None:
         """Ensure day_of_month is in valid range."""
-        if v is not None and (v < constants.MIN_DAY_OF_MONTH or v > constants.MAX_DAY_OF_MONTH):
+        if v is not None and (
+            v < constants.MIN_DAY_OF_MONTH or v > constants.MAX_DAY_OF_MONTH
+        ):
             msg = f"day_of_month must be between {constants.MIN_DAY_OF_MONTH} and {constants.MAX_DAY_OF_MONTH}"
             raise ValueError(msg)
         return v
 
     @field_validator("month")
     @classmethod
-    def validate_month(cls, v: Optional[int]) -> Optional[int]:
+    def validate_month(cls, v: int | None) -> int | None:
         """Ensure month is in valid range."""
         if v is not None and (v < constants.MIN_MONTH or v > constants.MAX_MONTH):
-            msg = f"month must be between {constants.MIN_MONTH} and {constants.MAX_MONTH}"
+            msg = (
+                f"month must be between {constants.MIN_MONTH} and {constants.MAX_MONTH}"
+            )
             raise ValueError(msg)
         return v
 
     @field_validator("interval")
     @classmethod
-    def validate_interval(cls, v: Optional[int]) -> Optional[int]:
+    def validate_interval(cls, v: int | None) -> int | None:
         """Ensure interval is positive."""
         if v is not None and v < 1:
             raise ValueError("interval must be at least 1")
@@ -101,7 +105,7 @@ class RecurrenceRule(BaseModel):
 
     @field_validator("interval_months")
     @classmethod
-    def validate_interval_months(cls, v: Optional[int]) -> Optional[int]:
+    def validate_interval_months(cls, v: int | None) -> int | None:
         """Ensure interval_months is positive."""
         if v is not None and v < 1:
             raise ValueError("interval_months must be at least 1")
@@ -109,7 +113,7 @@ class RecurrenceRule(BaseModel):
 
     @field_validator("days_of_month")
     @classmethod
-    def validate_days_of_month(cls, v: Optional[list[int]]) -> Optional[list[int]]:
+    def validate_days_of_month(cls, v: list[int] | None) -> list[int] | None:
         """Ensure days_of_month are in valid range."""
         if v is not None:
             for day in v:
@@ -120,7 +124,7 @@ class RecurrenceRule(BaseModel):
 
     @field_validator("nth_occurrence")
     @classmethod
-    def validate_nth_occurrence(cls, v: Optional[int]) -> Optional[int]:
+    def validate_nth_occurrence(cls, v: int | None) -> int | None:
         """Ensure nth_occurrence is valid (1-5 or -1 for last)."""
         if v is not None and (v < -1 or v == 0 or v > 5):
             raise ValueError("nth_occurrence must be 1-5 or -1 (for last)")
@@ -131,9 +135,9 @@ class Posting(BaseModel):
     """Transaction posting."""
 
     account: str = Field(..., description="Account name")
-    amount: Optional[Decimal] = Field(None, description="Amount (null = use imported)")
-    narration: Optional[str] = Field(None, description="Comment for this posting")
-    role: Optional[str] = Field(
+    amount: Decimal | None = Field(None, description="Amount (null = use imported)")
+    narration: str | None = Field(None, description="Comment for this posting")
+    role: str | None = Field(
         None,
         description=(
             "Posting role for amortization: 'principal', 'interest', 'payment', or 'escrow'. "
@@ -143,7 +147,7 @@ class Posting(BaseModel):
 
     @field_validator("role")
     @classmethod
-    def validate_role(cls, v: Optional[str]) -> Optional[str]:
+    def validate_role(cls, v: str | None) -> str | None:
         """Ensure role is valid."""
         if v is not None:
             allowed_roles = {"principal", "interest", "payment", "escrow"}
@@ -156,12 +160,14 @@ class Posting(BaseModel):
 class TransactionTemplate(BaseModel):
     """Transaction template for schedule."""
 
-    payee: Optional[str] = Field(None, description="Payee (overrides imported)")
-    narration: Optional[str] = Field(None, description="Narration (overrides imported)")
-    tags: Optional[list[str]] = Field(default_factory=list, description="Tags to add")
-    links: Optional[list[str]] = Field(default_factory=list, description="Links to add")
-    metadata: dict[str, Any] = Field(default_factory=dict, description="Metadata to add")
-    postings: Optional[list[Posting]] = Field(None, description="Full posting list")
+    payee: str | None = Field(None, description="Payee (overrides imported)")
+    narration: str | None = Field(None, description="Narration (overrides imported)")
+    tags: list[str] | None = Field(default_factory=list, description="Tags to add")
+    links: list[str] | None = Field(default_factory=list, description="Links to add")
+    metadata: dict[str, Any] = Field(
+        default_factory=dict, description="Metadata to add"
+    )
+    postings: list[Posting] | None = Field(None, description="Full posting list")
 
     @field_validator("metadata")
     @classmethod
@@ -177,7 +183,8 @@ class MissingTransactionConfig(BaseModel):
 
     create_placeholder: bool = Field(True, description="Create placeholder transaction")
     flag: FlagType = Field(
-        constants.DEFAULT_PLACEHOLDER_FLAG, description="Transaction flag for placeholder"
+        constants.DEFAULT_PLACEHOLDER_FLAG,
+        description="Transaction flag for placeholder",
     )
     narration_prefix: str = Field(
         constants.DEFAULT_MISSING_PREFIX, description="Prefix for narration"
@@ -197,15 +204,19 @@ class AmortizationOverride(BaseModel):
             extra_principal: 500.00
     """
 
-    effective_date: date = Field(..., description="Date when override becomes effective")
-    principal: Optional[Decimal] = Field(None, description="New principal balance")
-    annual_rate: Optional[Decimal] = Field(None, description="New annual interest rate")
-    term_months: Optional[int] = Field(None, description="New remaining term in months")
-    extra_principal: Optional[Decimal] = Field(None, description="New extra principal amount")
+    effective_date: date = Field(
+        ..., description="Date when override becomes effective"
+    )
+    principal: Decimal | None = Field(None, description="New principal balance")
+    annual_rate: Decimal | None = Field(None, description="New annual interest rate")
+    term_months: int | None = Field(None, description="New remaining term in months")
+    extra_principal: Decimal | None = Field(
+        None, description="New extra principal amount"
+    )
 
     @field_validator("principal")
     @classmethod
-    def validate_principal_positive(cls, v: Optional[Decimal]) -> Optional[Decimal]:
+    def validate_principal_positive(cls, v: Decimal | None) -> Decimal | None:
         """Ensure principal is positive if provided."""
         if v is not None and v <= 0:
             raise ValueError("principal must be positive")
@@ -213,7 +224,7 @@ class AmortizationOverride(BaseModel):
 
     @field_validator("annual_rate")
     @classmethod
-    def validate_rate_nonnegative(cls, v: Optional[Decimal]) -> Optional[Decimal]:
+    def validate_rate_nonnegative(cls, v: Decimal | None) -> Decimal | None:
         """Ensure annual_rate is non-negative if provided."""
         if v is not None and v < 0:
             raise ValueError("annual_rate must be non-negative")
@@ -221,7 +232,7 @@ class AmortizationOverride(BaseModel):
 
     @field_validator("term_months")
     @classmethod
-    def validate_term_positive(cls, v: Optional[int]) -> Optional[int]:
+    def validate_term_positive(cls, v: int | None) -> int | None:
         """Ensure term_months is positive if provided."""
         if v is not None and v <= 0:
             raise ValueError("term_months must be positive")
@@ -229,7 +240,7 @@ class AmortizationOverride(BaseModel):
 
     @field_validator("extra_principal")
     @classmethod
-    def validate_extra_principal_nonnegative(cls, v: Optional[Decimal]) -> Optional[Decimal]:
+    def validate_extra_principal_nonnegative(cls, v: Decimal | None) -> Decimal | None:
         """Ensure extra_principal is non-negative if provided."""
         if v is not None and v < 0:
             raise ValueError("extra_principal must be non-negative")
@@ -268,22 +279,24 @@ class AmortizationConfig(BaseModel):
     """
 
     # ── shared ────────────────────────────────────────────────────────────
-    annual_rate: Decimal = Field(..., description="Annual interest rate (e.g., 0.0675 for 6.75%)")
-    extra_principal: Optional[Decimal] = Field(
+    annual_rate: Decimal = Field(
+        ..., description="Annual interest rate (e.g., 0.0675 for 6.75%)"
+    )
+    extra_principal: Decimal | None = Field(
         None, description="Optional extra principal payment per period"
     )
-    overrides: Optional[list[AmortizationOverride]] = Field(
+    overrides: list[AmortizationOverride] | None = Field(
         None, description="Date-based parameter overrides for mid-loan changes"
     )
 
     # ── static mode ───────────────────────────────────────────────────────
-    principal: Optional[Decimal] = Field(
+    principal: Decimal | None = Field(
         None, description="Initial loan principal (required for static mode)"
     )
-    term_months: Optional[int] = Field(
+    term_months: int | None = Field(
         None, description="Loan term in months (required for static mode)"
     )
-    start_date: Optional[date] = Field(
+    start_date: date | None = Field(
         None, description="First payment date (required for static mode)"
     )
 
@@ -292,14 +305,14 @@ class AmortizationConfig(BaseModel):
         False,
         description="Read starting balance from the liability account in the ledger",
     )
-    monthly_payment: Optional[Decimal] = Field(
+    monthly_payment: Decimal | None = Field(
         None, description="Fixed P&I payment amount (required for stateful mode)"
     )
     compounding: CompoundingFrequency = Field(
         CompoundingFrequency.MONTHLY,
         description="Interest compounding frequency (MONTHLY or DAILY)",
     )
-    payment_day_of_month: Optional[int] = Field(
+    payment_day_of_month: int | None = Field(
         None,
         description="Day of month for amortization payments (1-31). If set, overrides the transaction recurrence day for amortization calculations. Defaults to transaction recurrence day if not specified.",
     )
@@ -308,7 +321,7 @@ class AmortizationConfig(BaseModel):
 
     @field_validator("principal")
     @classmethod
-    def validate_principal_positive(cls, v: Optional[Decimal]) -> Optional[Decimal]:
+    def validate_principal_positive(cls, v: Decimal | None) -> Decimal | None:
         """Ensure principal is positive if provided."""
         if v is not None and v <= 0:
             raise ValueError("principal must be positive")
@@ -324,7 +337,7 @@ class AmortizationConfig(BaseModel):
 
     @field_validator("term_months")
     @classmethod
-    def validate_term_positive(cls, v: Optional[int]) -> Optional[int]:
+    def validate_term_positive(cls, v: int | None) -> int | None:
         """Ensure term_months is positive if provided."""
         if v is not None and v <= 0:
             raise ValueError("term_months must be positive")
@@ -332,7 +345,7 @@ class AmortizationConfig(BaseModel):
 
     @field_validator("extra_principal")
     @classmethod
-    def validate_extra_principal_nonnegative(cls, v: Optional[Decimal]) -> Optional[Decimal]:
+    def validate_extra_principal_nonnegative(cls, v: Decimal | None) -> Decimal | None:
         """Ensure extra_principal is non-negative if provided."""
         if v is not None and v < 0:
             raise ValueError("extra_principal must be non-negative")
@@ -340,7 +353,7 @@ class AmortizationConfig(BaseModel):
 
     @field_validator("monthly_payment")
     @classmethod
-    def validate_monthly_payment_positive(cls, v: Optional[Decimal]) -> Optional[Decimal]:
+    def validate_monthly_payment_positive(cls, v: Decimal | None) -> Decimal | None:
         """Ensure monthly_payment is positive if provided."""
         if v is not None and v <= 0:
             raise ValueError("monthly_payment must be positive")
@@ -348,7 +361,7 @@ class AmortizationConfig(BaseModel):
 
     @field_validator("payment_day_of_month")
     @classmethod
-    def validate_payment_day_of_month(cls, v: Optional[int]) -> Optional[int]:
+    def validate_payment_day_of_month(cls, v: int | None) -> int | None:
         """Ensure payment_day_of_month is between 1 and 31 if provided."""
         if v is not None and (v < 1 or v > 31):
             raise ValueError("payment_day_of_month must be between 1 and 31")
@@ -359,7 +372,9 @@ class AmortizationConfig(BaseModel):
         """Enforce required fields based on selected mode."""
         if self.balance_from_ledger:
             if self.monthly_payment is None:
-                raise ValueError("monthly_payment is required when balance_from_ledger is true")
+                raise ValueError(
+                    "monthly_payment is required when balance_from_ledger is true"
+                )
         else:
             if self.principal is None:
                 raise ValueError(
@@ -390,10 +405,10 @@ class Schedule(BaseModel):
         default_factory=MissingTransactionConfig,
         description="Missing transaction config",
     )
-    amortization: Optional[AmortizationConfig] = Field(
+    amortization: AmortizationConfig | None = Field(
         None, description="Optional loan amortization configuration"
     )
-    source_file: Optional[Path] = Field(
+    source_file: Path | None = Field(
         None,
         exclude=True,
         description="Source file path (populated during loading, not from YAML)",
@@ -433,7 +448,8 @@ class GlobalConfig(BaseModel):
         constants.DEFAULT_CURRENCY, description="Default currency for transactions"
     )
     fuzzy_match_threshold: float = Field(
-        constants.DEFAULT_FUZZY_MATCH_THRESHOLD, description="Fuzzy match threshold (0.0-1.0)"
+        constants.DEFAULT_FUZZY_MATCH_THRESHOLD,
+        description="Fuzzy match threshold (0.0-1.0)",
     )
     default_date_window_days: int = Field(
         constants.DEFAULT_DATE_WINDOW_DAYS, description="Default date window (±days)"
@@ -443,13 +459,16 @@ class GlobalConfig(BaseModel):
         description="Default amount tolerance (%)",
     )
     placeholder_flag: FlagType = Field(
-        constants.DEFAULT_PLACEHOLDER_FLAG, description="Flag for placeholder transactions"
+        constants.DEFAULT_PLACEHOLDER_FLAG,
+        description="Flag for placeholder transactions",
     )
     forecast_months: int = Field(
-        constants.DEFAULT_FORECAST_MONTHS, description="How many months forward to forecast"
+        constants.DEFAULT_FORECAST_MONTHS,
+        description="How many months forward to forecast",
     )
-    min_forecast_date: Optional[date] = Field(
-        None, description="Override start date for forecasting (null = use transaction range)"
+    min_forecast_date: date | None = Field(
+        None,
+        description="Override start date for forecasting (null = use transaction range)",
     )
     include_past_dates: bool = Field(
         constants.DEFAULT_INCLUDE_PAST_DATES,
@@ -479,5 +498,9 @@ class ScheduleFile(BaseModel):
     version: str = Field(
         constants.SCHEDULE_FILE_VERSION, description="Schedule file format version"
     )
-    schedules: list[Schedule] = Field(default_factory=list, description="List of schedules")
-    config: GlobalConfig = Field(default_factory=GlobalConfig, description="Global configuration")
+    schedules: list[Schedule] = Field(
+        default_factory=list, description="List of schedules"
+    )
+    config: GlobalConfig = Field(
+        default_factory=GlobalConfig, description="Global configuration"
+    )

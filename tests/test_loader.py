@@ -1,17 +1,18 @@
 """Tests for schedule file loading and discovery."""
 
 import os
+
 import pytest
 import yaml
 
 from beanschedule.loader import (
     find_schedules_location,
-    load_schedule_from_file,
-    load_schedules_from_directory,
-    load_schedules_file,
     get_enabled_schedules,
+    load_schedule_from_file,
+    load_schedules_file,
+    load_schedules_from_directory,
 )
-from beanschedule.schema import ScheduleFile, GlobalConfig
+from beanschedule.schema import GlobalConfig, ScheduleFile
 
 
 class TestLoadScheduleFromFile:
@@ -39,7 +40,9 @@ class TestLoadScheduleFromFile:
         schedule_path = temp_schedule_dir / "disabled-schedule.yaml"
         sample_schedule_dict["id"] = "disabled-schedule"
         sample_schedule_dict["enabled"] = False
-        sample_schedule_dict["transaction"]["metadata"]["schedule_id"] = "disabled-schedule"
+        sample_schedule_dict["transaction"]["metadata"]["schedule_id"] = (
+            "disabled-schedule"
+        )
 
         with open(schedule_path, "w") as f:
             yaml.dump(sample_schedule_dict, f)
@@ -49,7 +52,9 @@ class TestLoadScheduleFromFile:
         assert schedule is not None
         assert schedule.enabled is False
 
-    def test_filename_id_mismatch_returns_none(self, temp_schedule_dir, sample_schedule_dict):
+    def test_filename_id_mismatch_returns_none(
+        self, temp_schedule_dir, sample_schedule_dict
+    ):
         """Test that filename/ID mismatch returns None."""
         # Create file with mismatched ID
         schedule_path = temp_schedule_dir / "wrong-name.yaml"
@@ -108,7 +113,9 @@ class TestLoadScheduleFromFile:
 class TestLoadSchedulesFromDirectory:
     """Tests for loading schedules from directory."""
 
-    def test_load_directory_with_schedules(self, temp_schedule_dir, sample_schedule_dict):
+    def test_load_directory_with_schedules(
+        self, temp_schedule_dir, sample_schedule_dict
+    ):
         """Test loading multiple schedules from directory."""
         # Create two schedule files
         for i, name in enumerate(["schedule-1", "schedule-2"]):
@@ -143,9 +150,12 @@ class TestLoadSchedulesFromDirectory:
         schedule_file = load_schedules_from_directory(temp_schedule_dir)
 
         # Should have 1 schedule (not 2, since _config.yaml is skipped)
+        assert schedule_file is not None
         assert len(schedule_file.schedules) == 1
 
-    def test_directory_skips_hidden_files(self, temp_schedule_dir, sample_schedule_dict):
+    def test_directory_skips_hidden_files(
+        self, temp_schedule_dir, sample_schedule_dict
+    ):
         """Test that hidden files (.filename) are skipped."""
         # Create schedule file
         schedule_path = temp_schedule_dir / "test-schedule.yaml"
@@ -165,6 +175,7 @@ class TestLoadSchedulesFromDirectory:
         schedule_file = load_schedules_from_directory(temp_schedule_dir)
 
         # Should have 1 schedule (hidden file skipped)
+        assert schedule_file is not None
         assert len(schedule_file.schedules) == 1
 
     def test_directory_loads_global_config(self, temp_schedule_dir):
@@ -194,7 +205,9 @@ class TestLoadSchedulesFromDirectory:
         assert schedule_file is not None
         assert schedule_file.config.fuzzy_match_threshold == 0.80  # Default
 
-    def test_duplicate_schedule_ids_detected(self, temp_schedule_dir, sample_schedule_dict):
+    def test_duplicate_schedule_ids_detected(
+        self, temp_schedule_dir, sample_schedule_dict
+    ):
         """Test that duplicate schedule IDs are detected."""
         # Create one valid schedule file
         schedule_path = temp_schedule_dir / "my-schedule.yaml"
@@ -211,10 +224,13 @@ class TestLoadSchedulesFromDirectory:
         schedule_file = load_schedules_from_directory(temp_schedule_dir)
 
         # Should have 1 schedule
+        assert schedule_file is not None
         assert len(schedule_file.schedules) == 1
         assert schedule_file.schedules[0].id == "my-schedule"
 
-    def test_invalid_schedule_files_skipped(self, temp_schedule_dir, sample_schedule_dict):
+    def test_invalid_schedule_files_skipped(
+        self, temp_schedule_dir, sample_schedule_dict
+    ):
         """Test that invalid schedule files are skipped."""
         # Create valid schedule
         valid_path = temp_schedule_dir / "valid-schedule.yaml"
@@ -238,6 +254,7 @@ class TestLoadSchedulesFromDirectory:
         schedule_file = load_schedules_from_directory(temp_schedule_dir)
 
         # Should have 1 schedule (invalid skipped)
+        assert schedule_file is not None
         assert len(schedule_file.schedules) == 1
         assert schedule_file.schedules[0].id == "valid-schedule"
 
@@ -426,7 +443,9 @@ class TestEnvironmentVariableDiscovery:
             else:
                 os.environ.pop("BEANSCHEDULE_FILE", None)
 
-    def test_env_var_priority(self, temp_schedule_dir, temp_schedule_file, sample_schedule_dict):
+    def test_env_var_priority(
+        self, temp_schedule_dir, temp_schedule_file, sample_schedule_dict
+    ):
         """Test that BEANSCHEDULE_DIR has priority over BEANSCHEDULE_FILE."""
         # Create both directory and file
         schedule_path = temp_schedule_dir / "test-schedule.yaml"
@@ -555,7 +574,9 @@ class TestLoadScheduleErrorHandling:
         assert schedule_file is not None
         assert schedule_file.config.fuzzy_match_threshold == 0.80  # Default
 
-    def test_duplicate_schedule_ids_in_directory(self, temp_schedule_dir, sample_schedule_dict):
+    def test_duplicate_schedule_ids_in_directory(
+        self, temp_schedule_dir, sample_schedule_dict
+    ):
         """Test detection of duplicate schedule IDs."""
         # This shouldn't happen in practice since filename must match ID
         # But we test the duplicate detection logic
@@ -575,7 +596,9 @@ class TestLoadScheduleErrorHandling:
         assert schedule_file is not None
         assert len(schedule_file.schedules) == 2
 
-    def test_load_explicit_file_with_none_schedules_key(self, tmp_path, sample_schedule_dict):
+    def test_load_explicit_file_with_none_schedules_key(
+        self, tmp_path, sample_schedule_dict
+    ):
         """Test loading file where schedules key is None or missing."""
         schedule_file_path = tmp_path / "schedules.yaml"
         file_data = {
@@ -690,12 +713,16 @@ class TestLoadScheduleErrorHandling:
         assert schedule_file is not None
         assert len(schedule_file.schedules) == 0
 
-    def test_load_schedule_filename_id_mismatch(self, temp_schedule_dir, sample_schedule_dict):
+    def test_load_schedule_filename_id_mismatch(
+        self, temp_schedule_dir, sample_schedule_dict
+    ):
         """Test error when schedule filename doesn't match ID."""
         # Create file with mismatched name and ID
         schedule_path = temp_schedule_dir / "schedule-one.yaml"
         sample_schedule_dict["id"] = "schedule-different"
-        sample_schedule_dict["transaction"]["metadata"]["schedule_id"] = "schedule-different"
+        sample_schedule_dict["transaction"]["metadata"]["schedule_id"] = (
+            "schedule-different"
+        )
 
         with open(schedule_path, "w") as f:
             yaml.dump(sample_schedule_dict, f)
@@ -739,5 +766,6 @@ class TestLoadScheduleErrorHandling:
             yaml.dump(sample_schedule_dict, f)
 
         schedule_file = load_schedules_from_directory(temp_schedule_dir)
+        assert schedule_file is not None
         assert len(schedule_file.schedules) == 1
         assert schedule_file.schedules[0].id == "visible"

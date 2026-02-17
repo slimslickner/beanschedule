@@ -1,8 +1,7 @@
 """CLI commands for managing pending one-time transactions."""
 
 import logging
-import uuid
-from datetime import date
+from datetime import datetime
 from decimal import Decimal
 from pathlib import Path
 
@@ -11,9 +10,7 @@ import click
 from beanschedule.pending import (
     find_pending_file,
     load_pending_transactions,
-    remove_pending_transactions,
 )
-from beanschedule.utils import slugify
 
 logger = logging.getLogger(__name__)
 
@@ -25,7 +22,6 @@ def pending():
     Stage transactions that will post in the future (e.g., online orders,
     pending charges) and have them automatically enrich when imported.
     """
-    pass
 
 
 @pending.command("create")
@@ -71,7 +67,7 @@ def pending():
 def create_pending(
     account: str,
     amount: Decimal,
-    date: object,  # click.DateTime
+    date: datetime,
     payee: str,
     narration: str,
     output: str,
@@ -94,16 +90,13 @@ def create_pending(
           --payee "Whole Foods" \\
           --narration "Groceries"
     """
-    # date comes as datetime from click
-    import datetime
+    # date comes as datetime from click.DateTime; convert to date for formatting
+    txn_date = date.date()
 
-    if isinstance(date, datetime.datetime):
-        date = date.date()
-
-    click.echo(f"\n📋 Creating pending transaction")
+    click.echo("\n📋 Creating pending transaction")
     click.echo(f"   Main account: {account} ({amount})")
     click.echo(f"   Payee: {payee}")
-    click.echo(f"   Date: {date}")
+    click.echo(f"   Date: {txn_date}")
     click.echo()
 
     # Interactive split entry
@@ -125,11 +118,15 @@ def create_pending(
             default_amount = None
 
         if default_amount is not None:
-            split_amount = click.prompt(prompt_text, type=Decimal, default=default_amount)
+            split_amount = click.prompt(
+                prompt_text, type=Decimal, default=default_amount
+            )
         else:
             split_amount = click.prompt(prompt_text, type=Decimal)
 
-        split_narration = click.prompt("  Narration (optional)", default="", show_default=False)
+        split_narration = click.prompt(
+            "  Narration (optional)", default="", show_default=False
+        )
 
         splits.append(
             {
@@ -143,7 +140,7 @@ def create_pending(
 
         # Check if balanced
         if abs(remaining) < Decimal("0.01"):
-            click.echo(f"✓ Balanced!")
+            click.echo("✓ Balanced!")
             break
 
         # Ask to add more
@@ -165,7 +162,7 @@ def create_pending(
     output_path = Path(output)
 
     lines = []
-    lines.append(f'{date.strftime("%Y-%m-%d")} ! "{payee}" "{narration}"')
+    lines.append(f'{txn_date.strftime("%Y-%m-%d")} ! "{payee}" "{narration}"')
     lines.append("  #pending")
     lines.append(f"  {account}  {amount} USD")
 
@@ -180,7 +177,7 @@ def create_pending(
     with open(output_path, "a") as f:
         f.write("\n".join(lines))
 
-    click.echo(f"\n✓ Pending transaction created!")
+    click.echo("\n✓ Pending transaction created!")
     click.echo(f"  File: {output_path}")
     click.echo(f"  Splits: {len(splits)}")
 
