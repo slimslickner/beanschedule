@@ -39,7 +39,9 @@ uv run pytest tests/ -v
 uv run pytest tests/ --cov=beanschedule --cov-report=html
 
 # Code quality
-uv run ruff check beanschedule/ tests/ && uv run mypy beanschedule/
+uv run ruff check --fix beanschedule/ tests/
+uv run ruff format beanschedule/ tests/
+uv run ty check
 ```
 
 See `.continue/rules/setup-and-commands.md` for full reference.

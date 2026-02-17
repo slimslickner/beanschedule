@@ -53,11 +53,11 @@ uv run ruff check --fix beanschedule/ tests/
 # Format code (Ruff)
 uv run ruff format beanschedule/ tests/
 
-# Type check with mypy
-uv run mypy beanschedule/
+# Type check with ty
+uv run ty check
 
 # All checks at once
-uv run ruff check beanschedule/ tests/ && uv run ruff format beanschedule/ tests/ && uv run mypy beanschedule/
+uv run ruff check beanschedule/ tests/ && uv run ruff format beanschedule/ tests/ && uv run ty check
 ```
 
 ### CLI Development
@@ -167,7 +167,7 @@ uv run beanschedule validate
 | `click`           | CLI framework        | 8.0.0+   |
 | `pytest`          | Testing              | 7.0.0+   |
 | `ruff`            | Linting & formatting | 0.14.13+ |
-| `mypy`            | Type checking        | 1.0.0+   |
+| `ty`              | Type checking        | 0.1.0+   |
 
 ## Python Version
 
@@ -193,7 +193,7 @@ uv run pytest tests/test_matcher.py -v -s
 
 # 3. Check quality
 uv run ruff check beanschedule/
-uv run mypy beanschedule/
+uv run ty check
 uv run ruff format beanschedule/
 
 # 4. Run full test suite
@@ -223,7 +223,7 @@ uv run pytest tests/
 uv run pytest tests/ && \
 uv run ruff check beanschedule/ tests/ && \
 uv run ruff format beanschedule/ tests/ && \
-uv run mypy beanschedule/
+uv run ty check
 ```
 
 See `.continue/rules/coding-standards.md` and `.continue/rules/testing-guide.md` for details.
