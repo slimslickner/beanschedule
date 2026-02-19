@@ -42,13 +42,15 @@ transaction:
 
     - account: Expenses:Housing:Property-Tax-Escrow
       amount: 350.00 # Update this annually when escrow changes
-      narration: "Property tax escrow"
       role: escrow # Explicitly mark as escrow (fixed amount)
+      metadata:
+        narration: "Property tax escrow"
 
     - account: Expenses:Housing:Insurance-Escrow
       amount: 125.00 # Update this annually when escrow changes
-      narration: "Home insurance escrow"
       role: escrow # Explicitly mark as escrow (fixed amount)
+      metadata:
+        narration: "Home insurance escrow"
 
 
     # Optional: PMI if applicable

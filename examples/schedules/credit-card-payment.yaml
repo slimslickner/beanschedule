@@ -29,10 +29,8 @@ transaction:
   postings:
     - account: Assets:Bank:Checking
       amount: null
-      narration: null
     - account: Liabilities:CreditCard:Visa
       amount: null
-      narration: null
 missing_transaction:
   create_placeholder: true
   flag: "!"

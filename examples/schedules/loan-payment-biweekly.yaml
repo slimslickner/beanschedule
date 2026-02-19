@@ -30,13 +30,14 @@ transaction:
   postings:
     - account: Assets:Bank:Checking
       amount: null
-      narration: null
     - account: Expenses:Loans:Interest
       amount: 85.00
-      narration: Loan Interest
+      metadata:
+        narration: Loan Interest
     - account: Liabilities:StudentLoan:Principal
       amount: 200.00
-      narration: Principal Payment
+      metadata:
+        narration: Principal Payment
 missing_transaction:
   create_placeholder: true
   flag: "!"

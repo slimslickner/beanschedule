@@ -552,6 +552,8 @@ def amortize(  # noqa: PLR0912, PLR0915, PLR0913
                     schedule, engine, forecast_start, forecast_end
                 )
 
+            # monthly_payment is guaranteed non-None in stateful mode by Pydantic validator
+            assert schedule.amortization.monthly_payment is not None
             splits_dict = compute_stateful_splits(
                 monthly_payment=schedule.amortization.monthly_payment,
                 annual_rate=schedule.amortization.annual_rate,
@@ -603,6 +605,10 @@ def amortize(  # noqa: PLR0912, PLR0915, PLR0913
         else:
             from beanschedule.amortization import AmortizationSchedule  # noqa: PLC0415
 
+            # principal, term_months, start_date are guaranteed non-None in static mode
+            assert schedule.amortization.principal is not None
+            assert schedule.amortization.term_months is not None
+            assert schedule.amortization.start_date is not None
             amort = AmortizationSchedule(
                 principal=schedule.amortization.principal,
                 annual_rate=schedule.amortization.annual_rate,

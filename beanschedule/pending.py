@@ -25,6 +25,7 @@ import os
 from datetime import date as date_type
 from decimal import Decimal
 from pathlib import Path
+from typing import Any
 
 from beancount import loader as bc_loader
 from beancount.core import amount as bc_amount
@@ -39,6 +40,9 @@ logger = logging.getLogger(__name__)
 # Pending match window (days)
 DEFAULT_PENDING_WINDOW_DAYS = 4
 
+# Beancount internal metadata keys to skip when extracting user metadata
+_BEANCOUNT_INTERNAL_META: frozenset[str] = frozenset({"filename", "lineno"})
+
 
 class PendingTransaction(BaseModel):
     """A one-time transaction pending posting and awaiting import match."""
@@ -48,6 +52,9 @@ class PendingTransaction(BaseModel):
     amount: Decimal = Field(..., description="Amount to match (exact)")
     payee: str = Field(..., description="Payee name")
     narration: str = Field(..., description="Transaction narration")
+    metadata: dict[str, Any] = Field(
+        default_factory=dict, description="Additional transaction metadata"
+    )
     postings: list[PostingTemplate] = Field(
         ..., description="Pre-defined posting splits"
     )
@@ -179,12 +186,19 @@ def load_pending_transactions(file_path: Path) -> list[PendingTransaction]:
 
         amount_value = first_units.number
 
+        # Extract transaction-level metadata (skip beancount internals)
+        txn_metadata = {
+            k: v for k, v in entry.meta.items() if k not in _BEANCOUNT_INTERNAL_META
+        }
+
         # Convert beancount postings to Posting schema
         postings = []
         for p in entry.postings:
-            posting_narration = None
-            if p.meta and "narration" in p.meta:
-                posting_narration = p.meta["narration"]
+            posting_meta: dict[str, Any] = {}
+            if p.meta:
+                posting_meta = {
+                    k: v for k, v in p.meta.items() if k not in _BEANCOUNT_INTERNAL_META
+                }
 
             posting_amount = p.units.number if p.units else None
 
@@ -192,7 +206,7 @@ def load_pending_transactions(file_path: Path) -> list[PendingTransaction]:
                 PostingTemplate(
                     account=p.account,
                     amount=posting_amount,
-                    narration=posting_narration,
+                    metadata=posting_meta,
                 )
             )
 
@@ -204,6 +218,7 @@ def load_pending_transactions(file_path: Path) -> list[PendingTransaction]:
                 amount=amount_value,
                 payee=entry.payee or "",
                 narration=entry.narration or "",
+                metadata=txn_metadata,
                 postings=postings,
             )
             pending_txns.append(pending)
@@ -288,8 +303,9 @@ def enrich_from_pending(
     Returns:
         Enriched transaction
     """
-    # Add pending metadata
+    # Add pending metadata: start with existing, then apply pending metadata
     new_meta = txn.meta.copy()
+    new_meta.update(pending.metadata)
     new_meta["pending_matched_date"] = pending.date.isoformat()
 
     # Use pending payee/narration
@@ -302,10 +318,6 @@ def enrich_from_pending(
 
     new_postings = []
     for p in pending.postings:
-        posting_meta = None
-        if p.narration:
-            posting_meta = {"narration": p.narration}
-
         units = None
         if p.amount is not None:
             units = bc_amount.Amount(p.amount, currency)
@@ -316,7 +328,7 @@ def enrich_from_pending(
             cost=None,
             price=None,
             flag=None,
-            meta=posting_meta,
+            meta=dict(p.metadata) if p.metadata else None,
         )
         new_postings.append(posting)
 

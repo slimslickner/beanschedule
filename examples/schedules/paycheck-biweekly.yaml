@@ -30,25 +30,32 @@ transaction:
   postings:
     - account: Assets:US:BofA:Checking
       amount: 1350.60
-      narration: Net Deposit
+      metadata:
+        narration: Net Deposit
     - account: Assets:US:Vanguard:Cash
       amount: 1200.00
-      narration: 401k Contribution
+      metadata:
+        narration: 401k Contribution
     - account: Income:US:Hoogle:Salary
       amount: -4615.38
-      narration: Gross Salary
+      metadata:
+        narration: Gross Salary
     - account: Expenses:Taxes:Y2013:US:Federal
       amount: 1062.92
-      narration: Federal Tax
+      metadata:
+        narration: Federal Tax
     - account: Expenses:Taxes:Y2013:US:State
       amount: 365.08
-      narration: State Tax
+      metadata:
+        narration: State Tax
     - account: Expenses:Taxes:Y2013:US:SocSec
       amount: 281.54
-      narration: Social Security Tax
+      metadata:
+        narration: Social Security Tax
     - account: Expenses:Taxes:Y2013:US:Medicare
       amount: 106.62
-      narration: Medicare Tax
+      metadata:
+        narration: Medicare Tax
 missing_transaction:
   create_placeholder: true
   flag: "!"

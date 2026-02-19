@@ -30,10 +30,8 @@ transaction:
   postings:
     - account: Assets:Bank:Checking
       amount: null
-      narration: null
     - account: Expenses:Utilities:Water
       amount: null
-      narration: null
 missing_transaction:
   create_placeholder: true
   flag: "!"

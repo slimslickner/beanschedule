@@ -39,7 +39,6 @@ class TestPendingTransaction:
                 Posting(
                     account="Expenses:Electronics:Audio",
                     amount=Decimal("85.00"),
-                    narration="Bose QuietComfort 45",
                 ),
                 Posting(
                     account="Expenses:Shopping:Shipping",
@@ -162,6 +161,54 @@ class TestLoadPendingTransactions:
             pending = load_pending_transactions(file_path)
             assert len(pending) == 1
             assert pending[0].payee == "Amazon"
+        finally:
+            file_path.unlink()
+
+    def test_load_transaction_metadata(self):
+        """Test loading captures transaction-level metadata."""
+        with tempfile.NamedTemporaryFile(
+            mode="w", suffix=".beancount", delete=False
+        ) as f:
+            f.write("""
+2026-02-20 ! "Amazon" "Headphones"
+  #pending
+  receipt: "REC-001"
+  category: "electronics"
+  Assets:Checking  -89.99 USD
+  Expenses:Electronics  89.99 USD
+""")
+            f.flush()
+            file_path = Path(f.name)
+
+        try:
+            pending = load_pending_transactions(file_path)
+            assert len(pending) == 1
+            assert pending[0].metadata.get("receipt") == "REC-001"
+            assert pending[0].metadata.get("category") == "electronics"
+        finally:
+            file_path.unlink()
+
+    def test_load_posting_extra_metadata(self):
+        """Test loading captures all posting metadata including narration."""
+        with tempfile.NamedTemporaryFile(
+            mode="w", suffix=".beancount", delete=False
+        ) as f:
+            f.write("""
+2026-02-20 ! "Amazon" "Order"
+  #pending
+  Assets:Checking  -89.99 USD
+  Expenses:Electronics  89.99 USD
+    narration: "Headphones"
+    order_id: "AMZ-001"
+""")
+            f.flush()
+            file_path = Path(f.name)
+
+        try:
+            pending = load_pending_transactions(file_path)
+            assert len(pending) == 1
+            assert pending[0].postings[1].metadata.get("narration") == "Headphones"
+            assert pending[0].postings[1].metadata.get("order_id") == "AMZ-001"
         finally:
             file_path.unlink()
 
@@ -354,12 +401,12 @@ class TestEnrichFromPending:
                 Posting(
                     account="Expenses:Electronics:Audio",
                     amount=Decimal("85.00"),
-                    narration="Bose QuietComfort 45",
+                    metadata={"narration": "Bose QuietComfort 45"},
                 ),
                 Posting(
                     account="Expenses:Shopping:Shipping",
                     amount=Decimal("4.99"),
-                    narration="Shipping",
+                    metadata={"narration": "Shipping"},
                 ),
             ],
         )
@@ -396,8 +443,98 @@ class TestEnrichFromPending:
         assert enriched.postings[1].meta["narration"] == "Bose QuietComfort 45"
         assert enriched.meta["pending_matched_date"] == "2026-02-20"
 
+    def test_transaction_metadata_applied(self):
+        """Test transaction-level metadata from pending is applied to enriched txn."""
+        pending = PendingTransaction(
+            date=date(2026, 2, 20),
+            account="Assets:Checking",
+            amount=Decimal("-50.00"),
+            payee="Store",
+            narration="Purchase",
+            metadata={"receipt": "REC-123", "category": "shopping"},
+            postings=[
+                Posting(account="Assets:Checking", amount=Decimal("-50.00")),
+                Posting(account="Expenses:Shopping", amount=Decimal("50.00")),
+            ],
+        )
+
+        txn = data.Transaction(
+            meta={"lineno": 1},
+            date=date(2026, 2, 20),
+            flag="*",
+            payee="STORE",
+            narration="Purchase",
+            tags=frozenset(),
+            links=frozenset(),
+            postings=[
+                data.Posting(
+                    account="Assets:Checking",
+                    units=bc_amount.Amount(Decimal("-50.00"), "USD"),
+                    cost=None,
+                    price=None,
+                    flag=None,
+                    meta=None,
+                ),
+            ],
+        )
+
+        enriched = enrich_from_pending(txn, pending)
+
+        assert enriched.meta["receipt"] == "REC-123"
+        assert enriched.meta["category"] == "shopping"
+        assert enriched.meta["pending_matched_date"] == "2026-02-20"
+
+    def test_posting_extra_metadata_applied(self):
+        """Test all posting metadata is applied uniformly."""
+        pending = PendingTransaction(
+            date=date(2026, 2, 20),
+            account="Assets:Checking",
+            amount=Decimal("-89.99"),
+            payee="Amazon",
+            narration="Order",
+            postings=[
+                Posting(account="Assets:Checking", amount=Decimal("-89.99")),
+                Posting(
+                    account="Expenses:Electronics",
+                    amount=Decimal("89.99"),
+                    metadata={
+                        "narration": "Headphones",
+                        "order_id": "AMZ-001",
+                        "asin": "B08N5KWB9H",
+                    },
+                ),
+            ],
+        )
+
+        txn = data.Transaction(
+            meta={"lineno": 1},
+            date=date(2026, 2, 22),
+            flag="*",
+            payee="AMAZON",
+            narration="Unknown",
+            tags=frozenset(),
+            links=frozenset(),
+            postings=[
+                data.Posting(
+                    account="Assets:Checking",
+                    units=bc_amount.Amount(Decimal("-89.99"), "USD"),
+                    cost=None,
+                    price=None,
+                    flag=None,
+                    meta=None,
+                ),
+            ],
+        )
+
+        enriched = enrich_from_pending(txn, pending)
+
+        assert enriched.postings[1].meta is not None
+        assert enriched.postings[1].meta["narration"] == "Headphones"
+        assert enriched.postings[1].meta["order_id"] == "AMZ-001"
+        assert enriched.postings[1].meta["asin"] == "B08N5KWB9H"
+
     def test_posting_narrations_preserved(self):
-        """Test posting narrations are preserved."""
+        """Test posting narrations are preserved via metadata."""
         pending = PendingTransaction(
             date=date(2026, 2, 20),
             account="Assets:Checking",
@@ -409,12 +546,12 @@ class TestEnrichFromPending:
                 Posting(
                     account="Expenses:Food:Groceries",
                     amount=Decimal("100.00"),
-                    narration="Food items",
+                    metadata={"narration": "Food items"},
                 ),
                 Posting(
                     account="Expenses:Supplies",
                     amount=Decimal("27.45"),
-                    narration="Household supplies",
+                    metadata={"narration": "Household supplies"},
                 ),
             ],
         )

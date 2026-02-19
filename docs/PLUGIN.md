@@ -62,10 +62,10 @@ Config file values are used as defaults, but plugin arguments override them.
 
 ## Configuration Parameters
 
-| Parameter            | Type    | Default | Description                                              |
-| -------------------- | ------- | ------- | -------------------------------------------------------- |
-| `forecast_months`    | integer | 3       | Months ahead from tomorrow to generate forecasts         |
-| `min_forecast_date`  | date    | null    | Earliest date to consider for forecasts (min selector)   |
+| Parameter           | Type    | Default | Description                                            |
+| ------------------- | ------- | ------- | ------------------------------------------------------ |
+| `forecast_months`   | integer | 3       | Months ahead from tomorrow to generate forecasts       |
+| `min_forecast_date` | date    | null    | Earliest date to consider for forecasts (min selector) |
 
 ## Behavior
 
