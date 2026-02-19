@@ -932,18 +932,13 @@ def _apply_schedule_postings(
                 Decimal(str(posting_template.amount)), currency
             )
 
-        # Build posting metadata (for comments)
-        posting_meta = None
-        if posting_template.narration:
-            posting_meta = {"narration": posting_template.narration}
-
         posting = data.Posting(
             account=posting_template.account,
             units=posting_amount,
             cost=None,
             price=None,
             flag=None,
-            meta=posting_meta,
+            meta=dict(posting_template.metadata) if posting_template.metadata else None,
         )
         new_postings.append(posting)
 
@@ -1128,18 +1123,15 @@ def _create_placeholder_transaction(
             else:
                 posting_amount = None
 
-            # Build posting metadata (for comments)
-            posting_meta = None
-            if posting_template.narration:
-                posting_meta = {"narration": posting_template.narration}
-
             posting = data.Posting(
                 account=posting_template.account,
                 units=posting_amount,
                 cost=None,
                 price=None,
                 flag=None,
-                meta=posting_meta,
+                meta=dict(posting_template.metadata)
+                if posting_template.metadata
+                else None,
             )
             postings.append(posting)
     else:

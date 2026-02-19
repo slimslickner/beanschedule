@@ -724,18 +724,13 @@ def _create_forecast_transaction(
             global_config.default_currency,
         )
 
-        # Build posting metadata if any
-        posting_meta = {}
-        if posting_template.narration:
-            posting_meta["narration"] = posting_template.narration
-
         posting = data.Posting(
             account=posting_template.account,
             units=posting_amount,
             cost=None,
             price=None,
             flag=None,
-            meta=posting_meta if posting_meta else None,
+            meta=dict(posting_template.metadata) if posting_template.metadata else None,
         )
         postings.append(posting)
 

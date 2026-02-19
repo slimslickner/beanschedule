@@ -31,19 +31,22 @@ transaction:
   postings:
     - account: Assets:Bank:Checking
       amount: null
-      narration: null
     - account: Expenses:Housing:Mortgage-Interest
       amount: 1250.00
-      narration: Mortgage Interest
+      metadata:
+        narration: Mortgage Interest
     - account: Expenses:Housing:Property-Tax-Escrow
       amount: 300.00
-      narration: Property Tax Escrow
+      metadata:
+        narration: Property Tax Escrow
     - account: Expenses:Housing:Insurance-Escrow
       amount: 100.00
-      narration: Home Insurance Escrow
+      metadata:
+        narration: Home Insurance Escrow
     - account: Liabilities:Mortgage:Principal
       amount: 200.00
-      narration: Principal Payment
+      metadata:
+        narration: Principal Payment
 missing_transaction:
   create_placeholder: true
   flag: "!"

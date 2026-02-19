@@ -272,8 +272,8 @@ schedules:
         assert 5 in days
         assert 20 in days
 
-    def test_plugin_with_posting_narrations(self, tmp_path):
-        """Should include posting-level narrations in metadata."""
+    def test_plugin_with_posting_metadata(self, tmp_path):
+        """Should include posting-level metadata in beancount postings."""
         schedule_yaml = tmp_path / "schedules.yaml"
         schedule_yaml.write_text(
             """
@@ -296,16 +296,18 @@ schedules:
       postings:
         - account: Expenses:Test
           amount: 100.00
-          narration: "Test expense note"
+          metadata:
+            narration: "Test expense note"
         - account: Assets:Checking
-          narration: "Payment from checking"
+          metadata:
+            narration: "Payment from checking"
 """
         )
 
         options_map = {"filename": str(tmp_path / "main.bean")}
         result_entries, errors = schedules([], options_map, config=str(schedule_yaml))
 
-        # Check posting narrations
+        # Check posting metadata
         forecast_txn = result_entries[0]
         assert forecast_txn.postings[0].meta is not None
         assert forecast_txn.postings[0].meta.get("narration") == "Test expense note"

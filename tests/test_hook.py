@@ -535,8 +535,8 @@ class TestPostingReplacement:
         from beanschedule.schema import Posting
 
         schedule.transaction.postings = [
-            Posting(account="Assets:Bank:Checking", amount=None, narration=None),
-            Posting(account="Expenses:Housing:Rent", amount=None, narration=None),
+            Posting(account="Assets:Bank:Checking", amount=None),
+            Posting(account="Expenses:Housing:Rent", amount=None),
         ]
 
         extracted_entries = [

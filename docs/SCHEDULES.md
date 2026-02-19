@@ -282,6 +282,7 @@ beanschedule skip rent-payment 2024-03-01 --reason "Paid early"
 ```
 
 Skip markers are recognized by any of these methods:
+
 - Flag `*` with `#skipped` tag (recommended - matches CLI generation)
 - `schedule_skipped` metadata key
 - Flag `S` (legacy/alternative)

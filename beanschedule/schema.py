@@ -136,7 +136,9 @@ class Posting(BaseModel):
 
     account: str = Field(..., description="Account name")
     amount: Decimal | None = Field(None, description="Amount (null = use imported)")
-    narration: str | None = Field(None, description="Comment for this posting")
+    metadata: dict[str, Any] = Field(
+        default_factory=dict, description="Posting metadata (e.g. narration, order_id)"
+    )
     role: str | None = Field(
         None,
         description=(

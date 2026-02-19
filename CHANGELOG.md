@@ -7,122 +7,65 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [1.4.0] - 2026-02-08
 
-### Added
+### Breaking Changes
 
-- Configurable forecast settings to control forecasting behavior
-  - `forecast_months`: extend end_date by N months (default 3)
-  - `min_forecast_date`: override start date for forecasting
-  - `include_past_dates`: generate placeholders for historical missing dates
-- Support for Beancount plugin parameters (dict and JSON syntax) for forecast configuration
-- Hook and plugin now respect the same forecast configuration settings
-- Official support for marking scheduled transactions as intentionally skipped
-  - Skip marker detection (flag 'S', #skipped tag, schedule_skipped metadata)
-  - `beanschedule skip` CLI command to generate skip markers
-  - Skip markers prevent duplicate placeholder generation
-- Pending transactions feature for staging one-time transactions awaiting posting
-  - `beanschedule pending create` - Interactive CLI for creating pending transactions
-  - `beanschedule pending list` - List all pending transactions with dates and amounts
-  - `beanschedule pending clean` - Clean up empty pending file
-  - Automatic matching on account + amount + date (±4 days)
-  - Auto-removal from staging file after successful match
-  - Comprehensive logging with real-time match updates and unmatched summary
-  - Simplified format using just `#pending` tag (no metadata required)
+- **`narration` field removed from the `Posting` model.** The top-level `narration:` key on posting items in schedule YAML files is no longer supported. Posting metadata (including narration) must now be placed inside a `metadata:` dict on the posting.
 
-### Fixed
+  **Before:**
+  ```yaml
+  postings:
+    - account: Expenses:Housing:Mortgage-Interest
+      amount: 1250.00
+      narration: Mortgage Interest
+  ```
 
-- Plugin parameter handling for Beancount config dict/JSON syntax
-- Test fixture isolation with forecast_months=0 by default
-- Pending transaction removal now correctly matches by pending transaction details (date, payee, amount)
-- Pending transaction narration parsing supports both metadata and comment syntax
-- Removed unnecessary `matched_pending` metadata from enriched transactions
-- Fixed hook logic for tracking matched pending transactions
+  **After:**
+  ```yaml
+  postings:
+    - account: Expenses:Housing:Mortgage-Interest
+      amount: 1250.00
+      metadata:
+        narration: Mortgage Interest
+  ```
 
-## [1.2.0] - 2026-01-15
+  Posting entries with `narration: null` should simply have that line removed. This change does not affect `transaction.narration` or `missing_transaction.narration_prefix`, which remain unchanged.
 
 ### Added
 
-- Stateful amortization with `balance_from_ledger` mode for dynamic loan balance computation
-- Compounding support (MONTHLY and DAILY) for accurate interest calculations
-- `beanschedule amortize` command for standalone amortization schedule generation
-- Cleared + pending transaction balance computation for accurate starting balance
+- **Skip markers** — mark scheduled occurrences as intentionally skipped using flag `S`, `#skipped` tag, or `schedule_skipped` metadata. CLI: `beanschedule skip <id> <date>`
+- **Configurable forecasting** — `forecast_months`, `min_forecast_date`, and `include_past_dates` settings in global config
+- **Pending transactions** — stage one-time transactions in `pending.beancount` that auto-match and enrich on import. CLI: `beanschedule pending`
+- Posting-level `metadata` dict now supports arbitrary key/value pairs on schedule postings (not just `narration`).
+- Pending transactions now capture all transaction-level and posting-level metadata from `.beancount` files, not just `narration`.
 
-### Fixed
-
-- Amortization calendar printing with proper formatting
-- Amount-tolerance matcher tests for edge cases
-- `make_schedule` fixture kwargs handling
-
-### Changed
-
-- Improved amortization accuracy with ledger-driven balance tracking
-
-## [1.1.0] - 2025-12-20
+## [1.3.0]
 
 ### Added
 
-- `beanschedule detect` - Auto-detect recurring transaction patterns from ledger
-- `beanschedule create` - Interactive schedule creation from ledger transactions
-- `beanschedule show` - Display detailed schedule information
-- `beanschedule list` - List all schedules with filtering
-- `beanschedule generate` - Generate expected dates for a schedule
-- `beanschedule init` - Initialize example schedules directory
-- Static amortization schedules using PMT formula
-- Explicit `role` fields for posting categorization (payment, principal, interest)
-- Pattern discovery algorithm with confidence scoring
-- Integration tests with realistic examples
+- Loan amortization with automatic principal/interest splits (`amortization:` config)
+- Stateful amortization mode reading live balance from ledger (`balance_from_ledger: true`)
+- `beanschedule amortize` CLI command for forecast and schedule inspection
 
-### Fixed
-
-- Pattern detection accuracy improvements
-- CLI output formatting enhancements
-
-## [1.0.0] - 2025-11-10
+## [1.2.0]
 
 ### Added
 
-- Core transaction matching with weighted scoring algorithm
-- Payee matching with regex patterns and fuzzy matching
-- Amount matching (exact, tolerance, range-based)
-- Date matching with configurable windows
-- Transaction enrichment with metadata, tags, and postings
-- Placeholder transaction generation for missing expected payments
-- Flexible recurrence patterns: MONTHLY, WEEKLY, YEARLY, INTERVAL, BIMONTHLY
-- Beangulp hook integration for import workflow
-- Lazy matching optimization for performance (80%+ speedup)
-- Regex pattern caching and compilation
-- Fuzzy match result caching
-- YAML schedule configuration with validation
-- CLI tools: `validate`, `list`, `show`, `generate`, `create`, `init`
-- Unit tests with 86% coverage
-- Support for complex posting splits and templates
-- Loan amortization with static mode
+- `beanschedule detect` command for auto-detecting schedules from existing ledgers
+- `beanschedule create` interactive schedule builder
 
-### Features
+## [1.1.0]
 
-- Pattern Discovery - Auto-detect recurring transaction patterns
-- Automatic Matching - Fuzzy matching with weighted scoring
-- Transaction Enrichment - Add metadata, tags, and complete posting splits
-- Missing Transaction Detection - Create placeholders for expected payments
-- Flexible Recurrence - Multiple frequency types with customization
-- Loan Amortization - Principal/interest splits with configurable modes
-- Smart Amount Matching - Fixed, tolerance, or range-based matching
-- Beangulp Integration - Drop-in hook for import workflows
-- CLI Tools - Validate, test, debug, and discover schedules
-- ML Compatibility - Preserves smart_importer training data
+### Added
 
----
+- Forecast plugin (`beanschedule.plugins.schedules`) for generating future transactions
+- `beanschedule generate` CLI command
 
-## Unreleased
+## [1.0.0]
 
-### Planned
+### Added
 
-- Dry-run mode for preview before commit
-- ONCE frequency for ad-hoc transactions
-- Quick schedule creation wizard
-- CSV export for matched transactions
-- Optional account matching
-- Conditional schedule instances
-- Schedule statistics and coverage reports
-- Multi-currency support
-- Parallel processing for independent schedules
-- Plugin system for custom matchers
+- Core matching and enrichment hook (`schedule_hook`)
+- YAML schedule definitions with `match`, `recurrence`, and `transaction` sections
+- Fuzzy matching with weighted scoring (payee 40%, amount 40%, date 20%)
+- Missing transaction placeholders
+- `beanschedule validate`, `list`, `init` CLI commands
