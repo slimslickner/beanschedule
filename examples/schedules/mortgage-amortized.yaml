@@ -1,6 +1,6 @@
 # Mortgage payment with amortization PLUS escrow
 # Demonstrates: Mixing automatic amortization with fixed escrow amounts
-id: mortgage-with-escrow
+id: mortgage-amortized
 enabled: false # Set to true to enable
 match:
   account: Assets:Checking
@@ -23,7 +23,7 @@ transaction:
   narration: "Monthly mortgage payment (P+I+Escrow)"
   tags: [mortgage, housing]
   metadata:
-    schedule_id: mortgage-with-escrow
+    schedule_id: mortgage-amortized
     property: primary-residence
   postings:
     # Payment account - will auto-calculate as -(principal + interest + escrows)
@@ -59,8 +59,8 @@ transaction:
 # Example forecast transaction that will be generated:
 #
 # 2024-03-01 # "First National Mortgage" "Monthly mortgage payment (P+I+Escrow)"
-#   filename: "schedules/mortgage-with-escrow.yaml"
-#   schedule_id: "mortgage-with-escrow"
+#   filename: "schedules/mortgage-amortized.yaml"
+#   schedule_id: "mortgage-amortized"
 #   amortization_payment_number: 3
 #   amortization_balance_after: 319208.52
 #   amortization_principal: 265.36
