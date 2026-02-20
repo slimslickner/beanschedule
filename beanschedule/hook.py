@@ -662,7 +662,6 @@ def _is_skip_marker(entry: data.Transaction) -> bool:
     Check if a transaction is a skip marker (intentionally skipped occurrence).
 
     A skip marker is identified by any of:
-    - Transaction flag is 'S' (for "Skipped")
     - Transaction has #skipped tag
     - Transaction has schedule_skipped metadata (with any value)
 
@@ -672,10 +671,6 @@ def _is_skip_marker(entry: data.Transaction) -> bool:
     Returns:
         True if this is a skip marker, False otherwise
     """
-    # Check flag
-    if entry.flag == "S":
-        return True
-
     # Check tags (Beancount stores tags without the # symbol)
     if entry.tags and "skipped" in entry.tags:
         return True

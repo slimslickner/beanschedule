@@ -1255,3 +1255,533 @@ class TestStatefulAmortization:
             and e.meta.get("schedule_id") == "test-loan"
         ]
         assert len(new_forecasts) == 0
+
+
+class TestShadowAccountForecasting:
+    """Tests for shadow_upcoming_account redirecting matched postings via plugin directive."""
+
+    SHADOW_ACCOUNT = "Equity:Schedules:Upcoming"
+
+    def _make_yaml(self, tmp_path):
+        """Write a simple monthly schedule YAML (no shadow config in YAML)."""
+        schedule_yaml = tmp_path / "schedules.yaml"
+        schedule_yaml.write_text(
+            """
+version: "1.0"
+
+schedules:
+  - id: rent-monthly
+    enabled: true
+    match:
+      account: Assets:Checking
+      payee_pattern: ".*LANDLORD.*"
+    recurrence:
+      frequency: MONTHLY
+      start_date: 2024-01-01
+      day_of_month: 1
+    transaction:
+      payee: "Rent Payment"
+      narration: "Monthly rent"
+      metadata:
+        schedule_id: rent-monthly
+      postings:
+        - account: Expenses:Housing:Rent
+          amount: 1500.00
+        - account: Assets:Checking
+"""
+        )
+        return schedule_yaml
+
+    def test_shadow_account_disabled_by_default(self, tmp_path):
+        """Without shadow config in directive, forecast postings use the real matched account."""
+        schedule_yaml = self._make_yaml(tmp_path)
+        options_map = {"filename": str(tmp_path / "main.bean")}
+
+        result_entries, errors = schedules([], options_map, config=str(schedule_yaml))
+
+        assert len(errors) == 0
+        forecast_txn = result_entries[0]
+        accounts = [p.account for p in forecast_txn.postings]
+        assert "Assets:Checking" in accounts
+        assert self.SHADOW_ACCOUNT not in accounts
+
+    def test_shadow_account_redirects_matched_posting(self, tmp_path):
+        """shadow_upcoming_account passed to _create_forecast_transaction redirects the matched posting."""
+        from datetime import date, timedelta
+
+        from dateutil.relativedelta import relativedelta
+
+        from beanschedule.loader import load_schedules_file
+        from beanschedule.plugins.schedules import _create_forecast_transaction
+        from beanschedule.recurrence import RecurrenceEngine
+        from beanschedule.utils import generate_schedule_occurrences
+
+        schedule_yaml = self._make_yaml(tmp_path)
+        sf = load_schedules_file(schedule_yaml)
+        assert sf is not None
+        engine = RecurrenceEngine()
+        today = date.today()
+        start = today + timedelta(days=1)
+        end = today + relativedelta(months=1)
+
+        schedule = sf.schedules[0]
+        occurrences = generate_schedule_occurrences(schedule, engine, start, end)
+        assert len(occurrences) > 0
+
+        txn = _create_forecast_transaction(
+            schedule,
+            occurrences[0],
+            sf.config,
+            shadow_account=self.SHADOW_ACCOUNT,
+        )
+        accounts = [p.account for p in txn.postings]
+        assert "Assets:Checking" not in accounts
+        assert self.SHADOW_ACCOUNT in accounts
+
+    def test_shadow_account_preserves_non_matched_postings(self, tmp_path):
+        """Expense/income postings are left untouched when shadow account is configured."""
+        from datetime import date, timedelta
+
+        from dateutil.relativedelta import relativedelta
+
+        from beanschedule.loader import load_schedules_file
+        from beanschedule.plugins.schedules import _create_forecast_transaction
+        from beanschedule.recurrence import RecurrenceEngine
+        from beanschedule.utils import generate_schedule_occurrences
+
+        schedule_yaml = self._make_yaml(tmp_path)
+        sf = load_schedules_file(schedule_yaml)
+        assert sf is not None
+        engine = RecurrenceEngine()
+        today = date.today()
+        start = today + timedelta(days=1)
+        end = today + relativedelta(months=1)
+
+        schedule = sf.schedules[0]
+        occurrences = generate_schedule_occurrences(schedule, engine, start, end)
+
+        txn = _create_forecast_transaction(
+            schedule,
+            occurrences[0],
+            sf.config,
+            shadow_account=self.SHADOW_ACCOUNT,
+        )
+        accounts = [p.account for p in txn.postings]
+        assert "Expenses:Housing:Rent" in accounts
+
+    def test_shadow_account_preserves_amounts(self, tmp_path):
+        """Redirected posting keeps its amount unchanged."""
+        from datetime import date, timedelta
+
+        from dateutil.relativedelta import relativedelta
+
+        from beanschedule.loader import load_schedules_file
+        from beanschedule.plugins.schedules import _create_forecast_transaction
+        from beanschedule.recurrence import RecurrenceEngine
+        from beanschedule.utils import generate_schedule_occurrences
+
+        schedule_yaml = self._make_yaml(tmp_path)
+        sf = load_schedules_file(schedule_yaml)
+        assert sf is not None
+        engine = RecurrenceEngine()
+        today = date.today()
+        start = today + timedelta(days=1)
+        end = today + relativedelta(months=1)
+
+        schedule = sf.schedules[0]
+        occurrences = generate_schedule_occurrences(schedule, engine, start, end)
+
+        txn = _create_forecast_transaction(
+            schedule,
+            occurrences[0],
+            sf.config,
+            shadow_account=self.SHADOW_ACCOUNT,
+        )
+        postings_by_account = {p.account: p.units for p in txn.postings}
+        shadow_posting = postings_by_account[self.SHADOW_ACCOUNT]
+        assert shadow_posting == amount.Amount(Decimal("-1500.00"), "USD")
+
+    def test_shadow_account_via_plugin_directive(self, tmp_path, monkeypatch):
+        """shadow_upcoming_account passed via plugin directive dict is applied to all forecasts."""
+        from beanschedule import loader
+
+        schedule_yaml = self._make_yaml(tmp_path)
+        monkeypatch.setattr(
+            loader, "find_schedules_location", lambda: ("file", schedule_yaml)
+        )
+        options_map = {"filename": str(tmp_path / "main.bean")}
+
+        result_entries, errors = schedules(
+            [],
+            options_map,
+            config={
+                "forecast_months": 1,
+                "shadow_upcoming_account": self.SHADOW_ACCOUNT,
+            },
+        )
+
+        assert len(errors) == 0
+        txns = [e for e in result_entries if isinstance(e, data.Transaction)]
+        assert len(txns) > 0
+        for txn in txns:
+            accounts = [p.account for p in txn.postings]
+            assert "Assets:Checking" not in accounts
+            assert self.SHADOW_ACCOUNT in accounts
+
+    def test_shadow_account_open_directive_generated(self, tmp_path, monkeypatch):
+        """An Open directive is automatically added for the shadow account."""
+        from beanschedule import loader
+
+        schedule_yaml = self._make_yaml(tmp_path)
+        monkeypatch.setattr(
+            loader, "find_schedules_location", lambda: ("file", schedule_yaml)
+        )
+        options_map = {"filename": str(tmp_path / "main.bean")}
+
+        result_entries, errors = schedules(
+            [],
+            options_map,
+            config={
+                "forecast_months": 1,
+                "shadow_upcoming_account": self.SHADOW_ACCOUNT,
+            },
+        )
+
+        assert len(errors) == 0
+        open_directives = [e for e in result_entries if isinstance(e, data.Open)]
+        opened_accounts = {o.account for o in open_directives}
+        assert self.SHADOW_ACCOUNT in opened_accounts
+
+    def test_open_directive_not_duplicated_when_already_open(
+        self, tmp_path, monkeypatch
+    ):
+        """No duplicate Open directive is added if the account is already open in the ledger."""
+        from beanschedule import loader
+
+        schedule_yaml = self._make_yaml(tmp_path)
+        monkeypatch.setattr(
+            loader, "find_schedules_location", lambda: ("file", schedule_yaml)
+        )
+        options_map = {"filename": str(tmp_path / "main.bean")}
+
+        existing_open = data.Open(
+            {"filename": "main.bean", "lineno": 1},
+            date(2024, 1, 1),
+            self.SHADOW_ACCOUNT,
+            None,  # type: ignore[arg-type]
+            None,
+        )
+
+        result_entries, errors = schedules(
+            [existing_open],
+            options_map,
+            config={
+                "forecast_months": 1,
+                "shadow_upcoming_account": self.SHADOW_ACCOUNT,
+            },
+        )
+
+        assert len(errors) == 0
+        open_directives = [
+            e
+            for e in result_entries
+            if isinstance(e, data.Open) and e.account == self.SHADOW_ACCOUNT
+        ]
+        assert len(open_directives) == 1, "Should not create a duplicate Open directive"
+
+
+class TestShadowOverdueForecasting:
+    """Tests for shadow_overdue_account generating past-due plugin transactions."""
+
+    OVERDUE_ACCOUNT = "Equity:Schedules:Overdue"
+    UPCOMING_ACCOUNT = "Equity:Schedules:Upcoming"
+
+    def _make_yaml(self, tmp_path):
+        """Write a schedule that has been recurring since well before today."""
+        schedule_yaml = tmp_path / "schedules.yaml"
+        schedule_yaml.write_text(
+            """
+version: "1.0"
+
+schedules:
+  - id: rent-monthly
+    enabled: true
+    match:
+      account: Assets:Checking
+      payee_pattern: ".*LANDLORD.*"
+    recurrence:
+      frequency: MONTHLY
+      start_date: 2020-01-01
+      day_of_month: 1
+    transaction:
+      payee: "Rent Payment"
+      narration: "Monthly rent"
+      metadata:
+        schedule_id: rent-monthly
+      postings:
+        - account: Expenses:Housing:Rent
+          amount: 1500.00
+        - account: Assets:Checking
+"""
+        )
+        return schedule_yaml
+
+    def test_overdue_transactions_not_generated_by_default(self, tmp_path, monkeypatch):
+        """Without shadow_overdue_account, plugin starts from tomorrow — no past dates."""
+        from beanschedule import loader
+
+        schedule_yaml = self._make_yaml(tmp_path)
+        monkeypatch.setattr(
+            loader, "find_schedules_location", lambda: ("file", schedule_yaml)
+        )
+        options_map = {"filename": str(tmp_path / "main.bean")}
+
+        result_entries, errors = schedules(
+            [], options_map, config={"forecast_months": 1}
+        )
+
+        assert len(errors) == 0
+        today = date.today()
+        for txn in result_entries:
+            assert txn.date > today, "No past-dated transactions without overdue config"
+
+    def test_overdue_generates_past_transactions(self, tmp_path, monkeypatch):
+        """With shadow_overdue_account, past-due occurrences are generated."""
+        from beanschedule import loader
+
+        schedule_yaml = self._make_yaml(tmp_path)
+        monkeypatch.setattr(
+            loader, "find_schedules_location", lambda: ("file", schedule_yaml)
+        )
+        options_map = {"filename": str(tmp_path / "main.bean")}
+
+        result_entries, errors = schedules(
+            [],
+            options_map,
+            config={
+                "forecast_months": 1,
+                "shadow_overdue_account": self.OVERDUE_ACCOUNT,
+            },
+        )
+
+        assert len(errors) == 0
+        today = date.today()
+        past_txns = [e for e in result_entries if e.date <= today]
+        assert len(past_txns) > 0, "Should generate past-dated transactions"
+
+    def test_overdue_posts_to_overdue_account(self, tmp_path, monkeypatch):
+        """Past-due transactions use shadow_overdue_account, not the real account."""
+        from beanschedule import loader
+
+        schedule_yaml = self._make_yaml(tmp_path)
+        monkeypatch.setattr(
+            loader, "find_schedules_location", lambda: ("file", schedule_yaml)
+        )
+        options_map = {"filename": str(tmp_path / "main.bean")}
+
+        result_entries, errors = schedules(
+            [],
+            options_map,
+            config={
+                "forecast_months": 1,
+                "shadow_overdue_account": self.OVERDUE_ACCOUNT,
+            },
+        )
+
+        assert len(errors) == 0
+        today = date.today()
+        past_txns = [
+            e
+            for e in result_entries
+            if isinstance(e, data.Transaction) and e.date <= today
+        ]
+        assert len(past_txns) > 0
+        for txn in past_txns:
+            accounts = [p.account for p in txn.postings]
+            assert "Assets:Checking" not in accounts
+            assert self.OVERDUE_ACCOUNT in accounts
+
+    def test_upcoming_posts_to_upcoming_account(self, tmp_path, monkeypatch):
+        """Future transactions use shadow_upcoming_account when both are configured."""
+        from beanschedule import loader
+
+        schedule_yaml = self._make_yaml(tmp_path)
+        monkeypatch.setattr(
+            loader, "find_schedules_location", lambda: ("file", schedule_yaml)
+        )
+        options_map = {"filename": str(tmp_path / "main.bean")}
+
+        result_entries, errors = schedules(
+            [],
+            options_map,
+            config={
+                "forecast_months": 1,
+                "shadow_overdue_account": self.OVERDUE_ACCOUNT,
+                "shadow_upcoming_account": self.UPCOMING_ACCOUNT,
+            },
+        )
+
+        assert len(errors) == 0
+        today = date.today()
+        txns = [e for e in result_entries if isinstance(e, data.Transaction)]
+        for txn in txns:
+            accounts = [p.account for p in txn.postings]
+            assert "Assets:Checking" not in accounts
+            if txn.date <= today:
+                assert self.OVERDUE_ACCOUNT in accounts
+                assert self.UPCOMING_ACCOUNT not in accounts
+            else:
+                assert self.UPCOMING_ACCOUNT in accounts
+                assert self.OVERDUE_ACCOUNT not in accounts
+
+    def test_overdue_filtered_when_actual_transaction_exists(
+        self, tmp_path, monkeypatch
+    ):
+        """Past dates with real imported transactions are not duplicated as overdue."""
+        from beanschedule import loader
+        from beancount.core import amount, data
+        from decimal import Decimal
+        from datetime import date as dt_date
+        from dateutil.relativedelta import relativedelta
+
+        schedule_yaml = self._make_yaml(tmp_path)
+        monkeypatch.setattr(
+            loader, "find_schedules_location", lambda: ("file", schedule_yaml)
+        )
+        options_map = {"filename": str(tmp_path / "main.bean")}
+
+        # Create a real imported transaction for last month's rent
+        today = dt_date.today()
+        last_month_first = (today - relativedelta(months=1)).replace(day=1)
+        existing_txn = data.Transaction(
+            meta={"filename": "main.bean", "lineno": 1, "schedule_id": "rent-monthly"},
+            date=last_month_first,
+            flag="*",
+            payee="Rent Payment",
+            narration="Monthly rent",
+            tags=frozenset(),
+            links=frozenset(),
+            postings=[
+                data.Posting(
+                    "Expenses:Housing:Rent",
+                    amount.Amount(Decimal("1500.00"), "USD"),
+                    None,
+                    None,
+                    None,
+                    None,
+                ),
+                data.Posting(
+                    "Assets:Checking",
+                    amount.Amount(Decimal("-1500.00"), "USD"),
+                    None,
+                    None,
+                    None,
+                    None,
+                ),
+            ],
+        )
+
+        result_entries, errors = schedules(
+            [existing_txn],
+            options_map,
+            config={
+                "forecast_months": 0,
+                "shadow_overdue_account": self.OVERDUE_ACCOUNT,
+            },
+        )
+
+        assert len(errors) == 0
+        # The date with an existing transaction should not appear in overdue
+        overdue_txns = [
+            e
+            for e in result_entries
+            if isinstance(e, data.Transaction)
+            and e.date == last_month_first
+            and e.flag == "#"
+        ]
+        assert len(overdue_txns) == 0, (
+            "Should not generate overdue for already-matched dates"
+        )
+
+    def test_overdue_filtered_when_transaction_posted_within_date_window(
+        self, tmp_path, monkeypatch
+    ):
+        """Existing transaction posted within date_window days of expected date suppresses forecast.
+
+        Regression test: previously the filter used exact date matching, so a transaction
+        posted on the 3rd (expected the 1st) would not be filtered, causing a duplicate
+        overdue forecast for the 1st.
+        """
+        from beanschedule import loader
+        from beancount.core import amount, data
+        from decimal import Decimal
+        from datetime import date as dt_date
+        from dateutil.relativedelta import relativedelta
+
+        schedule_yaml = self._make_yaml(tmp_path)
+        monkeypatch.setattr(
+            loader, "find_schedules_location", lambda: ("file", schedule_yaml)
+        )
+        options_map = {"filename": str(tmp_path / "main.bean")}
+
+        today = dt_date.today()
+        # Expected occurrence: 1st of last month
+        last_month_first = (today - relativedelta(months=1)).replace(day=1)
+        # Actual posting: 2 days later (within default 3-day window)
+        actual_posting_date = last_month_first + relativedelta(days=2)
+
+        existing_txn = data.Transaction(
+            meta={
+                "filename": "main.bean",
+                "lineno": 1,
+                "schedule_id": "rent-monthly",
+            },
+            date=actual_posting_date,  # Posted on the 3rd, expected on the 1st
+            flag="*",
+            payee="Rent Payment",
+            narration="Monthly rent",
+            tags=frozenset(),
+            links=frozenset(),
+            postings=[
+                data.Posting(
+                    "Expenses:Housing:Rent",
+                    amount.Amount(Decimal("1500.00"), "USD"),
+                    None,
+                    None,
+                    None,
+                    None,
+                ),
+                data.Posting(
+                    "Assets:Checking",
+                    amount.Amount(Decimal("-1500.00"), "USD"),
+                    None,
+                    None,
+                    None,
+                    None,
+                ),
+            ],
+        )
+
+        result_entries, errors = schedules(
+            [existing_txn],
+            options_map,
+            config={
+                "forecast_months": 0,
+                "shadow_overdue_account": self.OVERDUE_ACCOUNT,
+            },
+        )
+
+        assert len(errors) == 0
+        # Neither the expected date (1st) nor the actual posting date (3rd) should
+        # appear as a duplicate overdue forecast
+        overdue_txns_for_month = [
+            e
+            for e in result_entries
+            if isinstance(e, data.Transaction)
+            and e.date.year == last_month_first.year
+            and e.date.month == last_month_first.month
+            and e.flag == "#"
+        ]
+        assert len(overdue_txns_for_month) == 0, (
+            "Should not generate overdue when existing transaction is within date_window"
+        )

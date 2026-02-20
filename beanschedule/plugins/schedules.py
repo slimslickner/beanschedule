@@ -144,6 +144,8 @@ def schedules(entries, options_map, config=None):
     schedule_file = None
     forecast_config = None
     config_file_path = None
+    shadow_upcoming_account: str | None = None
+    shadow_overdue_account: str | None = None
 
     try:
         # Separate file path from forecast config
@@ -232,6 +234,10 @@ def schedules(entries, options_map, config=None):
                 schedule_file.config.include_past_dates = forecast_config[
                     "include_past_dates"
                 ]
+            if "shadow_upcoming_account" in forecast_config:
+                shadow_upcoming_account = forecast_config["shadow_upcoming_account"]
+            if "shadow_overdue_account" in forecast_config:
+                shadow_overdue_account = forecast_config["shadow_overdue_account"]
 
     except Exception as e:
         error_msg = f"Failed to load schedules: {e}"
@@ -242,16 +248,13 @@ def schedules(entries, options_map, config=None):
     # 2. Determine forecast horizon
     # Determine forecast window based on configuration
     #
-    # NOTE: We start from TOMORROW, not today, to avoid duplicating actual
-    # transactions that were just imported today. If a paycheck arrives today
-    # (2026-02-05), we want forecasts for future dates (2026-02-20, etc.),
-    # not a duplicate forecast for today.
-    #
-    # The forecast window is configurable via GlobalConfig:
-    # - forecast_months: extends the end_date by N months (default 3)
-    # - min_forecast_date: can override the start_date if set
+    # By default we start from TOMORROW to avoid duplicating actual transactions
+    # imported today. When shadow_overdue_account is configured, each schedule
+    # uses its own recurrence.start_date as the generation start so all past-due
+    # occurrences are covered regardless of age. Dates that already have an actual
+    # matched transaction are always filtered out by filter_occurrences_by_existing_transactions.
     today = date.today()
-    forecast_start = today + timedelta(days=1)  # Start from tomorrow, not today
+    forecast_start = today + timedelta(days=1)  # Start from tomorrow by default
 
     # Apply min_forecast_date override if configured
     if schedule_file.config.min_forecast_date:
@@ -273,10 +276,12 @@ def schedules(entries, options_map, config=None):
     )
 
     logger.info(
-        "Generating forecasts from %s to %s (%d schedule(s))",
-        forecast_start,
+        "Generating forecasts to %s (%d schedule(s))%s",
         forecast_end,
         len(schedule_file.schedules),
+        " [overdue enabled: per-schedule start]"
+        if shadow_overdue_account
+        else f" [upcoming from {forecast_start}]",
     )
 
     # 3. Generate forecast transactions
@@ -310,9 +315,17 @@ def schedules(entries, options_map, config=None):
             continue
 
         try:
+            # When overdue is enabled, generate from the schedule's own start_date so
+            # every past-due occurrence is included. Otherwise start from tomorrow.
+            gen_start = (
+                schedule.recurrence.start_date
+                if shadow_overdue_account
+                else forecast_start
+            )
+
             # Generate occurrence dates within the forecast window
             occurrences = generate_schedule_occurrences(
-                schedule, engine, forecast_start, forecast_end
+                schedule, engine, gen_start, forecast_end
             )
 
             # Determine forecast dates: use payment_day_of_month if set (for amortization)
@@ -321,7 +334,7 @@ def schedules(entries, options_map, config=None):
             if schedule.amortization and schedule.amortization.payment_day_of_month:
                 # Generate amortization dates based on payment day of month
                 amort_occurrences = []
-                current = forecast_start
+                current = gen_start
                 try:
                     if current.day <= schedule.amortization.payment_day_of_month:
                         current = current.replace(
@@ -339,7 +352,7 @@ def schedules(entries, options_map, config=None):
                     current = current.replace(day=last_day)
 
                 while current <= forecast_end:
-                    if current >= forecast_start:
+                    if current >= gen_start:
                         amort_occurrences.append(current)
                     try:
                         current = (current + relativedelta(months=1)).replace(
@@ -372,7 +385,7 @@ def schedules(entries, options_map, config=None):
             # Uses shared utility: filter_occurrences_by_existing_transactions()
             original_count = len(forecast_dates)
             forecast_dates = filter_occurrences_by_existing_transactions(
-                schedule.id, forecast_dates, entries
+                schedule, forecast_dates, entries
             )
             if len(forecast_dates) < original_count:
                 logger.debug(
@@ -435,8 +448,19 @@ def schedules(entries, options_map, config=None):
                 if amort_splits is not None and occurrence_date not in amort_splits:
                     continue
 
+                # Select shadow account based on whether the date is overdue or upcoming
+                shadow_account = (
+                    shadow_overdue_account
+                    if occurrence_date <= today
+                    else shadow_upcoming_account
+                )
+
                 forecast_txn = _create_forecast_transaction(
-                    schedule, occurrence_date, schedule_file.config, amort_splits
+                    schedule,
+                    occurrence_date,
+                    schedule_file.config,
+                    amort_splits,
+                    shadow_account,
                 )
                 forecast_entries.append(forecast_txn)
 
@@ -451,10 +475,43 @@ def schedules(entries, options_map, config=None):
 
     logger.info("Generated %d forecast transaction(s)", len(forecast_entries))
 
-    # 4. Sort and return
-    forecast_entries.sort(key=data.entry_sortkey)
+    # 4. Open directives for shadow accounts
+    # Automatically open any shadow accounts that aren't already open in the ledger,
+    # using the earliest date the account appears in the generated forecast entries.
+    shadow_accounts_used: dict[str, date] = {}
+    for txn in forecast_entries:
+        if not isinstance(txn, data.Transaction):
+            continue
+        for posting in txn.postings:
+            if posting.account in (shadow_upcoming_account, shadow_overdue_account):
+                if posting.account not in shadow_accounts_used:
+                    shadow_accounts_used[posting.account] = txn.date
+                else:
+                    shadow_accounts_used[posting.account] = min(
+                        shadow_accounts_used[posting.account], txn.date
+                    )
 
-    return entries + forecast_entries, errors
+    existing_open_accounts = {
+        entry.account for entry in entries if isinstance(entry, data.Open)
+    }
+
+    for idx, (account, open_date) in enumerate(sorted(shadow_accounts_used.items())):
+        if account not in existing_open_accounts:
+            meta = data.new_metadata("<beanschedule.plugins.schedules>", idx)
+            forecast_entries.append(data.Open(meta, open_date, account, None, None))  # type: ignore[arg-type]
+            logger.debug(
+                "Added Open directive for shadow account %s on %s", account, open_date
+            )
+
+    # 5. Sort and return
+    # Must sort ALL entries together (not just forecast_entries) so that shadow
+    # account Open directives appear before any transactions that post to them,
+    # even if the original ledger contains future-dated entries (balance assertions,
+    # notes, etc.) that would otherwise appear after the Open directives.
+    all_entries = entries + forecast_entries
+    all_entries.sort(key=data.entry_sortkey)
+
+    return all_entries, errors
 
 
 def _get_active_amortization_override(amortization_config, occurrence_date):
@@ -495,7 +552,11 @@ def _get_principal_account(schedule) -> str | None:
 
 
 def _create_forecast_transaction(
-    schedule, occurrence_date, global_config, amort_splits=None
+    schedule,
+    occurrence_date,
+    global_config,
+    amort_splits=None,
+    shadow_account: str | None = None,
 ):
     """Create a forecast transaction from a schedule.
 
@@ -535,6 +596,7 @@ def _create_forecast_transaction(
         "filename": display_filename,
         "lineno": 0,
         "schedule_id": schedule.id,  # For tracking, not matching
+        "filing_account": schedule.match.account,  # Original match account before shadow redirect
     }
 
     # Add schedule metadata if present
@@ -724,11 +786,16 @@ def _create_forecast_transaction(
             global_config.default_currency,
         )
 
+        # Redirect matched account posting to shadow account if configured
+        posting_account = posting_template.account
+        if shadow_account and posting_account == schedule.match.account:
+            posting_account = shadow_account
+
         posting_meta: dict = {"filename": display_filename, "lineno": 0}
         if posting_template.metadata:
             posting_meta.update(posting_template.metadata)
         posting = data.Posting(
-            account=posting_template.account,
+            account=posting_account,
             units=posting_amount,
             cost=None,
             price=None,
@@ -747,7 +814,7 @@ def _create_forecast_transaction(
         flag="#",  # Forecast flag
         payee=schedule.transaction.payee,
         narration=narration,
-        tags=frozenset(schedule.transaction.tags or []),
+        tags=frozenset(schedule.transaction.tags or []) | {"scheduled"},
         links=frozenset(schedule.transaction.links or []),
         postings=postings,
     )

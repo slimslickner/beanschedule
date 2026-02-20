@@ -42,6 +42,54 @@ JSON syntax also works:
 plugin "beanschedule.plugins.schedules" "{\"forecast_months\": 12}"
 ```
 
+#### Shadow Accounts (Balance Assertion Safety)
+
+By default, forecast transactions post to the real accounts defined in your schedule (e.g. `Assets:Bank:Checking`). If you have balance assertions on those accounts, the forecast transactions can cause them to fail.
+
+Use shadow accounts to redirect the matched account posting to plugin-only equity accounts instead. Only the posting matching `match.account` is redirected — expense and income postings are left intact so category-level forecasting remains accurate.
+
+**Upcoming transactions** (tomorrow and beyond):
+
+```beancount
+plugin "beanschedule.plugins.schedules" "{
+  'forecast_months': 3,
+  'shadow_upcoming_account': 'Equity:Schedules:Upcoming'
+}"
+```
+
+**Overdue transactions** (past-due occurrences not yet in the ledger):
+
+By default, the plugin only generates transactions from tomorrow forward. When `shadow_overdue_account` is configured, the plugin also generates overdue transactions for every past occurrence since the schedule's own `start_date` that has no matching real transaction in the ledger — no fixed lookback window, so nothing is missed:
+
+```beancount
+plugin "beanschedule.plugins.schedules" "{
+  'forecast_months': 3,
+  'shadow_upcoming_account': 'Equity:Schedules:Upcoming',
+  'shadow_overdue_account': 'Equity:Schedules:Overdue'
+}"
+```
+
+With both configured, a rent schedule that missed last month would generate:
+
+```beancount
+2026-01-01 # "Property Manager" "Monthly Rent"
+  schedule_id: "rent-payment"
+  Expenses:Housing:Rent              1500.00 USD
+  Equity:Schedules:Overdue          -1500.00 USD  ; was Assets:Bank:Checking
+
+2026-02-01 # "Property Manager" "Monthly Rent"
+  schedule_id: "rent-payment"
+  Expenses:Housing:Rent              1500.00 USD
+  Equity:Schedules:Upcoming         -1500.00 USD  ; was Assets:Bank:Checking
+```
+
+This means:
+- `Assets:Bank:Checking` is never touched by any forecast — balance assertions always pass
+- `Expenses:Housing:Rent` accumulates normally — budgeting queries remain accurate
+- `Equity:Schedules:Overdue` shows what is past-due and unaccounted for in the ledger
+- `Equity:Schedules:Upcoming` shows what is expected in the coming months
+- Dates that already have a real imported transaction (matched by `schedule_id`) are automatically excluded from both
+
 ### Via Config File
 
 In `schedules/_config.yaml`:
@@ -62,10 +110,12 @@ Config file values are used as defaults, but plugin arguments override them.
 
 ## Configuration Parameters
 
-| Parameter           | Type    | Default | Description                                            |
-| ------------------- | ------- | ------- | ------------------------------------------------------ |
-| `forecast_months`   | integer | 3       | Months ahead from tomorrow to generate forecasts       |
-| `min_forecast_date` | date    | null    | Earliest date to consider for forecasts (min selector) |
+| Parameter                 | Type    | Default | Description                                                                                                      |
+| ------------------------- | ------- | ------- | ---------------------------------------------------------------------------------------------------------------- |
+| `forecast_months`         | integer | 3       | Months ahead from tomorrow to generate forecasts                                                                 |
+| `min_forecast_date`       | date    | null    | Earliest date to consider for forecasts (min selector)                                                           |
+| `shadow_upcoming_account` | string  | null    | If set, redirects the `match.account` posting on future transactions to this account                             |
+| `shadow_overdue_account`  | string  | null    | If set, enables overdue generation: all past-due occurrences since the schedule's `start_date` that have no matching real transaction are generated and redirected to this account |
 
 ## Behavior
 
@@ -223,7 +273,8 @@ plugin "beanschedule.plugins.schedules" "{'forecast_months': 24}"
 Skip markers are automatically excluded. Verify skip marker format:
 
 ```beancount
-2026-02-15 S "Landlord" "[SKIPPED] Reason"
+2026-02-15 * "Landlord" "[SKIPPED] Reason"
+  #skipped
   schedule_id: "rent-payment"
   schedule_skipped: "true"
   Assets:Bank:Checking
