@@ -20,7 +20,6 @@ logic without duplication, ensuring consistency and making maintenance easier.
 Usage Patterns:
   - Hook uses generate_all_schedule_occurrences() for batch account-grouped matching
   - Plugin uses generate_schedule_occurrences() per-schedule and then filters
-  - Both use build_date_index() for fast date-based lookups
   - Plugin uses get_scheduled_dates_from_entries() to avoid duplicate forecasts
 """
 
@@ -30,6 +29,8 @@ from datetime import date
 from typing import TYPE_CHECKING
 
 from beancount.core import data
+
+from . import constants
 
 if TYPE_CHECKING:
     from .recurrence import RecurrenceEngine
@@ -64,19 +65,10 @@ def get_scheduled_dates_from_entries(
         Set of dates where transactions with this schedule_id exist
         (empty set if no matches found)
     """
-    dates = set()
-
-    for entry in entries:
-        if isinstance(entry, data.Transaction):
-            # Skip plugin-generated forecast transactions if requested
-            if not include_forecast and "scheduled" in (entry.tags or frozenset()):
-                continue
-
-            # Check if transaction has matching schedule_id
-            if entry.meta.get("schedule_id") == schedule_id:
-                dates.add(entry.date)
-
-    return dates
+    return {
+        t.date
+        for t in get_transactions_by_schedule_id(entries, schedule_id, include_forecast)
+    }
 
 
 def get_transactions_by_schedule_id(
@@ -110,42 +102,10 @@ def get_transactions_by_schedule_id(
                 continue
 
             # Check if transaction has matching schedule_id
-            if entry.meta.get("schedule_id") == schedule_id:
+            if entry.meta.get(constants.META_SCHEDULE_ID) == schedule_id:
                 transactions.append(entry)
 
     return transactions
-
-
-def build_date_index(
-    ledger_entries: list[data.Directive] | None,
-) -> dict[date, list[data.Transaction]]:
-    """Build an index mapping dates to transactions for fast lookups.
-
-    This index enables O(1) date lookups instead of O(n) scans through all
-    entries. Used by the hook for lazy matching: instead of checking all
-    ledger entries for potential matches, it only checks transactions on
-    the relevant date.
-
-    Performance Note: Building this index is O(n) but pays off immediately
-    if you'll be doing multiple date lookups.
-
-    Args:
-        ledger_entries: Existing ledger entries (can be None for empty ledger)
-
-    Returns:
-        Dict mapping date -> List of transactions on that date.
-        Returns empty dict if ledger_entries is None or empty.
-    """
-    index = defaultdict(list)
-
-    if not ledger_entries:
-        return index
-
-    for entry in ledger_entries:
-        if isinstance(entry, data.Transaction):
-            index[entry.date].append(entry)
-
-    return index
 
 
 def build_scheduled_transactions_index(
@@ -182,7 +142,7 @@ def build_scheduled_transactions_index(
                 continue
 
             # Check if transaction has schedule_id metadata
-            schedule_id = entry.meta.get("schedule_id")
+            schedule_id = entry.meta.get(constants.META_SCHEDULE_ID)
             if schedule_id:
                 if schedule_id not in scheduled_dates:
                     scheduled_dates[schedule_id] = set()
@@ -318,7 +278,7 @@ def filter_occurrences_by_existing_transactions(
         for entry in entries
         if isinstance(entry, data.Transaction)
         and "scheduled" not in (entry.tags or frozenset())
-        and entry.meta.get("schedule_id") == schedule_id
+        and entry.meta.get(constants.META_SCHEDULE_ID) == schedule_id
     ]
 
     if not schedule_txns:

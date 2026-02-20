@@ -87,7 +87,7 @@ class TestSkipMarkerPreventsPlaceholder:
     ):
         """Skip marker transaction prevents placeholder creation for that occurrence."""
         schedule = sample_schedule(
-            schedule_id="rent-payment",
+            id="rent-payment",
             payee="Landlord",
         )
         schedule_file = ScheduleFile(schedules=[schedule], config=global_config)
@@ -127,7 +127,7 @@ class TestSkipMarkerPreventsPlaceholder:
         self, sample_schedule, global_config
     ):
         """Skip marker with explicit schedule_id metadata is recognized."""
-        schedule = sample_schedule(schedule_id="test-schedule")
+        schedule = sample_schedule(id="test-schedule")
         schedule_file = ScheduleFile(schedules=[schedule], config=global_config)
 
         skip_marker = make_transaction(
@@ -172,38 +172,3 @@ class TestSkipMarkerPreventsPlaceholder:
         # Both should be recognized as skip markers
         assert _is_skip_marker(skip1) is True
         assert _is_skip_marker(skip2) is True
-
-
-class TestSkipMarkerLogging:
-    """Tests for skip marker detection and logging in the lazy matching function."""
-
-    def test_is_skip_marker_function(self):
-        """Test the _is_skip_marker() function detects skip markers correctly."""
-        # Metadata
-        txn_with_meta = make_transaction(
-            date(2026, 2, 1),
-            "Test",
-            "Assets:Checking",
-            None,
-            **{META_SCHEDULE_SKIPPED: "$0 balance"},
-        )
-        assert _is_skip_marker(txn_with_meta) is True
-
-        # Tag (Beancount stores tags without the # symbol)
-        txn_with_tag = make_transaction(
-            date(2026, 2, 1),
-            "Test",
-            "Assets:Checking",
-            None,
-            tags={"skipped"},
-        )
-        assert _is_skip_marker(txn_with_tag) is True
-
-        # Normal transaction
-        txn_normal = make_transaction(
-            date(2026, 2, 1),
-            "Test",
-            "Assets:Checking",
-            Decimal("-100.00"),
-        )
-        assert _is_skip_marker(txn_normal) is False

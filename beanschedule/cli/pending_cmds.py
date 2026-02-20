@@ -93,7 +93,7 @@ def create_pending(
     # date comes as datetime from click.DateTime; convert to date for formatting
     txn_date = date.date()
 
-    click.echo("\n📋 Creating pending transaction")
+    click.echo("\nCreating pending transaction")
     click.echo(f"   Main account: {account} ({amount})")
     click.echo(f"   Payee: {payee}")
     click.echo(f"   Date: {txn_date}")
@@ -140,14 +140,14 @@ def create_pending(
 
         # Check if balanced
         if abs(remaining) < Decimal("0.01"):
-            click.echo("✓ Balanced!")
+            click.echo("Balanced!")
             break
 
         # Ask to add more
         if not click.confirm(f"\nAdd another split? (remaining: {remaining:.2f})"):
             if abs(remaining) > Decimal("0.01"):
                 click.echo(
-                    f"\n⚠  Warning: Amount not balanced (remaining: {remaining:.2f})",
+                    f"\nWarning: Amount not balanced (remaining: {remaining:.2f})",
                     err=True,
                 )
                 if not click.confirm("Continue anyway?"):
@@ -177,7 +177,7 @@ def create_pending(
     with open(output_path, "a") as f:
         f.write("\n".join(lines))
 
-    click.echo("\n✓ Pending transaction created!")
+    click.echo("\nPending transaction created!")
     click.echo(f"  File: {output_path}")
     click.echo(f"  Splits: {len(splits)}")
 
@@ -201,7 +201,7 @@ def list_pending(file: str):
     if not file:
         pending_file = find_pending_file()
         if not pending_file:
-            click.echo("❌ No pending.beancount file found", err=True)
+            click.echo("No pending.beancount file found", err=True)
             click.echo("   Create one with: beanschedule pending create", err=True)
             return
         file = str(pending_file)
@@ -210,10 +210,10 @@ def list_pending(file: str):
     pending_txns = load_pending_transactions(pending_path)
 
     if not pending_txns:
-        click.echo("✓ No pending transactions found")
+        click.echo("No pending transactions found")
         return
 
-    click.echo(f"\n📋 Pending transactions ({len(pending_txns)} total):\n")
+    click.echo(f"\nPending transactions ({len(pending_txns)} total):\n")
 
     # Sort by date
     for txn in sorted(pending_txns, key=lambda t: t.date):
@@ -252,7 +252,7 @@ def clean_pending(file: str, dry_run: bool):
     if not file:
         pending_file = find_pending_file()
         if not pending_file:
-            click.echo("✓ No pending.beancount file found")
+            click.echo("No pending.beancount file found")
             return
         file = str(pending_file)
 
@@ -264,9 +264,9 @@ def clean_pending(file: str, dry_run: bool):
             click.echo(f"Would remove empty file: {file}")
         else:
             pending_path.unlink(missing_ok=True)
-            click.echo(f"✓ Cleaned up empty pending file: {file}")
+            click.echo(f"Cleaned up empty pending file: {file}")
     else:
         click.echo(
-            f"⚠  File contains {len(pending_txns)} pending transaction(s) - not cleaning",
+            f"Warning: File contains {len(pending_txns)} pending transaction(s) - not cleaning",
             err=True,
         )

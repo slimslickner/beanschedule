@@ -401,7 +401,7 @@ class TestPlaceholderCreation:
     """Tests for creating placeholders for missing transactions."""
 
     def test_placeholder_created_for_missing_transaction(
-        self, sample_transaction, sample_schedule, global_config
+        self, sample_transaction, sample_schedule, global_config_with_past_dates
     ):
         """Test that placeholders are created for missing scheduled transactions."""
         # Transaction on Jan 20, but schedule expects Jan 15
@@ -423,7 +423,9 @@ class TestPlaceholderCreation:
             ("checking.csv", [txn], "Assets:Bank:Checking", None),
         ]
 
-        schedule_file = ScheduleFile(schedules=[schedule], config=global_config)
+        schedule_file = ScheduleFile(
+            schedules=[schedule], config=global_config_with_past_dates
+        )
 
         with patch("beanschedule.hook.load_schedules_file", return_value=schedule_file):
             result = schedule_hook(extracted_entries)
@@ -594,7 +596,7 @@ class TestLedgerTransactionMatching:
         assert len(result) == 0
 
     def test_ledger_transaction_without_schedule_id_allows_placeholder(
-        self, sample_transaction, sample_schedule, global_config
+        self, sample_transaction, sample_schedule, global_config_with_past_dates
     ):
         """Test that ledger transactions without schedule_id don't prevent missing warnings."""
         # Create a ledger transaction WITHOUT schedule_id
@@ -615,7 +617,9 @@ class TestLedgerTransactionMatching:
         # No imported transactions
         extracted_entries = []
 
-        schedule_file = ScheduleFile(schedules=[schedule], config=global_config)
+        schedule_file = ScheduleFile(
+            schedules=[schedule], config=global_config_with_past_dates
+        )
 
         with patch("beanschedule.hook.load_schedules_file", return_value=schedule_file):
             result = schedule_hook(extracted_entries, existing_entries=[ledger_txn])
@@ -660,7 +664,7 @@ class TestLedgerTransactionMatching:
         assert len(result) == 0
 
     def test_ledger_transaction_with_unknown_schedule_id(
-        self, sample_transaction, sample_schedule, global_config
+        self, sample_transaction, sample_schedule, global_config_with_past_dates
     ):
         """Test that ledger transactions with unknown schedule_id are ignored."""
         # Create a ledger transaction with non-existent schedule_id
@@ -683,7 +687,9 @@ class TestLedgerTransactionMatching:
 
         extracted_entries = []
 
-        schedule_file = ScheduleFile(schedules=[schedule], config=global_config)
+        schedule_file = ScheduleFile(
+            schedules=[schedule], config=global_config_with_past_dates
+        )
 
         with patch("beanschedule.hook.load_schedules_file", return_value=schedule_file):
             result = schedule_hook(extracted_entries, existing_entries=[ledger_txn])
@@ -746,8 +752,6 @@ class TestAmortizationEnrichment:
         self, sample_transaction, sample_schedule, global_config
     ):
         """Test stateful amortization enrichment using ledger balance."""
-        from decimal import Decimal
-
         from beanschedule.schema import AmortizationConfig
         from beanschedule.types import CompoundingFrequency
         from tests.conftest import make_posting_template
@@ -844,8 +848,6 @@ class TestAmortizationEnrichment:
         self, sample_transaction, sample_schedule, global_config
     ):
         """Test amortization with explicit escrow postings."""
-        from decimal import Decimal
-
         from beanschedule.schema import AmortizationConfig
         from beanschedule.types import CompoundingFrequency
         from tests.conftest import make_posting_template

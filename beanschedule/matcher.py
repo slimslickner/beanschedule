@@ -132,18 +132,17 @@ class TransactionMatcher:
             1.0 if pattern matches payee, 0.0 otherwise.
         """
         try:
-            normalized_payee = payee.upper().strip()
-            normalized_pattern = pattern.upper().strip()
+            stripped_pattern = pattern.strip()
 
-            # Get or compile and cache the pattern
-            if normalized_pattern not in self.compiled_patterns:
-                self.compiled_patterns[normalized_pattern] = re.compile(
-                    normalized_pattern,
+            # Get or compile and cache the pattern (case-insensitive via re.IGNORECASE)
+            if stripped_pattern not in self.compiled_patterns:
+                self.compiled_patterns[stripped_pattern] = re.compile(
+                    stripped_pattern,
                     re.IGNORECASE,
                 )
 
-            compiled = self.compiled_patterns[normalized_pattern]
-            if compiled.search(normalized_payee):
+            compiled = self.compiled_patterns[stripped_pattern]
+            if compiled.search(payee):
                 return 1.0
             return 0.0
         except re.error as e:

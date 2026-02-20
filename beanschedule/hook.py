@@ -3,7 +3,6 @@
 import logging
 from collections import defaultdict
 from datetime import date, timedelta
-from datetime import date as date_type
 from decimal import Decimal
 
 from beancount.core import amount, data
@@ -224,7 +223,7 @@ def schedule_hook(
                     modified_entries.append(enriched_txn)
                     matched_pending_entries.append(pending_match)
                     logger.info(
-                        "✓ Matched pending transaction: %s (%s) - %s | %s",
+                        "Matched pending transaction: %s (%s) - %s | %s",
                         entry.date,
                         pending_match.payee,
                         entry.postings[0].units if entry.postings else "no amount",
@@ -237,7 +236,7 @@ def schedule_hook(
                 if match_result:
                     schedule, expected_date, score = match_result
                     logger.info(
-                        "✓ Matched transaction to schedule '%s' (score: %.2f)",
+                        "Matched transaction to schedule '%s' (score: %.2f)",
                         schedule.id,
                         score,
                     )
@@ -295,7 +294,7 @@ def schedule_hook(
     # Log summary of matched transactions
     if matched_details:
         logger.info("=" * 70)
-        logger.info("✓ Matched %d scheduled transaction(s)", len(matched_details))
+        logger.info("Matched %d scheduled transaction(s)", len(matched_details))
         logger.info("=" * 70)
         for txn_date, payee, schedule_id in matched_details:
             logger.info("  • %s - %s (%s)", txn_date, payee, schedule_id)
@@ -319,7 +318,7 @@ def schedule_hook(
         # Log prominent warning about missing scheduled transactions
         logger.warning("=" * 70)
         logger.warning(
-            "⚠️  MISSING SCHEDULED TRANSACTIONS: %d expected transaction(s) not found",
+            "MISSING SCHEDULED TRANSACTIONS: %d expected transaction(s) not found",
             len(placeholders),
         )
         logger.warning("=" * 70)
@@ -360,7 +359,7 @@ def schedule_hook(
             logger.warning("PENDING TRANSACTIONS - UNMATCHED (%d open)", len(unmatched))
             logger.warning("=" * 70)
             for pending in sorted(unmatched, key=lambda p: p.date):
-                days_diff = (pending.date - date_type.today()).days  # noqa: DTZ011
+                days_diff = (pending.date - date.today()).days  # noqa: DTZ011
                 if days_diff > 0:
                     age_str = f"in {days_diff} days"
                 elif days_diff == 0:
@@ -641,7 +640,7 @@ def _match_transaction(
             )
             schedule, expected_date = closest_match
             logger.info(
-                "✓ Using pre-existing schedule_id metadata: '%s'",
+                "Using pre-existing schedule_id metadata: '%s'",
                 existing_schedule_id,
             )
             # Return with perfect confidence score since it's explicitly set
@@ -965,8 +964,6 @@ def _create_placeholders(
     Returns:
         List of placeholder transactions for overdue/imminent missing transactions
     """
-    from datetime import date as date_type
-
     from .schema import GlobalConfig
 
     # Use default config if not provided
@@ -974,7 +971,7 @@ def _create_placeholders(
         config = GlobalConfig()
 
     placeholders = []
-    today = date_type.today()
+    today = date.today()
 
     for _account, occurrence_list in expected_occurrences.items():
         for schedule, expected_date in occurrence_list:
@@ -996,9 +993,12 @@ def _create_placeholders(
                 # Still skip dates far in the future that aren't due yet
                 if expected_date > today + timedelta(days=date_window):
                     continue
-            # Default behavior: only create for overdue/imminent (today or past)
-            elif expected_date > today + timedelta(days=date_window):
-                continue
+            else:
+                # Default: only create for imminent dates (not past, not far future)
+                if expected_date < today or expected_date > today + timedelta(
+                    days=date_window
+                ):
+                    continue
 
             # Create placeholder transaction
             placeholder = _create_placeholder_transaction(
@@ -1046,7 +1046,7 @@ def _log_summary(
         missing_count = sum(
             1
             for placeholder in missing_placeholders
-            if placeholder.meta.get("schedule_id") == schedule.id
+            if placeholder.meta.get(constants.META_SCHEDULE_ID) == schedule.id
         )
         total_expected_for_schedule = expected_count + missing_count
 
@@ -1056,7 +1056,7 @@ def _log_summary(
         if missing_count > 0:
             missing_by_schedule[schedule.id] = missing_count
 
-        status = "✓" if missing_count == 0 else "⚠"
+        status = "OK" if missing_count == 0 else "!!"
         logger.info(
             "%s %-40s %2d/%2d matched",
             status,
@@ -1099,7 +1099,7 @@ def _create_placeholder_transaction(
 
     # Add custom metadata
     for key, value in schedule.transaction.metadata.items():
-        if key not in [constants.META_SCHEDULE_ID]:
+        if key != constants.META_SCHEDULE_ID:
             meta[key] = value
 
     # Build narration with prefix

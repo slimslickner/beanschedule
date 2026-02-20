@@ -4,7 +4,7 @@ import json
 import logging
 import sys
 import traceback
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
 
@@ -14,8 +14,8 @@ from beancount import loader as beancount_loader
 from beancount.core import data
 from dateutil.relativedelta import relativedelta
 
-from beanschedule import __version__
-from beanschedule.loader import load_schedules_from_path
+from beanschedule import __version__, constants
+from beanschedule.loader import get_enabled_schedules, load_schedules_from_path
 from beanschedule.recurrence import RecurrenceEngine
 from beanschedule.utils import slugify
 
@@ -71,14 +71,14 @@ def validate(path: str):
             click.echo(
                 f"Error: Path is neither a file nor a directory: {path_obj}", err=True
             )
-            raise SystemExit(1)
+            sys.exit(1)
 
         # Count schedules
         num_schedules = len(schedule_file.schedules)
         num_enabled = sum(1 for s in schedule_file.schedules if s.enabled)
 
         # Report results
-        click.echo("✓ Validation successful!")
+        click.echo("Validation successful!")
         click.echo(f"  Total schedules: {num_schedules}")
         click.echo(f"  Enabled: {num_enabled}")
         click.echo(f"  Disabled: {num_schedules - num_enabled}")
@@ -88,7 +88,7 @@ def validate(path: str):
         duplicates = [sid for sid in schedule_ids if schedule_ids.count(sid) > 1]
         if duplicates:
             click.echo(
-                f"\n⚠ Warning: Duplicate schedule IDs found: {set(duplicates)}",
+                f"\nWarning: Duplicate schedule IDs found: {set(duplicates)}",
                 err=True,
             )
             sys.exit(1)
@@ -96,7 +96,7 @@ def validate(path: str):
         click.echo("\nAll schedules are valid!")
 
     except Exception as e:
-        click.echo(f"✗ Validation failed: {e}", err=True)
+        click.echo(f"Validation failed: {e}", err=True)
         if logger.isEnabledFor(logging.DEBUG):
             traceback.print_exc()
         sys.exit(1)
@@ -131,7 +131,7 @@ def list_schedules(path: str, output_format: str, enabled_only: bool):
             click.echo(
                 f"Error: Path is neither a file nor a directory: {path_obj}", err=True
             )
-            raise SystemExit(1)
+            sys.exit(1)
 
         # Filter schedules
         schedules = schedule_file.schedules
@@ -192,7 +192,7 @@ def generate(schedule_id: str, start_date, end_date, schedules_path: str):
         schedule_file = load_schedules_from_path(path_obj)
         if schedule_file is None:
             click.echo(f"Error: Path not found: {path_obj}", err=True)
-            raise SystemExit(1)
+            sys.exit(1)
 
         # Find schedule by ID
         schedule = next(
@@ -200,7 +200,7 @@ def generate(schedule_id: str, start_date, end_date, schedules_path: str):
         )
         if schedule is None:
             click.echo(f"Error: Schedule '{schedule_id}' not found", err=True)
-            raise SystemExit(1)
+            sys.exit(1)
 
         # Generate occurrences using shared utility (consistent with hook & plugin)
         from beanschedule.utils import generate_schedule_occurrences
@@ -273,7 +273,7 @@ def show(  # noqa: PLR0912, PLR0915
         schedule_file = load_schedules_from_path(path_obj)
         if schedule_file is None:
             click.echo(f"Error: Path not found: {path_obj}", err=True)
-            raise SystemExit(1)
+            sys.exit(1)
 
         # Find schedule by ID
         schedule = next(
@@ -282,7 +282,7 @@ def show(  # noqa: PLR0912, PLR0915
         )
         if schedule is None:
             click.echo(f"Error: Schedule '{schedule_id}' not found", err=True)
-            raise SystemExit(1)
+            sys.exit(1)
 
         # Determine date range for occurrences
         # NOTE: For consistency with the plugin's duplicate prevention, we start from
@@ -306,7 +306,7 @@ def show(  # noqa: PLR0912, PLR0915
         )
 
         # Display schedule information
-        status = "✓ enabled" if schedule.enabled else "✗ disabled"
+        status = "enabled" if schedule.enabled else "disabled"
         click.echo(f"Schedule: {schedule.id}")
         click.echo(f"Status: {status}")
         click.echo(f"Frequency: {schedule.recurrence.frequency.value}")
@@ -450,7 +450,7 @@ def amortize(  # noqa: PLR0912, PLR0915, PLR0913
         schedule_file = load_schedules_from_path(path_obj)
         if schedule_file is None:
             click.echo(f"Error: Path not found: {path_obj}", err=True)
-            raise SystemExit(1)
+            sys.exit(1)
 
         # Find schedule by ID
         schedule = next(
@@ -458,7 +458,7 @@ def amortize(  # noqa: PLR0912, PLR0915, PLR0913
         )
         if schedule is None:
             click.echo(f"Error: Schedule '{schedule_id}' not found", err=True)
-            raise SystemExit(1)
+            sys.exit(1)
 
         # Check if schedule has amortization configured
         if schedule.amortization is None:
@@ -474,7 +474,7 @@ def amortize(  # noqa: PLR0912, PLR0915, PLR0913
             click.echo("    annual_rate: 0.0675", err=True)
             click.echo("    term_months: 360", err=True)
             click.echo("    start_date: 2024-01-01", err=True)
-            raise SystemExit(1)
+            sys.exit(1)
 
         # ── stateful mode: read balance from ledger ──────────────────────────
         if schedule.amortization.balance_from_ledger:
@@ -483,9 +483,7 @@ def amortize(  # noqa: PLR0912, PLR0915, PLR0913
                     "Error: --ledger is required for stateful amortization schedules",
                     err=True,
                 )
-                raise SystemExit(1)
-
-            from decimal import Decimal  # noqa: PLC0415
+                sys.exit(1)
 
             from beanschedule.amortization import (  # noqa: PLC0415
                 build_liability_balance_index,
@@ -503,7 +501,7 @@ def amortize(  # noqa: PLR0912, PLR0915, PLR0913
                     f"Error: No posting with role='principal' in schedule '{schedule_id}'",
                     err=True,
                 )
-                raise SystemExit(1)
+                sys.exit(1)
 
             balances = build_liability_balance_index(entries, {principal_account})
             if principal_account not in balances:
@@ -986,7 +984,7 @@ def create(  # noqa: PLR0912, PLR0915
             # Write schedule
             f.write(yaml_content)
 
-        click.echo(f"✓ Schedule saved to: {output_file}")
+        click.echo(f"Schedule saved to: {output_file}")
         click.echo("\nNext steps:")
         click.echo(f"  1. Validate: beanschedule validate {schedules_dir}/")
         click.echo(
@@ -1171,7 +1169,7 @@ def detect(  # noqa: PLR0912, PLR0915, PLR0913
         if output_dir:
             output_path = Path(output_dir)
             saved_count = save_detected_schedules(candidates, output_path)
-            click.echo(f"\n✓ Saved {saved_count} schedules to: {output_path}")
+            click.echo(f"\nSaved {saved_count} schedules to: {output_path}")
             click.echo("\nNext steps:")
             click.echo(f"  1. Review: beanschedule list {output_path}")
             click.echo(f"  2. Validate: beanschedule validate {output_path}")
@@ -1259,7 +1257,7 @@ missing_transaction:
         f.write(example_content)
 
     click.echo(f"Created: {example_path}")
-    click.echo(f"\n✓ Initialized schedule directory: {output_path}")
+    click.echo(f"\nInitialized schedule directory: {output_path}")
     click.echo("\nNext steps:")
     click.echo("  1. Edit the example schedule file or create your own")
     click.echo(
@@ -1337,12 +1335,6 @@ def skip(
         beanschedule skip --select --ledger ledger.beancount
     """
     try:
-        from pathlib import Path
-
-        from beancount import loader as beancount_loader
-
-        from beanschedule.loader import get_enabled_schedules, load_schedules_from_path
-
         # Determine schedules path
         if schedules_path is None:
             schedules_path = (
@@ -1355,13 +1347,13 @@ def skip(
         schedule_file = load_schedules_from_path(path_obj)
         if schedule_file is None:
             click.echo(f"Error: Could not load schedules from {path_obj}", err=True)
-            raise SystemExit(1)
+            sys.exit(1)
 
         # Interactive selection mode
         if select:
             if not ledger:
                 click.echo("Error: --ledger is required with --select", err=True)
-                raise SystemExit(1)
+                sys.exit(1)
 
             ledger_path = Path(ledger)
             entries, load_errors, _options = beancount_loader.load_file(
@@ -1371,16 +1363,13 @@ def skip(
                 logger.warning("Ledger load warning: %s", err)
 
             # Get today's date for date range calculation
-            from datetime import datetime, timedelta
-
             today = datetime.now().date()
             start_date = today - timedelta(days=90)
             end_date = today + timedelta(days=90)
 
             # Find missing schedules using hook logic
             enabled_schedules = get_enabled_schedules(schedule_file)
-            from beanschedule.recurrence import RecurrenceEngine
-            from beanschedule.utils import generate_all_schedule_occurrences
+            from beanschedule.utils import generate_all_schedule_occurrences  # noqa: PLC0415
 
             recurrence_engine = RecurrenceEngine()
             expected_occurrences = generate_all_schedule_occurrences(
@@ -1439,7 +1428,9 @@ def skip(
             # Generate skip markers for selected items
             skip_markers = []
             for sched, skip_date in selected:
-                marker = _generate_skip_marker(sched, skip_date, reason)
+                marker = _generate_skip_marker(
+                    sched, skip_date, reason, schedule_file.config.default_currency
+                )
                 skip_markers.append(marker)
 
             output_text = "\n".join(skip_markers)
@@ -1450,7 +1441,7 @@ def skip(
                 output_path = Path(output)
                 with open(output_path, "a") as f:
                     f.write("\n" + output_text + "\n")
-                click.echo(f"✓ Skip markers appended to {output_path}", err=False)
+                click.echo(f"Skip markers appended to {output_path}", err=False)
 
         else:
             # Direct mode: SCHEDULE_ID and DATES required
@@ -1467,7 +1458,7 @@ def skip(
             )
             if schedule is None:
                 click.echo(f"Error: Schedule '{schedule_id}' not found", err=True)
-                raise SystemExit(1)
+                sys.exit(1)
 
             # Parse dates
             parsed_dates = []
@@ -1484,7 +1475,9 @@ def skip(
             # Generate skip markers
             skip_markers = []
             for d in parsed_dates:
-                marker = _generate_skip_marker(schedule, d, reason)
+                marker = _generate_skip_marker(
+                    schedule, d, reason, schedule_file.config.default_currency
+                )
                 skip_markers.append(marker)
 
             # Output
@@ -1496,16 +1489,21 @@ def skip(
                 output_path = Path(output)
                 with open(output_path, "a") as f:
                     f.write("\n" + output_text + "\n")
-                click.echo(f"✓ Skip markers appended to {output_path}", err=False)
+                click.echo(f"Skip markers appended to {output_path}", err=False)
 
     except Exception as e:
-        click.echo(f"✗ Error: {e}", err=True)
+        click.echo(f"Error: {e}", err=True)
         if logger.isEnabledFor(logging.DEBUG):
             traceback.print_exc()
         sys.exit(1)
 
 
-def _generate_skip_marker(schedule, skip_date: date, reason: str | None = None) -> str:
+def _generate_skip_marker(
+    schedule,
+    skip_date: date,
+    reason: str | None = None,
+    currency: str = constants.DEFAULT_CURRENCY,
+) -> str:
     """
     Generate a Beancount skip marker transaction.
 
@@ -1534,7 +1532,7 @@ def _generate_skip_marker(schedule, skip_date: date, reason: str | None = None) 
         "  #skipped",
         f'  {META_SCHEDULE_ID}: "{schedule.id}"',
         f'  {META_SCHEDULE_SKIPPED}: "true"',
-        f"  {account}  0 USD",
+        f"  {account}  0 {currency}",
     ]
 
     return "\n".join(lines)
@@ -1542,7 +1540,3 @@ def _generate_skip_marker(schedule, skip_date: date, reason: str | None = None) 
 
 # Register pending transactions command group
 main.add_command(pending)
-
-
-if __name__ == "__main__":
-    main()

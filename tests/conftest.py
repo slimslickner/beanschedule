@@ -44,6 +44,15 @@ def make_posting(
     )
 
 
+def _build_meta(**kwargs) -> dict:
+    """Build beancount transaction metadata from kwargs."""
+    meta = data.new_metadata(kwargs.get("filename", "test"), 0)
+    for key, value in kwargs.items():
+        if key not in ["filename", "narration", "tags", "links", "flag"]:
+            meta[key] = value
+    return meta
+
+
 def make_transaction(
     date_: date,
     payee: str,
@@ -53,17 +62,9 @@ def make_transaction(
     **kwargs,
 ) -> data.Transaction:
     """Create a beancount Transaction with a single posting."""
-    meta = data.new_metadata(kwargs.get("filename", "test"), 0)
-
-    # Add any additional metadata from kwargs
-    for key, value in kwargs.items():
-        if key not in ["filename", "narration", "tags", "links"]:
-            meta[key] = value
-
     posting = make_posting(account, amount_value, currency)
-
     return data.Transaction(
-        meta=meta,
+        meta=_build_meta(**kwargs),
         date=date_,
         flag=kwargs.get("flag", "*"),
         payee=payee,
@@ -81,14 +82,8 @@ def make_transaction_with_postings(
     **kwargs,
 ) -> data.Transaction:
     """Create a beancount Transaction with multiple postings."""
-    meta = data.new_metadata(kwargs.get("filename", "test"), 0)
-
-    for key, value in kwargs.items():
-        if key not in ["filename", "narration", "tags", "links"]:
-            meta[key] = value
-
     return data.Transaction(
-        meta=meta,
+        meta=_build_meta(**kwargs),
         date=date_,
         flag=kwargs.get("flag", "*"),
         payee=payee,
@@ -308,6 +303,12 @@ def sample_schedule():
 def global_config():
     """Fixture providing default GlobalConfig."""
     return make_global_config()
+
+
+@pytest.fixture
+def global_config_with_past_dates():
+    """Fixture providing GlobalConfig with include_past_dates=True."""
+    return make_global_config(include_past_dates=True)
 
 
 @pytest.fixture

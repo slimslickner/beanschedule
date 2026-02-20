@@ -70,33 +70,6 @@ def find_schedules_location() -> tuple[str, Path] | None:
     return None
 
 
-def find_schedules_file() -> Path | None:
-    """
-    Locate schedules.yaml file.
-
-    DEPRECATED: Use find_schedules_location() instead for directory support.
-    Maintained for backward compatibility.
-
-    Search order:
-    1. BEANSCHEDULE_FILE environment variable
-    2. schedules.yaml in current directory
-    3. schedules.yaml in parent of importers/config.py
-
-    Returns:
-        Path to schedules.yaml or None if not found
-    """
-    location = find_schedules_location()
-    if location is None:
-        return None
-
-    mode, path = location
-    if mode == "file":
-        return path
-    # Directory mode found, but caller expects file
-    # Return None to indicate file not found
-    return None
-
-
 def load_schedules_from_path(path: Path) -> ScheduleFile | None:
     """Load schedules from a file or directory path.
 
@@ -263,6 +236,35 @@ def load_schedules_from_directory(dirpath: Path) -> ScheduleFile | None:
     return schedule_file
 
 
+def _load_single_yaml_schedules_file(path: Path) -> ScheduleFile:
+    """Load ScheduleFile from a single YAML file. Raises on error."""
+    logger.info("Loading schedules from: %s", path)
+
+    with path.open() as f:
+        raw = yaml.safe_load(f)
+
+    if raw is None:
+        logger.warning("Empty schedules file: %s", path)
+        return ScheduleFile(schedules=[], config=GlobalConfig())
+
+    # Handle case where schedules key is None (all commented out)
+    if raw.get("schedules") is None:
+        raw["schedules"] = []
+
+    schedule_file = ScheduleFile(**raw)
+
+    for schedule in schedule_file.schedules:
+        schedule.source_file = path
+
+    logger.info(
+        "Loaded %d schedules (%d enabled)",
+        len(schedule_file.schedules),
+        sum(1 for s in schedule_file.schedules if s.enabled),
+    )
+
+    return schedule_file
+
+
 def load_schedules_file(filepath: Path | None = None) -> ScheduleFile | None:
     """
     Load and validate schedules (supports both directory and file formats).
@@ -283,37 +285,9 @@ def load_schedules_file(filepath: Path | None = None) -> ScheduleFile | None:
         yaml.YAMLError: If YAML parsing fails (file mode only)
         pydantic.ValidationError: If schema validation fails (file mode only)
     """
-    # If explicit filepath provided, use legacy single-file loading
     if filepath is not None:
-        logger.info("Loading schedules from: %s", filepath)
-
         try:
-            with filepath.open() as f:
-                data = yaml.safe_load(f)
-
-            if data is None:
-                logger.warning("Empty schedules file: %s", filepath)
-                return ScheduleFile(schedules=[], config=GlobalConfig())
-
-            # Handle case where schedules key is None (all commented out)
-            if data.get("schedules") is None:
-                data["schedules"] = []
-
-            # Validate and parse with Pydantic
-            schedule_file = ScheduleFile(**data)
-
-            # Set source file for all schedules
-            for schedule in schedule_file.schedules:
-                schedule.source_file = filepath
-
-            logger.info(
-                "Loaded %d schedules (%d enabled)",
-                len(schedule_file.schedules),
-                sum(1 for s in schedule_file.schedules if s.enabled),
-            )
-
-            return schedule_file
-
+            return _load_single_yaml_schedules_file(filepath)
         except yaml.YAMLError as e:
             logger.error("YAML parsing error in %s: %s", filepath, e)
             raise
@@ -321,7 +295,6 @@ def load_schedules_file(filepath: Path | None = None) -> ScheduleFile | None:
             logger.error("Error loading schedules from %s: %s", filepath, e)
             raise
 
-    # Auto-discover using new location finder
     location = find_schedules_location()
 
     if location is None:
@@ -333,35 +306,8 @@ def load_schedules_file(filepath: Path | None = None) -> ScheduleFile | None:
     if mode == "dir":
         return load_schedules_from_directory(path)
 
-    logger.info("Loading schedules from: %s", path)
-
     try:
-        with path.open() as f:
-            data = yaml.safe_load(f)
-
-        if data is None:
-            logger.warning("Empty schedules file: %s", path)
-            return ScheduleFile(schedules=[], config=GlobalConfig())
-
-        # Handle case where schedules key is None (all commented out)
-        if data.get("schedules") is None:
-            data["schedules"] = []
-
-        # Validate and parse with Pydantic
-        schedule_file = ScheduleFile(**data)
-
-        # Set source file for all schedules
-        for schedule in schedule_file.schedules:
-            schedule.source_file = path
-
-        logger.info(
-            "Loaded %d schedules (%d enabled)",
-            len(schedule_file.schedules),
-            sum(1 for s in schedule_file.schedules if s.enabled),
-        )
-
-        return schedule_file
-
+        return _load_single_yaml_schedules_file(path)
     except yaml.YAMLError as e:
         logger.error("YAML parsing error in %s: %s", path, e)
         raise
