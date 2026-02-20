@@ -7,9 +7,12 @@ import pytest
 from pydantic import ValidationError
 
 from beanschedule.schema import (
+    AmortizationConfig,
+    AmortizationOverride,
     GlobalConfig,
     MatchCriteria,
     MissingTransactionConfig,
+    Posting,
     RecurrenceRule,
     Schedule,
     ScheduleFile,
@@ -32,18 +35,18 @@ class TestMatchCriteria:
         assert criteria.payee_pattern == "Test"
         assert criteria.amount == Decimal("-100.00")
 
-    def test_amount_tolerance_must_be_positive(self):
+    def test_amount_tolerance_must_be_nonnegative(self):
         """Test that negative amount_tolerance is rejected."""
-        with pytest.raises(ValueError, match="amount_tolerance must be positive"):
+        with pytest.raises(ValueError, match="amount_tolerance must be non-negative"):
             MatchCriteria(
                 account="Assets:Bank:Checking",
                 payee_pattern="Test",
                 amount_tolerance=Decimal("-5.00"),
             )
 
-    def test_date_window_days_must_be_positive(self):
+    def test_date_window_days_must_be_nonnegative(self):
         """Test that negative date_window_days is rejected."""
-        with pytest.raises(ValueError, match="date_window_days must be positive"):
+        with pytest.raises(ValueError, match="date_window_days must be non-negative"):
             MatchCriteria(
                 account="Assets:Bank:Checking",
                 payee_pattern="Test",
@@ -432,7 +435,6 @@ class TestAmortizationConfig:
 
     def test_create_valid_amortization_config(self):
         """Should create valid amortization configuration."""
-        from beanschedule.schema import AmortizationConfig
 
         config = AmortizationConfig(
             principal=Decimal("300000"),
@@ -449,7 +451,6 @@ class TestAmortizationConfig:
 
     def test_amortization_with_extra_principal(self):
         """Should accept extra principal payment."""
-        from beanschedule.schema import AmortizationConfig
 
         config = AmortizationConfig(
             principal=Decimal("300000"),
@@ -463,7 +464,6 @@ class TestAmortizationConfig:
 
     def test_principal_must_be_positive(self):
         """Should reject zero or negative principal."""
-        from beanschedule.schema import AmortizationConfig
 
         with pytest.raises(ValidationError, match="principal must be positive"):
             AmortizationConfig(
@@ -483,7 +483,6 @@ class TestAmortizationConfig:
 
     def test_annual_rate_must_be_nonnegative(self):
         """Should reject negative annual rate."""
-        from beanschedule.schema import AmortizationConfig
 
         with pytest.raises(ValidationError, match="annual_rate must be non-negative"):
             AmortizationConfig(
@@ -495,7 +494,6 @@ class TestAmortizationConfig:
 
     def test_term_months_must_be_positive(self):
         """Should reject zero or negative term."""
-        from beanschedule.schema import AmortizationConfig
 
         with pytest.raises(ValidationError, match="term_months must be positive"):
             AmortizationConfig(
@@ -507,7 +505,6 @@ class TestAmortizationConfig:
 
     def test_extra_principal_must_be_nonnegative(self):
         """Should reject negative extra principal."""
-        from beanschedule.schema import AmortizationConfig
 
         with pytest.raises(
             ValidationError, match="extra_principal must be non-negative"
@@ -526,7 +523,6 @@ class TestPosting:
 
     def test_create_posting_with_valid_role(self):
         """Should accept valid role values."""
-        from beanschedule.schema import Posting
 
         for role in ["principal", "interest", "payment", "escrow"]:
             posting = Posting(
@@ -538,7 +534,6 @@ class TestPosting:
 
     def test_create_posting_without_role(self):
         """Should allow posting without role (backward compatibility)."""
-        from beanschedule.schema import Posting
 
         posting = Posting(
             account="Assets:Checking",
@@ -548,7 +543,6 @@ class TestPosting:
 
     def test_invalid_role_rejected(self):
         """Should reject invalid role values."""
-        from beanschedule.schema import Posting
 
         with pytest.raises(ValidationError, match="role must be one of"):
             Posting(
@@ -640,7 +634,6 @@ class TestAmortizationConfigWithOverrides:
 
     def test_create_amortization_with_overrides(self):
         """Should create config with overrides list."""
-        from beanschedule.schema import AmortizationConfig, AmortizationOverride
 
         config = AmortizationConfig(
             principal=Decimal("300000"),
@@ -670,7 +663,6 @@ class TestStatefulAmortizationConfig:
 
     def test_stateful_config_valid(self):
         """Should accept valid stateful config with only rate + payment."""
-        from beanschedule.schema import AmortizationConfig
         from beanschedule.types import CompoundingFrequency
 
         config = AmortizationConfig(
@@ -687,7 +679,6 @@ class TestStatefulAmortizationConfig:
 
     def test_stateful_config_daily_compounding(self):
         """Should accept DAILY compounding in stateful mode."""
-        from beanschedule.schema import AmortizationConfig
         from beanschedule.types import CompoundingFrequency
 
         config = AmortizationConfig(
@@ -700,7 +691,6 @@ class TestStatefulAmortizationConfig:
 
     def test_stateful_config_with_extra_principal(self):
         """Should accept extra_principal in stateful mode."""
-        from beanschedule.schema import AmortizationConfig
 
         config = AmortizationConfig(
             annual_rate=Decimal("0.04875"),
@@ -712,7 +702,6 @@ class TestStatefulAmortizationConfig:
 
     def test_stateful_config_requires_monthly_payment(self):
         """Should reject stateful config when monthly_payment is missing."""
-        from beanschedule.schema import AmortizationConfig
 
         with pytest.raises(ValidationError, match="monthly_payment is required"):
             AmortizationConfig(
@@ -722,7 +711,6 @@ class TestStatefulAmortizationConfig:
 
     def test_monthly_payment_must_be_positive(self):
         """Should reject zero or negative monthly_payment."""
-        from beanschedule.schema import AmortizationConfig
 
         with pytest.raises(ValidationError, match="monthly_payment must be positive"):
             AmortizationConfig(
@@ -733,7 +721,6 @@ class TestStatefulAmortizationConfig:
 
     def test_static_config_requires_principal(self):
         """Should reject static config when principal is missing."""
-        from beanschedule.schema import AmortizationConfig
 
         with pytest.raises(ValidationError, match="principal is required"):
             AmortizationConfig(
@@ -744,7 +731,6 @@ class TestStatefulAmortizationConfig:
 
     def test_static_config_requires_term_months(self):
         """Should reject static config when term_months is missing."""
-        from beanschedule.schema import AmortizationConfig
 
         with pytest.raises(ValidationError, match="term_months is required"):
             AmortizationConfig(
@@ -755,7 +741,6 @@ class TestStatefulAmortizationConfig:
 
     def test_static_config_requires_start_date(self):
         """Should reject static config when start_date is missing."""
-        from beanschedule.schema import AmortizationConfig
 
         with pytest.raises(ValidationError, match="start_date is required"):
             AmortizationConfig(

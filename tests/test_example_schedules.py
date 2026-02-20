@@ -96,7 +96,7 @@ class TestExampleSchedulesIntegration:
         result = runner.invoke(validate, [str(EXAMPLES_SCHEDULES_DIR)])
 
         assert result.exit_code == 0, f"Validation failed:\n{result.output}"
-        assert "✓ Validation successful!" in result.output
+        assert "Validation successful!" in result.output
         assert "All schedules are valid!" in result.output
 
     def test_example_schedules_can_be_loaded(self):

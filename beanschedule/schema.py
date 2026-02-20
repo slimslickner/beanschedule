@@ -11,6 +11,20 @@ from . import constants
 from .types import CompoundingFrequency, DayOfWeek, FlagType, FrequencyType
 
 
+def _validate_positive(v: Any, name: str) -> Any:
+    """Raise if v is provided and not strictly positive."""
+    if v is not None and v <= 0:
+        raise ValueError(f"{name} must be positive")
+    return v
+
+
+def _validate_nonnegative(v: Any, name: str) -> Any:
+    """Raise if v is provided and negative."""
+    if v is not None and v < 0:
+        raise ValueError(f"{name} must be non-negative")
+    return v
+
+
 class MatchCriteria(BaseModel):
     """Matching criteria for identifying transactions."""
 
@@ -31,17 +45,17 @@ class MatchCriteria(BaseModel):
     @field_validator("amount_tolerance")
     @classmethod
     def validate_amount_tolerance(cls, v: Decimal | None) -> Decimal | None:
-        """Ensure amount_tolerance is positive."""
+        """Ensure amount_tolerance is non-negative."""
         if v is not None and v < 0:
-            raise ValueError("amount_tolerance must be positive")
+            raise ValueError("amount_tolerance must be non-negative")
         return v
 
     @field_validator("date_window_days")
     @classmethod
     def validate_date_window(cls, v: int | None) -> int | None:
-        """Ensure date_window_days is positive."""
+        """Ensure date_window_days is non-negative."""
         if v is not None and v < 0:
-            raise ValueError("date_window_days must be positive")
+            raise ValueError("date_window_days must be non-negative")
         return v
 
 
@@ -164,8 +178,8 @@ class TransactionTemplate(BaseModel):
 
     payee: str | None = Field(None, description="Payee (overrides imported)")
     narration: str | None = Field(None, description="Narration (overrides imported)")
-    tags: list[str] | None = Field(default_factory=list, description="Tags to add")
-    links: list[str] | None = Field(default_factory=list, description="Links to add")
+    tags: list[str] = Field(default_factory=list, description="Tags to add")
+    links: list[str] = Field(default_factory=list, description="Links to add")
     metadata: dict[str, Any] = Field(
         default_factory=dict, description="Metadata to add"
     )
@@ -219,34 +233,22 @@ class AmortizationOverride(BaseModel):
     @field_validator("principal")
     @classmethod
     def validate_principal_positive(cls, v: Decimal | None) -> Decimal | None:
-        """Ensure principal is positive if provided."""
-        if v is not None and v <= 0:
-            raise ValueError("principal must be positive")
-        return v
+        return _validate_positive(v, "principal")
 
     @field_validator("annual_rate")
     @classmethod
     def validate_rate_nonnegative(cls, v: Decimal | None) -> Decimal | None:
-        """Ensure annual_rate is non-negative if provided."""
-        if v is not None and v < 0:
-            raise ValueError("annual_rate must be non-negative")
-        return v
+        return _validate_nonnegative(v, "annual_rate")
 
     @field_validator("term_months")
     @classmethod
     def validate_term_positive(cls, v: int | None) -> int | None:
-        """Ensure term_months is positive if provided."""
-        if v is not None and v <= 0:
-            raise ValueError("term_months must be positive")
-        return v
+        return _validate_positive(v, "term_months")
 
     @field_validator("extra_principal")
     @classmethod
     def validate_extra_principal_nonnegative(cls, v: Decimal | None) -> Decimal | None:
-        """Ensure extra_principal is non-negative if provided."""
-        if v is not None and v < 0:
-            raise ValueError("extra_principal must be non-negative")
-        return v
+        return _validate_nonnegative(v, "extra_principal")
 
 
 class AmortizationConfig(BaseModel):
@@ -324,34 +326,22 @@ class AmortizationConfig(BaseModel):
     @field_validator("principal")
     @classmethod
     def validate_principal_positive(cls, v: Decimal | None) -> Decimal | None:
-        """Ensure principal is positive if provided."""
-        if v is not None and v <= 0:
-            raise ValueError("principal must be positive")
-        return v
+        return _validate_positive(v, "principal")
 
     @field_validator("annual_rate")
     @classmethod
     def validate_rate_nonnegative(cls, v: Decimal) -> Decimal:
-        """Ensure annual_rate is non-negative."""
-        if v < 0:
-            raise ValueError("annual_rate must be non-negative")
-        return v
+        return _validate_nonnegative(v, "annual_rate")
 
     @field_validator("term_months")
     @classmethod
     def validate_term_positive(cls, v: int | None) -> int | None:
-        """Ensure term_months is positive if provided."""
-        if v is not None and v <= 0:
-            raise ValueError("term_months must be positive")
-        return v
+        return _validate_positive(v, "term_months")
 
     @field_validator("extra_principal")
     @classmethod
     def validate_extra_principal_nonnegative(cls, v: Decimal | None) -> Decimal | None:
-        """Ensure extra_principal is non-negative if provided."""
-        if v is not None and v < 0:
-            raise ValueError("extra_principal must be non-negative")
-        return v
+        return _validate_nonnegative(v, "extra_principal")
 
     @field_validator("monthly_payment")
     @classmethod

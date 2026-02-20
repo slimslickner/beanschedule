@@ -556,16 +556,16 @@ class TestFindBestMatch:
             Decimal("-1500.00"),
         )
 
-        # Schedule 1: Good match
+        # Schedule 1: Partial payee match ("Landlord Properties" vs "Landlord")
         schedule1 = sample_schedule(
-            id="good-match",
-            payee_pattern="Landlord",
+            id="partial-match",
+            payee_pattern="Landlord Properties",
             amount=Decimal("-1500.00"),
         )
 
-        # Schedule 2: Better match
+        # Schedule 2: Exact payee match
         schedule2 = sample_schedule(
-            id="better-match",
+            id="exact-match",
             payee_pattern="Landlord",
             amount=Decimal("-1500.00"),
         )
@@ -578,8 +578,7 @@ class TestFindBestMatch:
         result = matcher.find_best_match(txn, candidates)
 
         assert result is not None
-        # Should return one of the schedules (both should score similarly)
-        assert result[0].id in [schedule1.id, schedule2.id]
+        assert result[0].id == schedule2.id
 
     def test_threshold_boundary(
         self, sample_transaction, sample_schedule, global_config

@@ -73,14 +73,6 @@ MIN_DAY_OF_MONTH = 1
 MAX_DAY_OF_MONTH = 31
 MIN_MONTH = 1
 MAX_MONTH = 12
-NTH_OCCURRENCE_MIN = -1  # Last occurrence
-NTH_OCCURRENCE_MAX = 5  # 5th occurrence
-NTH_OCCURRENCE_LAST = -1
-
-# Validation for amortization payment day
-PAYMENT_DAY_MIN = 1
-PAYMENT_DAY_MAX = 31
-
 # Regex pattern indicators (for detecting if payee_pattern is regex)
 REGEX_INDICATORS = ["|", ".*", ".+", "\\", "[", "]", "(", ")", "^", "$"]
 
@@ -89,7 +81,6 @@ REGEX_INDICATORS = ["|", ".*", ".+", "\\", "[", "]", "(", ")", "^", "$"]
 # ============================================================================
 
 DATE_RANGE_BUFFER_DAYS = 7  # Buffer for extracting date range from transactions
-DEFAULT_MISSING_PLACEHOLDER_WINDOW_DAYS = 3
 LAST_DAY_OF_MONTH_INDICATOR = -1
 
 # ============================================================================
@@ -129,14 +120,13 @@ SAMPLE_SIZE_DENOMINATOR = 15.0
 # ============================================================================
 
 CENTS_PRECISION = Decimal("0.01")  # Currency rounding precision
-MONTHS_PER_YEAR = 12  # Months in a year
-ZERO_BALANCE = Decimal("0")  # Zero balance constant
+MONTHS_PER_YEAR = 12
+ZERO_BALANCE = Decimal("0")
 
 # ============================================================================
 # Display/Formatting Constants
 # ============================================================================
 
-LOG_DIVIDER_WIDTH = 70  # Width of log separator lines
 MAX_TABLE_COLUMN_WIDTH = 30  # Max width for table columns in CLI
 
 # ============================================================================
@@ -161,5 +151,3 @@ MONTH_END_THRESHOLD = 0.5  # Threshold for month-end detection (50% of dates)
 
 MIN_BEANGULP_TUPLE_SIZE = 2
 PLACEHOLDER_FLAG_TRUE = "true"
-MAX_SCHEDULE_ID_LENGTH = 50
-DAYS_PER_OCCURRENCE_ESTIMATE = 45  # Days to estimate for single occurrence

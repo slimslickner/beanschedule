@@ -111,10 +111,7 @@ def is_pending_marker(entry: data.Transaction) -> bool:
         True if this is a pending marker
     """
     # Check tags (Beancount stores tags without the # symbol)
-    if entry.tags and "pending" in entry.tags:
-        return True
-
-    return False
+    return bool(entry.tags and "pending" in entry.tags)
 
 
 def load_pending_transactions(file_path: Path) -> list[PendingTransaction]:

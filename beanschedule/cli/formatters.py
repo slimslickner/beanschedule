@@ -13,9 +13,6 @@ def print_schedule_table(schedules: list) -> None:
 
     Displays schedule ID, enabled/disabled status, recurrence frequency, and payee
     pattern for all schedules. Column widths are auto-calculated based on content.
-
-    Args:
-        schedules: List of Schedule objects to display.
     """
     # Calculate column widths
     id_width = max(len(s.id) for s in schedules)
@@ -33,7 +30,7 @@ def print_schedule_table(schedules: list) -> None:
 
     # Print schedules
     for s in schedules:
-        status = "✓ enabled" if s.enabled else "  disabled"
+        status = "enabled " if s.enabled else "disabled"
         frequency = s.recurrence.frequency.value
         payee = (s.transaction.payee or "")[:payee_width]
 
@@ -51,9 +48,6 @@ def print_schedule_csv(schedules: list) -> None:
     Outputs schedule details in CSV format suitable for import into spreadsheet
     applications. Columns include: ID, Enabled status, Frequency, Payee pattern,
     Account, and Expected amount.
-
-    Args:
-        schedules: List of Schedule objects to export.
     """
     writer = csv.writer(sys.stdout)
     writer.writerow(["ID", "Enabled", "Frequency", "Payee", "Account", "Amount"])
@@ -148,9 +142,6 @@ def print_detection_table(candidates: list) -> None:
 
     Shows confidence, frequency, payee, account, amount, and transaction count
     for each detected pattern. Displays full account names without truncation.
-
-    Args:
-        candidates: List of RecurringCandidate objects.
     """
     # Calculate column widths (no hard cap on account width)
     confidence_width = len("Confidence")
@@ -206,11 +197,7 @@ def print_detection_table(candidates: list) -> None:
 
 
 def print_detection_json(candidates: list) -> None:
-    """Print detected patterns as JSON.
-
-    Args:
-        candidates: List of RecurringCandidate objects.
-    """
+    """Print detected patterns as JSON."""
     output = []
     for c in candidates:
         output.append(

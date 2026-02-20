@@ -42,14 +42,7 @@ def complete_schedule_id(ctx, _, incomplete):
 
 
 def day_of_week_from_date(d: date) -> DayOfWeek:
-    """Get the DayOfWeek enum from a date.
-
-    Args:
-        d: The date to get day of week for.
-
-    Returns:
-        The corresponding DayOfWeek enum.
-    """
+    """Get the DayOfWeek enum from a date."""
     # Python weekday: 0=Monday, 6=Sunday
     # DayOfWeek enum: MON=0, TUE=1, ..., SUN=6
     day_index = d.weekday()
@@ -67,9 +60,6 @@ def day_of_week_from_date(d: date) -> DayOfWeek:
 
 def extract_transaction_details(txn: data.Transaction) -> dict[str, Any]:
     """Extract schedule-relevant details from a beancount transaction.
-
-    Args:
-        txn: The beancount Transaction to extract from.
 
     Returns:
         Dictionary with transaction details: date, payee, narration, account,
