@@ -146,6 +146,7 @@ def schedules(entries, options_map, config=None):
     config_file_path = None
     shadow_upcoming_account: str | None = None
     shadow_overdue_account: str | None = None
+    forecast_flag: str = "#"
 
     try:
         # Separate file path from forecast config
@@ -238,6 +239,8 @@ def schedules(entries, options_map, config=None):
                 shadow_upcoming_account = forecast_config["shadow_upcoming_account"]
             if "shadow_overdue_account" in forecast_config:
                 shadow_overdue_account = forecast_config["shadow_overdue_account"]
+            if "forecast_flag" in forecast_config:
+                forecast_flag = forecast_config["forecast_flag"]
 
     except Exception as e:
         error_msg = f"Failed to load schedules: {e}"
@@ -461,6 +464,7 @@ def schedules(entries, options_map, config=None):
                     schedule_file.config,
                     amort_splits,
                     shadow_account,
+                    forecast_flag,
                 )
                 forecast_entries.append(forecast_txn)
 
@@ -557,6 +561,7 @@ def _create_forecast_transaction(
     global_config,
     amort_splits=None,
     shadow_account: str | None = None,
+    forecast_flag: str = "#",
 ):
     """Create a forecast transaction from a schedule.
 
@@ -811,7 +816,7 @@ def _create_forecast_transaction(
     txn = data.Transaction(
         meta=meta,
         date=occurrence_date,
-        flag="#",  # Forecast flag
+        flag=forecast_flag,
         payee=schedule.transaction.payee,
         narration=narration,
         tags=frozenset(schedule.transaction.tags or []) | {"scheduled"},
