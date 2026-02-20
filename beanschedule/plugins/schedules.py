@@ -724,13 +724,16 @@ def _create_forecast_transaction(
             global_config.default_currency,
         )
 
+        posting_meta: dict = {"filename": display_filename, "lineno": 0}
+        if posting_template.metadata:
+            posting_meta.update(posting_template.metadata)
         posting = data.Posting(
             account=posting_template.account,
             units=posting_amount,
             cost=None,
             price=None,
             flag=None,
-            meta=dict(posting_template.metadata) if posting_template.metadata else None,
+            meta=posting_meta,
         )
         postings.append(posting)
 
