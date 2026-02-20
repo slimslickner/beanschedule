@@ -52,7 +52,6 @@ transaction:
       metadata:
         narration: "Home insurance escrow"
 
-
     # Optional: PMI if applicable
     # - account: Expenses:Housing:PMI
     #   amount: 75.00
