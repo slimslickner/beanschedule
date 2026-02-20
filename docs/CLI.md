@@ -303,7 +303,8 @@ beanschedule skip payment-id 2026-02-01 --schedules-path my-schedules/
 Output:
 
 ```beancount
-2026-02-15 S "Payee" "[SKIPPED] Prepaid"
+2026-02-15 * "Payee" "[SKIPPED] Prepaid"
+  #skipped
   schedule_id: "rent-payment"
   schedule_skipped: "Prepaid"
   Assets:Checking

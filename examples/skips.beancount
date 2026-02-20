@@ -6,7 +6,6 @@
 ; Recognized by any of:
 ; - #skipped tag
 ; - schedule_skipped metadata key
-; - Flag 'S' (for Skipped) - less common, use #skipped instead
 ;
 ; The hook prevents placeholder creation when it finds a skip marker
 ; with matching schedule_id metadata on the expected date.

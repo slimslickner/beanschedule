@@ -153,6 +153,7 @@ def load_schedules_from_path(path: Path) -> Optional[ScheduleFile]:
 | Time-dependent tests | `hook.py:660`     | Inject `today` parameter instead of `date.today()`   |
 | Deprecated fixture   | `conftest.py:119` | `make_match_criteria` uses deprecated `amount` field |
 | Missing assertions   | `test_hook.py`    | Some tests only check no exception raised            |
+| Monkeypatching       | `test_schedules_plugin.py` | Replace `monkeypatch.setattr(loader, "find_schedules_location", ...)` by passing the schedule file path directly as the `config` argument instead of relying on auto-discovery |
 
 ---
 
@@ -246,7 +247,7 @@ Focus: Code quality, documentation, CI/CD
   - [ ] Plugin (`beanschedule.plugins.schedules`) forecast transactions redirect the posting matching `schedule.match.account` to a configurable shadow account (e.g., `Equity:Schedules:Upcoming`) instead of the real asset/liability account
   - [ ] Hook (`hook.py`) is intentionally unchanged — it operates on real imported transactions where real accounts are correct
   - [ ] Opt-in via `GlobalConfig` (disabled by default to preserve existing behavior)
-  - [ ] Configurable via `shadow_upcoming_account` in `GlobalConfig`; presence of a non-None value enables the feature
+  - [ ] Opt-in: `shadow_upcoming_account` enables upcoming redirect; `shadow_overdue_account` enables overdue generation from each schedule's own `start_date`
   - [ ] Only the posting matching `schedule.match.account` is redirected; expense/income postings are left intact so category forecasting remains accurate
   - [ ] Example config:
     ```yaml

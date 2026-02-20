@@ -12,17 +12,6 @@ from tests.conftest import make_transaction
 class TestSkipMarkerDetection:
     """Tests for identifying skip marker transactions."""
 
-    def test_skip_marker_with_flag_S(self):
-        """Transaction with flag 'S' is recognized as skip marker."""
-        txn = make_transaction(
-            date(2026, 2, 15),
-            "Test Payee",
-            "Assets:Checking",
-            None,
-            flag="S",
-        )
-        assert _is_skip_marker(txn) is True
-
     def test_skip_marker_with_skipped_tag(self):
         """Transaction with #skipped tag is recognized as skip marker."""
         txn = make_transaction(
@@ -66,16 +55,17 @@ class TestSkipMarkerDetection:
         )
         assert _is_skip_marker(txn) is False
 
-    def test_transaction_with_other_flag_not_skip_marker(self):
-        """Transaction with other flags (*, !) is not a skip marker."""
-        txn = make_transaction(
-            date(2026, 2, 15),
-            "Test Payee",
-            "Assets:Checking",
-            Decimal("-100.00"),
-            flag="*",
-        )
-        assert _is_skip_marker(txn) is False
+    def test_transaction_with_any_flag_not_skip_marker(self):
+        """Transaction flag alone does not make it a skip marker; only tag/metadata matter."""
+        for flag in ("*", "!", "S", "P"):
+            txn = make_transaction(
+                date(2026, 2, 15),
+                "Test Payee",
+                "Assets:Checking",
+                Decimal("-100.00"),
+                flag=flag,
+            )
+            assert _is_skip_marker(txn) is False
 
     def test_transaction_with_other_tags_not_skip_marker(self):
         """Transaction with other tags but not #skipped is not a skip marker."""
@@ -109,8 +99,8 @@ class TestSkipMarkerPreventsPlaceholder:
             "Landlord",
             "Assets:Checking",
             None,
-            flag="S",
             narration="[SKIPPED] Testing",
+            tags={"skipped"},
             **{
                 META_SCHEDULE_ID: "rent-payment",
                 META_SCHEDULE_SKIPPED: "Testing",
@@ -168,7 +158,7 @@ class TestSkipMarkerPreventsPlaceholder:
             "Test Payee",
             "Assets:Checking",
             None,
-            flag="S",
+            tags={"skipped"},
         )
 
         skip2 = make_transaction(
@@ -189,16 +179,6 @@ class TestSkipMarkerLogging:
 
     def test_is_skip_marker_function(self):
         """Test the _is_skip_marker() function detects skip markers correctly."""
-        # Flag 'S'
-        txn_with_flag = make_transaction(
-            date(2026, 2, 1),
-            "Test",
-            "Assets:Checking",
-            None,
-            flag="S",
-        )
-        assert _is_skip_marker(txn_with_flag) is True
-
         # Metadata
         txn_with_meta = make_transaction(
             date(2026, 2, 1),
