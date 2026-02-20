@@ -243,17 +243,18 @@ Focus: Code quality, documentation, CI/CD
 
 **Core Features:**
 
-- [ ] **Shadow Account Forecasting** - Route plugin forecast transaction postings to a plugin-only account so real account balance assertions are never impacted
-  - [ ] Plugin (`beanschedule.plugins.schedules`) forecast transactions redirect the posting matching `schedule.match.account` to a configurable shadow account (e.g., `Equity:Schedules:Upcoming`) instead of the real asset/liability account
-  - [ ] Hook (`hook.py`) is intentionally unchanged — it operates on real imported transactions where real accounts are correct
-  - [ ] Opt-in via `GlobalConfig` (disabled by default to preserve existing behavior)
-  - [ ] Opt-in: `shadow_upcoming_account` enables upcoming redirect; `shadow_overdue_account` enables overdue generation from each schedule's own `start_date`
-  - [ ] Only the posting matching `schedule.match.account` is redirected; expense/income postings are left intact so category forecasting remains accurate
-  - [ ] Example config:
-    ```yaml
-    config:
-      shadow_upcoming_account: "Equity:Schedules:Upcoming"
-    ```
+- [x] **Shadow Account Forecasting** - Route plugin forecast transaction postings to a plugin-only account so real account balance assertions are never impacted
+  - [x] Plugin (`beanschedule.plugins.schedules`) forecast transactions redirect the posting matching `schedule.match.account` to a configurable shadow account (e.g., `Equity:Schedules:Upcoming`) instead of the real asset/liability account
+  - [x] Hook (`hook.py`) is intentionally unchanged — it operates on real imported transactions where real accounts are correct
+  - [x] Opt-in via plugin directive (disabled by default to preserve existing behavior)
+  - [x] `shadow_upcoming_account` enables upcoming redirect; `shadow_overdue_account` enables overdue generation from each schedule's own `start_date`
+  - [x] Only the posting matching `schedule.match.account` is redirected; expense/income postings are left intact so category forecasting remains accurate
+  - [x] `filing_account` metadata preserves the original match account on all plugin-generated transactions
+  - [x] `#scheduled` tag added to all plugin-generated transactions for reliable filtering
+  - [x] `forecast_flag` directive option (default `#`) to customize the Beancount flag on generated transactions
+  - [x] Auto-generates `Open` directives for shadow accounts; global sort ensures correct ordering
+  - [x] Duplicate detection uses `#scheduled` tag instead of `flag == "#"` — flag-agnostic
+  - [x] Date-window matching in `filter_occurrences_by_existing_transactions()` mirrors hook logic
 - [ ] Optional account matching (match any account if not specified)
 - [ ] Schedule statistics command (coverage report, match rates)
 - [ ] Advanced amortization (ARM, balloon payments, interest-only periods)

@@ -54,7 +54,8 @@ def get_scheduled_dates_from_entries(
     Args:
         entries: List of beancount entries (typically the full ledger)
         schedule_id: The schedule_id to search for (e.g., "paycheck-captech")
-        include_forecast: If True, include forecast transactions (flag="#")
+        include_forecast: If True, include plugin-generated forecast transactions
+                         (identified by the #scheduled tag).
                          If False (default), only include actual transactions.
                          The plugin uses False to find existing actual transactions,
                          excluding forecasts it might have already generated.
@@ -67,8 +68,8 @@ def get_scheduled_dates_from_entries(
 
     for entry in entries:
         if isinstance(entry, data.Transaction):
-            # Skip forecast transactions if requested
-            if not include_forecast and entry.flag == "#":
+            # Skip plugin-generated forecast transactions if requested
+            if not include_forecast and "scheduled" in (entry.tags or frozenset()):
                 continue
 
             # Check if transaction has matching schedule_id
@@ -92,7 +93,8 @@ def get_transactions_by_schedule_id(
     Args:
         entries: List of beancount entries (typically the full ledger)
         schedule_id: The schedule_id to search for (e.g., "paycheck-captech")
-        include_forecast: If True, include forecast transactions (flag="#")
+        include_forecast: If True, include plugin-generated forecast transactions
+                         (identified by the #scheduled tag).
                          If False (default), only include actual transactions
 
     Returns:
@@ -103,8 +105,8 @@ def get_transactions_by_schedule_id(
 
     for entry in entries:
         if isinstance(entry, data.Transaction):
-            # Skip forecast transactions if requested
-            if not include_forecast and entry.flag == "#":
+            # Skip plugin-generated forecast transactions if requested
+            if not include_forecast and "scheduled" in (entry.tags or frozenset()):
                 continue
 
             # Check if transaction has matching schedule_id
@@ -169,14 +171,14 @@ def build_scheduled_transactions_index(
 
     Returns:
         Dict mapping schedule_id -> set of dates with actual transactions.
-        Forecast transactions (flag="#") are excluded.
+        Plugin-generated forecast transactions (identified by the #scheduled tag) are excluded.
     """
     scheduled_dates = {}
 
     for entry in entries:
         if isinstance(entry, data.Transaction):
-            # Skip forecast transactions
-            if entry.flag == "#":
+            # Skip plugin-generated forecast transactions
+            if "scheduled" in (entry.tags or frozenset()):
                 continue
 
             # Check if transaction has schedule_id metadata
@@ -315,7 +317,7 @@ def filter_occurrences_by_existing_transactions(
         entry
         for entry in entries
         if isinstance(entry, data.Transaction)
-        and entry.flag != "#"
+        and "scheduled" not in (entry.tags or frozenset())
         and entry.meta.get("schedule_id") == schedule_id
     ]
 
