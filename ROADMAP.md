@@ -242,6 +242,17 @@ Focus: Code quality, documentation, CI/CD
 
 **Core Features:**
 
+- [ ] **Shadow Account Forecasting** - Route plugin forecast transaction postings to a plugin-only account so real account balance assertions are never impacted
+  - [ ] Plugin (`beanschedule.plugins.schedules`) forecast transactions redirect the posting matching `schedule.match.account` to a configurable shadow account (e.g., `Equity:Schedules:Upcoming`) instead of the real asset/liability account
+  - [ ] Hook (`hook.py`) is intentionally unchanged — it operates on real imported transactions where real accounts are correct
+  - [ ] Opt-in via `GlobalConfig` (disabled by default to preserve existing behavior)
+  - [ ] Configurable via `shadow_upcoming_account` in `GlobalConfig`; presence of a non-None value enables the feature
+  - [ ] Only the posting matching `schedule.match.account` is redirected; expense/income postings are left intact so category forecasting remains accurate
+  - [ ] Example config:
+    ```yaml
+    config:
+      shadow_upcoming_account: "Equity:Schedules:Upcoming"
+    ```
 - [ ] Optional account matching (match any account if not specified)
 - [ ] Schedule statistics command (coverage report, match rates)
 - [ ] Advanced amortization (ARM, balloon payments, interest-only periods)
