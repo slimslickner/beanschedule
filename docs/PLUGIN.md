@@ -84,6 +84,7 @@ With both configured, a rent schedule that missed last month would generate:
 ```
 
 This means:
+
 - `Assets:Bank:Checking` is never touched by any forecast — balance assertions always pass
 - `Expenses:Housing:Rent` accumulates normally — budgeting queries remain accurate
 - `Equity:Schedules:Overdue` shows what is past-due and unaccounted for in the ledger
@@ -110,11 +111,11 @@ Config file values are used as defaults, but plugin arguments override them.
 
 ## Configuration Parameters
 
-| Parameter                 | Type    | Default | Description                                                                                                      |
-| ------------------------- | ------- | ------- | ---------------------------------------------------------------------------------------------------------------- |
-| `forecast_months`         | integer | 3       | Months ahead from tomorrow to generate forecasts                                                                 |
-| `min_forecast_date`       | date    | null    | Earliest date to consider for forecasts (min selector)                                                           |
-| `shadow_upcoming_account` | string  | null    | If set, redirects the `match.account` posting on future transactions to this account                             |
+| Parameter                 | Type    | Default | Description                                                                                                                                                                        |
+| ------------------------- | ------- | ------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `forecast_months`         | integer | 3       | Months ahead from tomorrow to generate forecasts                                                                                                                                   |
+| `min_forecast_date`       | date    | null    | Earliest date to consider for forecasts (min selector)                                                                                                                             |
+| `shadow_upcoming_account` | string  | null    | If set, redirects the `match.account` posting on future transactions to this account                                                                                               |
 | `shadow_overdue_account`  | string  | null    | If set, enables overdue generation: all past-due occurrences since the schedule's `start_date` that have no matching real transaction are generated and redirected to this account |
 
 ## Behavior

@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`narration` field removed from the `Posting` model.** The top-level `narration:` key on posting items in schedule YAML files is no longer supported. Posting metadata (including narration) must now be placed inside a `metadata:` dict on the posting.
 
   **Before:**
+
   ```yaml
   postings:
     - account: Expenses:Housing:Mortgage-Interest
@@ -20,6 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   ```
 
   **After:**
+
   ```yaml
   postings:
     - account: Expenses:Housing:Mortgage-Interest

@@ -148,11 +148,11 @@ def load_schedules_from_path(path: Path) -> Optional[ScheduleFile]:
 
 ### Test Quality Issues
 
-| Issue                | Location          | Fix                                                  |
-| -------------------- | ----------------- | ---------------------------------------------------- |
-| Time-dependent tests | `hook.py:660`     | Inject `today` parameter instead of `date.today()`   |
-| Deprecated fixture   | `conftest.py:119` | `make_match_criteria` uses deprecated `amount` field |
-| Missing assertions   | `test_hook.py`    | Some tests only check no exception raised            |
+| Issue                | Location                   | Fix                                                                                                                                                                            |
+| -------------------- | -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Time-dependent tests | `hook.py:660`              | Inject `today` parameter instead of `date.today()`                                                                                                                             |
+| Deprecated fixture   | `conftest.py:119`          | `make_match_criteria` uses deprecated `amount` field                                                                                                                           |
+| Missing assertions   | `test_hook.py`             | Some tests only check no exception raised                                                                                                                                      |
 | Monkeypatching       | `test_schedules_plugin.py` | Replace `monkeypatch.setattr(loader, "find_schedules_location", ...)` by passing the schedule file path directly as the `config` argument instead of relying on auto-discovery |
 
 ---
