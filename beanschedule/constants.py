@@ -14,12 +14,10 @@ from decimal import Decimal
 CONFIG_FILENAME = "_config.yaml"
 SCHEDULE_FILE_PATTERN = "*.yaml"
 DEFAULT_SCHEDULES_DIR = "schedules"
-DEFAULT_SCHEDULES_FILE = "schedules.yaml"
 SYNTHETIC_SCHEDULES_SOURCE = "<schedules>"
 
 # Environment variables for schedule location discovery
 ENV_SCHEDULES_DIR = "BEANSCHEDULE_DIR"
-ENV_SCHEDULES_FILE = "BEANSCHEDULE_FILE"
 
 # ============================================================================
 # Metadata Keys (added to enriched transactions)

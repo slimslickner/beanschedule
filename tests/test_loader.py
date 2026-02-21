@@ -2,14 +2,13 @@
 
 import os
 
-import pytest
 import yaml
 
 from beanschedule.loader import (
     find_schedules_location,
     get_enabled_schedules,
     load_schedule_from_file,
-    load_schedules_file,
+    load_schedules,
     load_schedules_from_directory,
 )
 from beanschedule.schema import GlobalConfig, ScheduleFile
@@ -289,87 +288,6 @@ class TestLoadSchedulesFromDirectory:
         assert schedule_file.schedules[0].id == "valid-schedule"
 
 
-class TestLoadSchedulesFile:
-    """Tests for the main load_schedules_file() function."""
-
-    def test_load_explicit_file(self, temp_schedule_file, sample_schedule_dict):
-        """Test loading explicit schedule file path."""
-        # Create a schedules.yaml file
-        data = {
-            "schedules": [sample_schedule_dict],
-        }
-
-        with open(temp_schedule_file, "w") as f:
-            yaml.dump(data, f)
-
-        # Load explicitly
-        schedule_file = load_schedules_file(temp_schedule_file)
-
-        assert schedule_file is not None
-        assert len(schedule_file.schedules) == 1
-
-    def test_load_explicit_directory(self, temp_schedule_dir, sample_schedule_dict):
-        """Test loading explicit directory path."""
-        # Create schedule file
-        schedule_path = temp_schedule_dir / "test-schedule.yaml"
-        data = sample_schedule_dict.copy()
-        data["id"] = "test-schedule"
-        data["transaction"]["metadata"]["schedule_id"] = "test-schedule"
-
-        with open(schedule_path, "w") as f:
-            yaml.dump(data, f)
-
-        # Load explicitly using load_schedules_from_directory
-        schedule_file = load_schedules_from_directory(temp_schedule_dir)
-
-        assert schedule_file is not None
-        assert len(schedule_file.schedules) == 1
-
-    def test_auto_discovery_returns_none_if_not_found(self):
-        """Test that None is returned if no schedules found."""
-        # With no env vars and non-existent directories, should return None
-        # Clear env vars temporarily
-        old_dir = os.environ.pop("BEANSCHEDULE_DIR", None)
-        old_file = os.environ.pop("BEANSCHEDULE_FILE", None)
-
-        try:
-            # This will search current directory and parent - likely to not find anything
-            # in test environment, but may find schedules if running from project root
-            result = load_schedules_file()
-            # Result could be None or a ScheduleFile depending on environment
-            # Just verify it doesn't crash
-            assert result is None or isinstance(result, ScheduleFile)
-        finally:
-            if old_dir:
-                os.environ["BEANSCHEDULE_DIR"] = old_dir
-            if old_file:
-                os.environ["BEANSCHEDULE_FILE"] = old_file
-
-    def test_empty_schedules_file(self, temp_schedule_file):
-        """Test loading empty schedules.yaml file."""
-        # Create empty schedules file
-        data = {
-            "schedules": [],
-        }
-
-        with open(temp_schedule_file, "w") as f:
-            yaml.dump(data, f)
-
-        schedule_file = load_schedules_file(temp_schedule_file)
-
-        assert schedule_file is not None
-        assert len(schedule_file.schedules) == 0
-
-    def test_invalid_yaml_raises_error(self, temp_schedule_file):
-        """Test that invalid YAML raises error."""
-        # Create invalid YAML
-        with open(temp_schedule_file, "w") as f:
-            f.write("invalid: yaml: [")
-
-        with pytest.raises(Exception):  # YAML error
-            load_schedules_file(temp_schedule_file)
-
-
 class TestGetEnabledSchedules:
     """Tests for filtering enabled schedules."""
 
@@ -436,82 +354,12 @@ class TestEnvironmentVariableDiscovery:
             location = find_schedules_location()
 
             assert location is not None
-            mode, path = location
-            assert mode == "dir"
-            assert path == temp_schedule_dir
+            assert location == temp_schedule_dir
         finally:
             if old_env:
                 os.environ["BEANSCHEDULE_DIR"] = old_env
             else:
                 os.environ.pop("BEANSCHEDULE_DIR", None)
-
-    def test_beanschedule_file_env_var(self, temp_schedule_file, sample_schedule_dict):
-        """Test that BEANSCHEDULE_FILE environment variable is used."""
-        # Create schedules.yaml
-        data = {
-            "schedules": [sample_schedule_dict],
-        }
-
-        with open(temp_schedule_file, "w") as f:
-            yaml.dump(data, f)
-
-        # Set env var
-        old_env = os.environ.get("BEANSCHEDULE_FILE")
-        try:
-            os.environ["BEANSCHEDULE_FILE"] = str(temp_schedule_file)
-
-            # Load using find_schedules_location
-            location = find_schedules_location()
-
-            assert location is not None
-            mode, path = location
-            assert mode == "file"
-            assert path == temp_schedule_file
-        finally:
-            if old_env:
-                os.environ["BEANSCHEDULE_FILE"] = old_env
-            else:
-                os.environ.pop("BEANSCHEDULE_FILE", None)
-
-    def test_env_var_priority(
-        self, temp_schedule_dir, temp_schedule_file, sample_schedule_dict
-    ):
-        """Test that BEANSCHEDULE_DIR has priority over BEANSCHEDULE_FILE."""
-        # Create both directory and file
-        schedule_path = temp_schedule_dir / "test-schedule.yaml"
-        data = sample_schedule_dict.copy()
-        data["id"] = "test-schedule"
-        data["transaction"]["metadata"]["schedule_id"] = "test-schedule"
-
-        with open(schedule_path, "w") as f:
-            yaml.dump(data, f)
-
-        with open(temp_schedule_file, "w") as f:
-            yaml.dump({"schedules": [sample_schedule_dict]}, f)
-
-        # Set both env vars
-        old_dir = os.environ.get("BEANSCHEDULE_DIR")
-        old_file = os.environ.get("BEANSCHEDULE_FILE")
-
-        try:
-            os.environ["BEANSCHEDULE_DIR"] = str(temp_schedule_dir)
-            os.environ["BEANSCHEDULE_FILE"] = str(temp_schedule_file)
-
-            # Should prefer DIR over FILE
-            location = find_schedules_location()
-
-            assert location is not None
-            mode, path = location
-            assert mode == "dir"
-        finally:
-            if old_dir:
-                os.environ["BEANSCHEDULE_DIR"] = old_dir
-            else:
-                os.environ.pop("BEANSCHEDULE_DIR", None)
-            if old_file:
-                os.environ["BEANSCHEDULE_FILE"] = old_file
-            else:
-                os.environ.pop("BEANSCHEDULE_FILE", None)
 
 
 class TestScheduleFileWithConfig:
@@ -553,33 +401,12 @@ class TestEnvironmentVariableEdgeCases:
 
             location = find_schedules_location()
             # Should continue to next check, not return the nonexistent path
-            assert location is None or location[0] != "dir"
+            assert location is None
         finally:
             if old_dir:
                 os.environ["BEANSCHEDULE_DIR"] = old_dir
             else:
                 os.environ.pop("BEANSCHEDULE_DIR", None)
-
-    def test_beanschedule_file_nonexistent_path(self, tmp_path):
-        """Test BEANSCHEDULE_FILE pointing to non-existent file."""
-        old_dir = os.environ.get("BEANSCHEDULE_DIR")
-        old_file = os.environ.get("BEANSCHEDULE_FILE")
-        try:
-            os.environ.pop("BEANSCHEDULE_DIR", None)
-            os.environ["BEANSCHEDULE_FILE"] = str(tmp_path / "nonexistent.yaml")
-
-            location = find_schedules_location()
-            # Should continue to next check, not return the nonexistent file
-            assert location is None or location[0] != "file"
-        finally:
-            if old_dir:
-                os.environ["BEANSCHEDULE_DIR"] = old_dir
-            else:
-                os.environ.pop("BEANSCHEDULE_DIR", None)
-            if old_file:
-                os.environ["BEANSCHEDULE_FILE"] = old_file
-            else:
-                os.environ.pop("BEANSCHEDULE_FILE", None)
 
 
 class TestLoadScheduleErrorHandling:
@@ -626,102 +453,19 @@ class TestLoadScheduleErrorHandling:
         assert schedule_file is not None
         assert len(schedule_file.schedules) == 2
 
-    def test_load_explicit_file_with_none_schedules_key(
-        self, tmp_path, sample_schedule_dict
-    ):
-        """Test loading file where schedules key is None or missing."""
-        schedule_file_path = tmp_path / "schedules.yaml"
-        file_data = {
-            "config": {"fuzzy_match_threshold": 0.85},
-            "schedules": None,  # Simulates all schedules commented out
-        }
-        with open(schedule_file_path, "w") as f:
-            yaml.dump(file_data, f)
-
-        schedule_file = load_schedules_file(schedule_file_path)
-        assert schedule_file is not None
-        assert len(schedule_file.schedules) == 0
-        assert schedule_file.config.fuzzy_match_threshold == 0.85
-
-    def test_load_explicit_file_missing_schedules_key(self, tmp_path):
-        """Test loading file with missing schedules key."""
-        schedule_file_path = tmp_path / "schedules.yaml"
-        file_data = {"config": {"fuzzy_match_threshold": 0.85}}
-        with open(schedule_file_path, "w") as f:
-            yaml.dump(file_data, f)
-
-        schedule_file = load_schedules_file(schedule_file_path)
-        assert schedule_file is not None
-        assert len(schedule_file.schedules) == 0
-
-    def test_load_explicit_file_with_invalid_yaml(self, tmp_path):
-        """Test loading file with invalid YAML raises error."""
-        schedule_file_path = tmp_path / "bad.yaml"
-        with open(schedule_file_path, "w") as f:
-            f.write("invalid: yaml: syntax:")
-
-        with pytest.raises(Exception):
-            load_schedules_file(schedule_file_path)
-
-    def test_load_explicit_file_with_validation_error(self, tmp_path):
-        """Test loading file with validation errors raises error."""
-        schedule_file_path = tmp_path / "schedules.yaml"
-        invalid_data = {
-            "schedules": [
-                {
-                    "id": "bad",
-                    # Missing required fields
-                }
-            ]
-        }
-        with open(schedule_file_path, "w") as f:
-            yaml.dump(invalid_data, f)
-
-        with pytest.raises(Exception):
-            load_schedules_file(schedule_file_path)
-
-    def test_load_auto_discovered_file_mode(self, tmp_path, sample_schedule_dict):
-        """Test loading auto-discovered schedules.yaml file."""
+    def test_auto_discovery_returns_none_if_not_found(self, tmp_path, monkeypatch):
+        """Test that None is returned if no schedules directory found."""
         old_dir = os.environ.get("BEANSCHEDULE_DIR")
-        old_file = os.environ.get("BEANSCHEDULE_FILE")
         try:
-            # Clear env vars
             os.environ.pop("BEANSCHEDULE_DIR", None)
-            os.environ.pop("BEANSCHEDULE_FILE", None)
+            import beanschedule.loader as loader_module
 
-            # Create schedules.yaml in parent temp dir
-            schedules_file = tmp_path / "schedules.yaml"
-            schedule_data = {
-                "schedules": [sample_schedule_dict],
-                "config": {"fuzzy_match_threshold": 0.82},
-            }
-            with open(schedules_file, "w") as f:
-                yaml.dump(schedule_data, f)
+            monkeypatch.setattr(loader_module.Path, "cwd", lambda: tmp_path)
 
-            # Create subdirectory and change perspective from there
-            subdir = tmp_path / "subdir"
-            subdir.mkdir()
-
-            # Find schedules from temp_path
-            location = find_schedules_location()
-            # May or may not find depending on CWD, but shouldn't crash
-            assert location is None or isinstance(location, tuple)
+            result = load_schedules()
+            assert result is None or isinstance(result, ScheduleFile)
         finally:
             if old_dir:
                 os.environ["BEANSCHEDULE_DIR"] = old_dir
             else:
                 os.environ.pop("BEANSCHEDULE_DIR", None)
-            if old_file:
-                os.environ["BEANSCHEDULE_FILE"] = old_file
-            else:
-                os.environ.pop("BEANSCHEDULE_FILE", None)
-
-    def test_load_empty_schedules_file(self, tmp_path):
-        """Test loading a completely empty schedules file."""
-        empty_file = tmp_path / "empty.yaml"
-        with open(empty_file, "w") as f:
-            f.write("")
-
-        schedule_file = load_schedules_file(empty_file)
-        assert schedule_file is not None
-        assert len(schedule_file.schedules) == 0

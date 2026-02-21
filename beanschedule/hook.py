@@ -13,7 +13,7 @@ from .amortization import (
     build_liability_balance_index,
     compute_stateful_splits,
 )
-from .loader import get_enabled_schedules, load_schedules_file
+from .loader import get_enabled_schedules, load_schedules
 from .matcher import TransactionMatcher
 from .pending import (
     enrich_from_pending,
@@ -70,7 +70,7 @@ def schedule_hook(
     - Coordination: Both use schedule_id metadata to track which dates are covered
 
     Processing steps:
-    1. Load schedules from schedules.yaml or schedules/ directory
+    1. Load schedules from schedules/ directory
     2. Extract date range from all imported and existing ledger transactions
     3. Generate expected occurrence dates for each schedule (shared utility)
     4. Build date index for efficient O(1) lookups (shared utility)
@@ -103,7 +103,7 @@ def schedule_hook(
 
     # Step 1: Load schedules from YAML
     try:
-        schedule_file = load_schedules_file()
+        schedule_file = load_schedules()
         if not schedule_file:
             logger.info("No schedules loaded, returning entries unchanged")
             return extracted_entries_list

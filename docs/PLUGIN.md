@@ -12,7 +12,7 @@ plugin "beanschedule.plugins.schedules"
 
 The plugin will automatically:
 
-1. Discover your schedules (looks for `schedules.yaml` or `schedules/` directory)
+1. Discover your schedules (looks for `schedules/` directory)
 2. Generate forecast transactions starting from tomorrow for the next 3 months (default)
 3. Include all metadata and tags from your schedule definitions
 
@@ -250,7 +250,7 @@ If you manually create a transaction on the same date as a forecast, both will a
 
 ### Plugin Not Loading
 
-1. **Check path**: Verify `schedules.yaml` or `schedules/` exists
+1. **Check path**: Verify `schedules/` directory exists
 2. **Check syntax**: Run `beanschedule validate schedules/`
 3. **Check Beancount version**: Requires beancount >= 3.2.0
 

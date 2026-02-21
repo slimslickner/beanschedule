@@ -27,7 +27,7 @@ class TestScheduleHook:
         ]
 
         # Mock schedule loader to return None
-        with patch("beanschedule.hook.load_schedules_file", return_value=None):
+        with patch("beanschedule.hook.load_schedules", return_value=None):
             result = schedule_hook(extracted_entries)
 
         # Should return unchanged
@@ -53,7 +53,7 @@ class TestScheduleHook:
 
         schedule_file = ScheduleFile(schedules=[schedule], config=global_config)
 
-        with patch("beanschedule.hook.load_schedules_file", return_value=schedule_file):
+        with patch("beanschedule.hook.load_schedules", return_value=schedule_file):
             result = schedule_hook(extracted_entries)
 
         # Should return unchanged (no enabled schedules)
@@ -66,7 +66,7 @@ class TestScheduleHook:
 
         extracted_entries = []
 
-        with patch("beanschedule.hook.load_schedules_file", return_value=schedule_file):
+        with patch("beanschedule.hook.load_schedules", return_value=schedule_file):
             result = schedule_hook(extracted_entries)
 
         # Should return empty list
@@ -90,7 +90,7 @@ class TestScheduleHook:
             ("test.csv", [open_entry], "Assets:Bank:Checking", None),
         ]
 
-        with patch("beanschedule.hook.load_schedules_file", return_value=schedule_file):
+        with patch("beanschedule.hook.load_schedules", return_value=schedule_file):
             result = schedule_hook(extracted_entries)
 
         # Should return with Open directive unchanged
@@ -123,7 +123,7 @@ class TestHookEntryFormats:
 
         schedule_file = ScheduleFile(schedules=[schedule], config=global_config)
 
-        with patch("beanschedule.hook.load_schedules_file", return_value=schedule_file):
+        with patch("beanschedule.hook.load_schedules", return_value=schedule_file):
             result = schedule_hook(extracted_entries)
 
         # Should have original entry (4-tuple format maintained)
@@ -157,7 +157,7 @@ class TestTransactionMatching:
 
         schedule_file = ScheduleFile(schedules=[schedule], config=global_config)
 
-        with patch("beanschedule.hook.load_schedules_file", return_value=schedule_file):
+        with patch("beanschedule.hook.load_schedules", return_value=schedule_file):
             result = schedule_hook(extracted_entries)
 
         # First entry should have matched transaction with metadata
@@ -189,7 +189,7 @@ class TestTransactionMatching:
 
         schedule_file = ScheduleFile(schedules=[schedule], config=global_config)
 
-        with patch("beanschedule.hook.load_schedules_file", return_value=schedule_file):
+        with patch("beanschedule.hook.load_schedules", return_value=schedule_file):
             result = schedule_hook(extracted_entries)
 
         # Transaction should be unchanged
@@ -224,7 +224,7 @@ class TestTransactionMatching:
 
         schedule_file = ScheduleFile(schedules=[schedule], config=global_config)
 
-        with patch("beanschedule.hook.load_schedules_file", return_value=schedule_file):
+        with patch("beanschedule.hook.load_schedules", return_value=schedule_file):
             result = schedule_hook(extracted_entries)
 
         # Transaction should be matched to the rent schedule despite payee mismatch
@@ -260,7 +260,7 @@ class TestTransactionMatching:
 
         schedule_file = ScheduleFile(schedules=[schedule], config=global_config)
 
-        with patch("beanschedule.hook.load_schedules_file", return_value=schedule_file):
+        with patch("beanschedule.hook.load_schedules", return_value=schedule_file):
             result = schedule_hook(extracted_entries)
 
         # Transaction should fall back to fuzzy matching and match rent schedule
@@ -297,7 +297,7 @@ class TestTransactionEnrichment:
 
         schedule_file = ScheduleFile(schedules=[schedule], config=global_config)
 
-        with patch("beanschedule.hook.load_schedules_file", return_value=schedule_file):
+        with patch("beanschedule.hook.load_schedules", return_value=schedule_file):
             result = schedule_hook(extracted_entries)
 
         matched_txn = result[0][1][0]
@@ -330,7 +330,7 @@ class TestTransactionEnrichment:
 
         schedule_file = ScheduleFile(schedules=[schedule], config=global_config)
 
-        with patch("beanschedule.hook.load_schedules_file", return_value=schedule_file):
+        with patch("beanschedule.hook.load_schedules", return_value=schedule_file):
             result = schedule_hook(extracted_entries)
 
         matched_txn = result[0][1][0]
@@ -361,7 +361,7 @@ class TestTransactionEnrichment:
 
         schedule_file = ScheduleFile(schedules=[schedule], config=global_config)
 
-        with patch("beanschedule.hook.load_schedules_file", return_value=schedule_file):
+        with patch("beanschedule.hook.load_schedules", return_value=schedule_file):
             result = schedule_hook(extracted_entries)
 
         matched_txn = result[0][1][0]
@@ -390,7 +390,7 @@ class TestTransactionEnrichment:
 
         schedule_file = ScheduleFile(schedules=[schedule], config=global_config)
 
-        with patch("beanschedule.hook.load_schedules_file", return_value=schedule_file):
+        with patch("beanschedule.hook.load_schedules", return_value=schedule_file):
             result = schedule_hook(extracted_entries)
 
         matched_txn = result[0][1][0]
@@ -427,7 +427,7 @@ class TestPlaceholderCreation:
             schedules=[schedule], config=global_config_with_past_dates
         )
 
-        with patch("beanschedule.hook.load_schedules_file", return_value=schedule_file):
+        with patch("beanschedule.hook.load_schedules", return_value=schedule_file):
             result = schedule_hook(extracted_entries)
 
         # Should have original entry + schedules entry with placeholder
@@ -461,7 +461,7 @@ class TestPlaceholderCreation:
 
         schedule_file = ScheduleFile(schedules=[schedule], config=global_config)
 
-        with patch("beanschedule.hook.load_schedules_file", return_value=schedule_file):
+        with patch("beanschedule.hook.load_schedules", return_value=schedule_file):
             result = schedule_hook(extracted_entries)
 
         # Should have only original entry, no schedules entry
@@ -503,7 +503,7 @@ class TestMultipleFiles:
 
         schedule_file = ScheduleFile(schedules=[schedule1], config=global_config)
 
-        with patch("beanschedule.hook.load_schedules_file", return_value=schedule_file):
+        with patch("beanschedule.hook.load_schedules", return_value=schedule_file):
             result = schedule_hook(extracted_entries)
 
         # Should have original 2 files
@@ -547,7 +547,7 @@ class TestPostingReplacement:
 
         schedule_file = ScheduleFile(schedules=[schedule], config=global_config)
 
-        with patch("beanschedule.hook.load_schedules_file", return_value=schedule_file):
+        with patch("beanschedule.hook.load_schedules", return_value=schedule_file):
             result = schedule_hook(extracted_entries)
 
         matched_txn = result[0][1][0]
@@ -589,7 +589,7 @@ class TestLedgerTransactionMatching:
 
         schedule_file = ScheduleFile(schedules=[schedule], config=global_config)
 
-        with patch("beanschedule.hook.load_schedules_file", return_value=schedule_file):
+        with patch("beanschedule.hook.load_schedules", return_value=schedule_file):
             result = schedule_hook(extracted_entries, existing_entries=[ledger_txn])
 
         # Should have no placeholders (transaction is already in ledger)
@@ -621,7 +621,7 @@ class TestLedgerTransactionMatching:
             schedules=[schedule], config=global_config_with_past_dates
         )
 
-        with patch("beanschedule.hook.load_schedules_file", return_value=schedule_file):
+        with patch("beanschedule.hook.load_schedules", return_value=schedule_file):
             result = schedule_hook(extracted_entries, existing_entries=[ledger_txn])
 
         # Should still create a placeholder (ledger txn has no schedule_id)
@@ -657,7 +657,7 @@ class TestLedgerTransactionMatching:
 
         schedule_file = ScheduleFile(schedules=[schedule], config=global_config)
 
-        with patch("beanschedule.hook.load_schedules_file", return_value=schedule_file):
+        with patch("beanschedule.hook.load_schedules", return_value=schedule_file):
             result = schedule_hook(extracted_entries, existing_entries=[ledger_txn])
 
         # Should have no placeholders (ledger transaction matches within date window)
@@ -691,7 +691,7 @@ class TestLedgerTransactionMatching:
             schedules=[schedule], config=global_config_with_past_dates
         )
 
-        with patch("beanschedule.hook.load_schedules_file", return_value=schedule_file):
+        with patch("beanschedule.hook.load_schedules", return_value=schedule_file):
             result = schedule_hook(extracted_entries, existing_entries=[ledger_txn])
 
         # Should still create placeholder (unknown schedule_id is ignored)
@@ -734,7 +734,7 @@ class TestLedgerTransactionMatching:
 
         schedule_file = ScheduleFile(schedules=[schedule], config=global_config)
 
-        with patch("beanschedule.hook.load_schedules_file", return_value=schedule_file):
+        with patch("beanschedule.hook.load_schedules", return_value=schedule_file):
             result = schedule_hook(extracted_entries, existing_entries=[ledger_txn_1])
 
         # Should have no placeholders (both transactions matched)
@@ -822,7 +822,7 @@ class TestAmortizationEnrichment:
 
         schedule_file = ScheduleFile(schedules=[schedule], config=global_config)
 
-        with patch("beanschedule.hook.load_schedules_file", return_value=schedule_file):
+        with patch("beanschedule.hook.load_schedules", return_value=schedule_file):
             result = schedule_hook(extracted_entries, existing_entries=[loan_init])
 
         # Find the enriched transaction
@@ -919,7 +919,7 @@ class TestAmortizationEnrichment:
 
         schedule_file = ScheduleFile(schedules=[schedule], config=global_config)
 
-        with patch("beanschedule.hook.load_schedules_file", return_value=schedule_file):
+        with patch("beanschedule.hook.load_schedules", return_value=schedule_file):
             result = schedule_hook(extracted_entries, existing_entries=[loan_init])
 
         enriched_txn = result[0][1][0]
@@ -972,7 +972,7 @@ class TestAmortizationEnrichment:
 
         schedule_file = ScheduleFile(schedules=[schedule], config=global_config)
 
-        with patch("beanschedule.hook.load_schedules_file", return_value=schedule_file):
+        with patch("beanschedule.hook.load_schedules", return_value=schedule_file):
             result = schedule_hook(extracted_entries)
 
         enriched_txn = result[0][1][0]
