@@ -54,10 +54,9 @@ def main(verbose: bool):
 def validate(path: str):
     """Validate schedule files for syntax and schema compliance.
 
-    PATH can be either a schedules.yaml file or a schedules/ directory.
+    PATH must be a schedules/ directory.
 
     Examples:
-        beanschedule validate schedules.yaml
         beanschedule validate schedules/
     """
     path_obj = Path(path)
@@ -115,7 +114,7 @@ def validate(path: str):
 def list_schedules(path: str, output_format: str, enabled_only: bool):
     """List all schedules with details.
 
-    PATH can be either a schedules.yaml file or a schedules/ directory.
+    PATH must be a schedules/ directory.
 
     Examples:
         beanschedule list schedules/
@@ -166,7 +165,7 @@ def list_schedules(path: str, output_format: str, enabled_only: bool):
     "--schedules-path",
     type=click.Path(exists=True),
     default="schedules",
-    help="Path to schedules file or directory (default: schedules)",
+    help="Path to schedules directory (default: schedules)",
 )
 def generate(schedule_id: str, start_date, end_date, schedules_path: str):
     """Generate expected occurrence dates for a schedule.
@@ -1274,7 +1273,7 @@ missing_transaction:
     "-s",
     type=click.Path(exists=True),
     default=None,
-    help="Path to schedules.yaml or schedules/ directory (auto-discovered if not specified)",
+    help="Path to schedules/ directory (auto-discovered if not specified)",
 )
 @click.option(
     "--reason",
@@ -1337,9 +1336,7 @@ def skip(
     try:
         # Determine schedules path
         if schedules_path is None:
-            schedules_path = (
-                "schedules.yaml" if Path("schedules.yaml").exists() else "schedules"
-            )
+            schedules_path = "schedules"
 
         path_obj = Path(schedules_path)
 

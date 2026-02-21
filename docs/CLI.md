@@ -19,7 +19,6 @@ Validate schedule files for syntax and configuration errors:
 
 ```bash
 beanschedule validate schedules/
-beanschedule validate schedules.yaml
 beanschedule validate schedules/ --verbose
 ```
 

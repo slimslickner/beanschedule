@@ -116,7 +116,7 @@ class TestSkipMarkerPreventsPlaceholder:
 
         from unittest.mock import patch
 
-        with patch("beanschedule.hook.load_schedules_file", return_value=schedule_file):
+        with patch("beanschedule.hook.load_schedules", return_value=schedule_file):
             result = schedule_hook(extracted_entries, existing_entries=[])
 
         # Skip marker should be included in results
@@ -144,7 +144,7 @@ class TestSkipMarkerPreventsPlaceholder:
 
         from unittest.mock import patch
 
-        with patch("beanschedule.hook.load_schedules_file", return_value=schedule_file):
+        with patch("beanschedule.hook.load_schedules", return_value=schedule_file):
             result = schedule_hook(extracted_entries, existing_entries=[])
 
         # Transaction should be preserved in output

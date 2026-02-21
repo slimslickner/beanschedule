@@ -21,19 +21,6 @@ def cli_runner():
 
 
 @pytest.fixture
-def schedules_yaml_file(tmp_path):
-    """Create a temporary schedules.yaml file from example schedules."""
-    schedules = []
-    for name in _EXAMPLE_SCHEDULE_NAMES:
-        with open(_EXAMPLES_SCHEDULES_DIR / f"{name}.yaml") as f:
-            schedules.append(yaml.safe_load(f))
-    schedule_file = tmp_path / "schedules.yaml"
-    with open(schedule_file, "w") as f:
-        yaml.dump({"schedules": schedules}, f)
-    return schedule_file
-
-
-@pytest.fixture
 def schedules_directory(tmp_path):
     """Create a temporary schedules directory from example schedules."""
     schedules_dir = tmp_path / "schedules"
@@ -51,15 +38,6 @@ def schedules_directory(tmp_path):
 
 class TestValidateCommand:
     """Tests for the validate command."""
-
-    def test_validate_file_success(self, cli_runner, schedules_yaml_file):
-        """Test validating a schedules.yaml file successfully."""
-        result = cli_runner.invoke(main, ["validate", str(schedules_yaml_file)])
-        assert result.exit_code == 0
-        assert "Validation successful" in result.output
-        assert "Total schedules: 3" in result.output
-        assert "Enabled: 2" in result.output
-        assert "Disabled: 1" in result.output
 
     def test_validate_directory_success(self, cli_runner, schedules_directory):
         """Test validating a schedules directory successfully."""
@@ -85,19 +63,18 @@ class TestValidateCommand:
         assert result.exit_code == 1
         assert "Validation failed" in result.output
 
-    def test_validate_empty_file(self, cli_runner, tmp_path):
-        """Test validating an empty schedules file."""
-        empty_file = tmp_path / "empty.yaml"
-        with open(empty_file, "w") as f:
-            f.write("")
+    def test_validate_empty_directory(self, cli_runner, tmp_path):
+        """Test validating an empty schedules directory."""
+        empty_dir = tmp_path / "empty"
+        empty_dir.mkdir()
 
-        result = cli_runner.invoke(main, ["validate", str(empty_file)])
+        result = cli_runner.invoke(main, ["validate", str(empty_dir)])
         assert result.exit_code == 0
         assert "Total schedules: 0" in result.output
 
-    def test_validate_with_verbose_flag(self, cli_runner, schedules_yaml_file):
+    def test_validate_with_verbose_flag(self, cli_runner, schedules_directory):
         """Test validate command with verbose flag."""
-        result = cli_runner.invoke(main, ["-v", "validate", str(schedules_yaml_file)])
+        result = cli_runner.invoke(main, ["-v", "validate", str(schedules_directory)])
         assert result.exit_code == 0
         assert "Validation successful" in result.output
 
@@ -105,9 +82,9 @@ class TestValidateCommand:
 class TestListCommand:
     """Tests for the list command."""
 
-    def test_list_file_table_format(self, cli_runner, schedules_yaml_file):
-        """Test listing schedules from file in table format."""
-        result = cli_runner.invoke(main, ["list", str(schedules_yaml_file)])
+    def test_list_table_format(self, cli_runner, schedules_directory):
+        """Test listing schedules in table format."""
+        result = cli_runner.invoke(main, ["list", str(schedules_directory)])
         assert result.exit_code == 0
         assert "ID" in result.output
         assert "Status" in result.output
@@ -123,10 +100,10 @@ class TestListCommand:
         assert "rent-payment" in result.output
         assert "Total: 3 schedules" in result.output
 
-    def test_list_enabled_only_filter(self, cli_runner, schedules_yaml_file):
+    def test_list_enabled_only_filter(self, cli_runner, schedules_directory):
         """Test listing only enabled schedules."""
         result = cli_runner.invoke(
-            main, ["list", str(schedules_yaml_file), "--enabled-only"]
+            main, ["list", str(schedules_directory), "--enabled-only"]
         )
         assert result.exit_code == 0
         assert "rent-payment" in result.output
@@ -134,34 +111,35 @@ class TestListCommand:
         assert "credit-card-payment" not in result.output
         assert "Total: 2 schedules" in result.output
 
-    def test_list_json_format(self, cli_runner, schedules_yaml_file):
+    def test_list_json_format(self, cli_runner, schedules_directory):
         """Test listing schedules in JSON format."""
         result = cli_runner.invoke(
-            main, ["list", str(schedules_yaml_file), "--format", "json"]
+            main, ["list", str(schedules_directory), "--format", "json"]
         )
         assert result.exit_code == 0
         data = json.loads(result.output)
         assert isinstance(data, list)
         assert len(data) == 3
-        assert data[0]["id"] == "rent-payment"
+        ids = [d["id"] for d in data]
+        assert "rent-payment" in ids
 
-    def test_list_csv_format(self, cli_runner, schedules_yaml_file):
+    def test_list_csv_format(self, cli_runner, schedules_directory):
         """Test listing schedules in CSV format."""
         result = cli_runner.invoke(
-            main, ["list", str(schedules_yaml_file), "--format", "csv"]
+            main, ["list", str(schedules_directory), "--format", "csv"]
         )
         assert result.exit_code == 0
         lines = result.output.strip().split("\n")
         assert lines[0] == "ID,Enabled,Frequency,Payee,Account,Amount"
         assert "rent-payment" in result.output
 
-    def test_list_csv_enabled_only(self, cli_runner, schedules_yaml_file):
+    def test_list_csv_enabled_only(self, cli_runner, schedules_directory):
         """Test listing enabled schedules in CSV format."""
         result = cli_runner.invoke(
             main,
             [
                 "list",
-                str(schedules_yaml_file),
+                str(schedules_directory),
                 "--format",
                 "csv",
                 "--enabled-only",
@@ -180,10 +158,10 @@ class TestListCommand:
         assert result.exit_code == 0
         assert "No schedules found" in result.output
 
-    def test_list_invalid_format(self, cli_runner, schedules_yaml_file):
+    def test_list_invalid_format(self, cli_runner, schedules_directory):
         """Test list command with invalid format."""
         result = cli_runner.invoke(
-            main, ["list", str(schedules_yaml_file), "--format", "invalid"]
+            main, ["list", str(schedules_directory), "--format", "invalid"]
         )
         assert result.exit_code != 0
 
@@ -191,7 +169,7 @@ class TestListCommand:
 class TestGenerateCommand:
     """Tests for the generate command."""
 
-    def test_generate_monthly_schedule(self, cli_runner, schedules_yaml_file):
+    def test_generate_monthly_schedule(self, cli_runner, schedules_directory):
         """Test generating occurrences for a monthly schedule."""
         result = cli_runner.invoke(
             main,
@@ -201,7 +179,7 @@ class TestGenerateCommand:
                 "2024-01-01",
                 "2024-03-31",
                 "--schedules-path",
-                str(schedules_yaml_file),
+                str(schedules_directory),
             ],
         )
         if result.exit_code != 0:
@@ -223,7 +201,7 @@ class TestGenerateCommand:
         assert "2024-03-06" in result.output
         assert "Expected occurrences (3)" in result.output
 
-    def test_generate_weekly_schedule(self, cli_runner, schedules_yaml_file):
+    def test_generate_weekly_schedule(self, cli_runner, schedules_directory):
         """Test generating occurrences for a weekly schedule."""
         result = cli_runner.invoke(
             main,
@@ -233,7 +211,7 @@ class TestGenerateCommand:
                 "2024-01-01",
                 "2024-02-29",
                 "--schedules-path",
-                str(schedules_yaml_file),
+                str(schedules_directory),
             ],
         )
         assert result.exit_code == 0
@@ -242,7 +220,7 @@ class TestGenerateCommand:
         # Should have some occurrences
         assert "Expected occurrences" in result.output
 
-    def test_generate_schedule_not_found(self, cli_runner, schedules_yaml_file):
+    def test_generate_schedule_not_found(self, cli_runner, schedules_directory):
         """Test generating for a non-existent schedule."""
         result = cli_runner.invoke(
             main,
@@ -252,7 +230,7 @@ class TestGenerateCommand:
                 "2024-01-01",
                 "2024-12-31",
                 "--schedules-path",
-                str(schedules_yaml_file),
+                str(schedules_directory),
             ],
         )
         assert result.exit_code == 1
@@ -426,36 +404,35 @@ class TestAmortizeCommand:
     def test_amortize_table_format(self, cli_runner, tmp_path):
         """Should display amortization table."""
         # Create schedule with amortization
-        schedules_file = tmp_path / "schedules.yaml"
-        schedules_file.write_text("""
-version: "1.0"
-schedules:
-  - id: test-loan
-    enabled: true
-    match:
-      account: Assets:Checking
-      payee_pattern: "Loan"
-    recurrence:
-      frequency: MONTHLY
-      start_date: 2024-01-01
-      day_of_month: 1
-    amortization:
-      principal: 10000.00
-      annual_rate: 0.06
-      term_months: 12
-      start_date: 2024-01-01
-    transaction:
-      payee: "Loan Payment"
-      narration: "Monthly loan payment"
-      metadata:
-        schedule_id: test-loan
-      postings:
-        - account: Assets:Checking
-          amount: null
-        - account: Expenses:Interest
-          amount: null
-        - account: Liabilities:Loan
-          amount: null
+        schedules_dir = tmp_path / "schedules"
+        schedules_dir.mkdir()
+        (schedules_dir / "test-loan.yaml").write_text("""
+id: test-loan
+enabled: true
+match:
+  account: Assets:Checking
+  payee_pattern: "Loan"
+recurrence:
+  frequency: MONTHLY
+  start_date: 2024-01-01
+  day_of_month: 1
+amortization:
+  principal: 10000.00
+  annual_rate: 0.06
+  term_months: 12
+  start_date: 2024-01-01
+transaction:
+  payee: "Loan Payment"
+  narration: "Monthly loan payment"
+  metadata:
+    schedule_id: test-loan
+  postings:
+    - account: Assets:Checking
+      amount: null
+    - account: Expenses:Interest
+      amount: null
+    - account: Liabilities:Loan
+      amount: null
 """)
 
         result = cli_runner.invoke(
@@ -464,7 +441,7 @@ schedules:
                 "amortize",
                 "test-loan",
                 "--schedules-path",
-                str(schedules_file),
+                str(schedules_dir),
                 "--limit",
                 "3",
             ],
@@ -485,32 +462,31 @@ schedules:
 
     def test_amortize_summary_only(self, cli_runner, tmp_path):
         """Should show summary without table."""
-        schedules_file = tmp_path / "schedules.yaml"
-        schedules_file.write_text("""
-version: "1.0"
-schedules:
-  - id: test-loan
-    enabled: true
-    match:
-      account: Assets:Checking
-      payee_pattern: "Loan"
-    recurrence:
-      frequency: MONTHLY
-      start_date: 2024-01-01
-      day_of_month: 1
-    amortization:
-      principal: 10000.00
-      annual_rate: 0.06
-      term_months: 12
-      start_date: 2024-01-01
-    transaction:
-      payee: "Loan Payment"
-      metadata:
-        schedule_id: test-loan
-      postings:
-        - account: Assets:Checking
-        - account: Expenses:Interest
-        - account: Liabilities:Loan
+        schedules_dir = tmp_path / "schedules"
+        schedules_dir.mkdir()
+        (schedules_dir / "test-loan.yaml").write_text("""
+id: test-loan
+enabled: true
+match:
+  account: Assets:Checking
+  payee_pattern: "Loan"
+recurrence:
+  frequency: MONTHLY
+  start_date: 2024-01-01
+  day_of_month: 1
+amortization:
+  principal: 10000.00
+  annual_rate: 0.06
+  term_months: 12
+  start_date: 2024-01-01
+transaction:
+  payee: "Loan Payment"
+  metadata:
+    schedule_id: test-loan
+  postings:
+    - account: Assets:Checking
+    - account: Expenses:Interest
+    - account: Liabilities:Loan
 """)
 
         result = cli_runner.invoke(
@@ -519,7 +495,7 @@ schedules:
                 "amortize",
                 "test-loan",
                 "--schedules-path",
-                str(schedules_file),
+                str(schedules_dir),
                 "--summary-only",
             ],
         )
@@ -532,32 +508,31 @@ schedules:
 
     def test_amortize_csv_format(self, cli_runner, tmp_path):
         """Should output CSV format."""
-        schedules_file = tmp_path / "schedules.yaml"
-        schedules_file.write_text("""
-version: "1.0"
-schedules:
-  - id: test-loan
-    enabled: true
-    match:
-      account: Assets:Checking
-      payee_pattern: "Loan"
-    recurrence:
-      frequency: MONTHLY
-      start_date: 2024-01-01
-      day_of_month: 1
-    amortization:
-      principal: 10000.00
-      annual_rate: 0.06
-      term_months: 12
-      start_date: 2024-01-01
-    transaction:
-      payee: "Loan Payment"
-      metadata:
-        schedule_id: test-loan
-      postings:
-        - account: Assets:Checking
-        - account: Expenses:Interest
-        - account: Liabilities:Loan
+        schedules_dir = tmp_path / "schedules"
+        schedules_dir.mkdir()
+        (schedules_dir / "test-loan.yaml").write_text("""
+id: test-loan
+enabled: true
+match:
+  account: Assets:Checking
+  payee_pattern: "Loan"
+recurrence:
+  frequency: MONTHLY
+  start_date: 2024-01-01
+  day_of_month: 1
+amortization:
+  principal: 10000.00
+  annual_rate: 0.06
+  term_months: 12
+  start_date: 2024-01-01
+transaction:
+  payee: "Loan Payment"
+  metadata:
+    schedule_id: test-loan
+  postings:
+    - account: Assets:Checking
+    - account: Expenses:Interest
+    - account: Liabilities:Loan
 """)
 
         result = cli_runner.invoke(
@@ -566,7 +541,7 @@ schedules:
                 "amortize",
                 "test-loan",
                 "--schedules-path",
-                str(schedules_file),
+                str(schedules_dir),
                 "--format",
                 "csv",
                 "--limit",
@@ -580,32 +555,31 @@ schedules:
 
     def test_amortize_json_format(self, cli_runner, tmp_path):
         """Should output JSON format."""
-        schedules_file = tmp_path / "schedules.yaml"
-        schedules_file.write_text("""
-version: "1.0"
-schedules:
-  - id: test-loan
-    enabled: true
-    match:
-      account: Assets:Checking
-      payee_pattern: "Loan"
-    recurrence:
-      frequency: MONTHLY
-      start_date: 2024-01-01
-      day_of_month: 1
-    amortization:
-      principal: 10000.00
-      annual_rate: 0.06
-      term_months: 12
-      start_date: 2024-01-01
-    transaction:
-      payee: "Loan Payment"
-      metadata:
-        schedule_id: test-loan
-      postings:
-        - account: Assets:Checking
-        - account: Expenses:Interest
-        - account: Liabilities:Loan
+        schedules_dir = tmp_path / "schedules"
+        schedules_dir.mkdir()
+        (schedules_dir / "test-loan.yaml").write_text("""
+id: test-loan
+enabled: true
+match:
+  account: Assets:Checking
+  payee_pattern: "Loan"
+recurrence:
+  frequency: MONTHLY
+  start_date: 2024-01-01
+  day_of_month: 1
+amortization:
+  principal: 10000.00
+  annual_rate: 0.06
+  term_months: 12
+  start_date: 2024-01-01
+transaction:
+  payee: "Loan Payment"
+  metadata:
+    schedule_id: test-loan
+  postings:
+    - account: Assets:Checking
+    - account: Expenses:Interest
+    - account: Liabilities:Loan
 """)
 
         result = cli_runner.invoke(
@@ -614,7 +588,7 @@ schedules:
                 "amortize",
                 "test-loan",
                 "--schedules-path",
-                str(schedules_file),
+                str(schedules_dir),
                 "--format",
                 "json",
                 "--limit",
@@ -632,14 +606,11 @@ schedules:
 
     def test_amortize_schedule_not_found(self, cli_runner, tmp_path):
         """Should error if schedule not found."""
-        schedules_file = tmp_path / "schedules.yaml"
-        schedules_file.write_text("""
-version: "1.0"
-schedules: []
-""")
+        schedules_dir = tmp_path / "schedules"
+        schedules_dir.mkdir()
 
         result = cli_runner.invoke(
-            main, ["amortize", "nonexistent", "--schedules-path", str(schedules_file)]
+            main, ["amortize", "nonexistent", "--schedules-path", str(schedules_dir)]
         )
 
         assert result.exit_code == 1
@@ -647,30 +618,30 @@ schedules: []
 
     def test_amortize_no_amortization_config(self, cli_runner, tmp_path):
         """Should error if schedule has no amortization."""
-        schedules_file = tmp_path / "schedules.yaml"
-        schedules_file.write_text("""
-version: "1.0"
-schedules:
-  - id: test-schedule
-    enabled: true
-    match:
-      account: Assets:Checking
-      payee_pattern: "Test"
-    recurrence:
-      frequency: MONTHLY
-      start_date: 2024-01-01
-      day_of_month: 1
-    transaction:
-      payee: "Test"
-      metadata:
-        schedule_id: test-schedule
-      postings:
-        - account: Assets:Checking
-        - account: Expenses:Test
+        schedules_dir = tmp_path / "schedules"
+        schedules_dir.mkdir()
+        (schedules_dir / "test-schedule.yaml").write_text("""
+id: test-schedule
+enabled: true
+match:
+  account: Assets:Checking
+  payee_pattern: "Test"
+recurrence:
+  frequency: MONTHLY
+  start_date: 2024-01-01
+  day_of_month: 1
+transaction:
+  payee: "Test"
+  metadata:
+    schedule_id: test-schedule
+  postings:
+    - account: Assets:Checking
+    - account: Expenses:Test
 """)
 
         result = cli_runner.invoke(
-            main, ["amortize", "test-schedule", "--schedules-path", str(schedules_file)]
+            main,
+            ["amortize", "test-schedule", "--schedules-path", str(schedules_dir)],
         )
 
         assert result.exit_code == 1
@@ -680,7 +651,7 @@ schedules:
 class TestSkipCommand:
     """Tests for the skip CLI command."""
 
-    def test_skip_single_date(self, cli_runner, schedules_yaml_file):
+    def test_skip_single_date(self, cli_runner, schedules_directory):
         """Generate skip marker for a single date."""
         result = cli_runner.invoke(
             main,
@@ -689,7 +660,7 @@ class TestSkipCommand:
                 "rent-payment",
                 "2026-02-01",
                 "--schedules-path",
-                str(schedules_yaml_file),
+                str(schedules_directory),
             ],
         )
 
@@ -701,7 +672,7 @@ class TestSkipCommand:
         assert "schedule_id" in result.output
         assert "rent-payment" in result.output
 
-    def test_skip_multiple_dates(self, cli_runner, schedules_yaml_file):
+    def test_skip_multiple_dates(self, cli_runner, schedules_directory):
         """Generate skip markers for multiple dates."""
         result = cli_runner.invoke(
             main,
@@ -711,7 +682,7 @@ class TestSkipCommand:
                 "2026-02-01",
                 "2026-03-01",
                 "--schedules-path",
-                str(schedules_yaml_file),
+                str(schedules_directory),
             ],
         )
 
@@ -719,7 +690,7 @@ class TestSkipCommand:
         assert "2026-02-01" in result.output
         assert "2026-03-01" in result.output
 
-    def test_skip_with_reason(self, cli_runner, schedules_yaml_file):
+    def test_skip_with_reason(self, cli_runner, schedules_directory):
         """Skip marker includes reason in narration."""
         result = cli_runner.invoke(
             main,
@@ -730,7 +701,7 @@ class TestSkipCommand:
                 "--reason",
                 "Postponed to next month",
                 "--schedules-path",
-                str(schedules_yaml_file),
+                str(schedules_directory),
             ],
         )
 
@@ -738,7 +709,7 @@ class TestSkipCommand:
         assert "Postponed to next month" in result.output
         assert "[SKIPPED]" in result.output
 
-    def test_skip_invalid_schedule_id(self, cli_runner, schedules_yaml_file):
+    def test_skip_invalid_schedule_id(self, cli_runner, schedules_directory):
         """Error when schedule_id not found."""
         result = cli_runner.invoke(
             main,
@@ -747,14 +718,14 @@ class TestSkipCommand:
                 "nonexistent-schedule",
                 "2026-02-01",
                 "--schedules-path",
-                str(schedules_yaml_file),
+                str(schedules_directory),
             ],
         )
 
         assert result.exit_code == 1
         assert "not found" in result.output
 
-    def test_skip_invalid_date_format(self, cli_runner, schedules_yaml_file):
+    def test_skip_invalid_date_format(self, cli_runner, schedules_directory):
         """Error when date format is invalid."""
         result = cli_runner.invoke(
             main,
@@ -763,14 +734,14 @@ class TestSkipCommand:
                 "rent-payment",
                 "02-01-2026",  # Wrong format
                 "--schedules-path",
-                str(schedules_yaml_file),
+                str(schedules_directory),
             ],
         )
 
         assert result.exit_code == 1
         assert "Invalid date format" in result.output
 
-    def test_skip_output_to_file(self, cli_runner, schedules_yaml_file, tmp_path):
+    def test_skip_output_to_file(self, cli_runner, schedules_directory, tmp_path):
         """Skip markers can be appended to a file."""
         output_file = tmp_path / "skips.beancount"
         output_file.write_text("")  # Create empty file
@@ -782,7 +753,7 @@ class TestSkipCommand:
                 "rent-payment",
                 "2026-02-01",
                 "--schedules-path",
-                str(schedules_yaml_file),
+                str(schedules_directory),
                 "--output",
                 str(output_file),
             ],
@@ -793,7 +764,7 @@ class TestSkipCommand:
         assert "2026-02-01" in content
         assert "rent-payment" in content
 
-    def test_skip_requires_dates(self, cli_runner, schedules_yaml_file):
+    def test_skip_requires_dates(self, cli_runner, schedules_directory):
         """Error when no dates provided."""
         result = cli_runner.invoke(
             main,
@@ -801,14 +772,14 @@ class TestSkipCommand:
                 "skip",
                 "rent-payment",
                 "--schedules-path",
-                str(schedules_yaml_file),
+                str(schedules_directory),
             ],
         )
 
         assert result.exit_code != 0
         assert "Missing argument" in result.output or "DATES" in result.output
 
-    def test_skip_select_requires_ledger(self, cli_runner, schedules_yaml_file):
+    def test_skip_select_requires_ledger(self, cli_runner, schedules_directory):
         """Error when --select used without --ledger."""
         result = cli_runner.invoke(
             main,
@@ -816,7 +787,7 @@ class TestSkipCommand:
                 "skip",
                 "--select",
                 "--schedules-path",
-                str(schedules_yaml_file),
+                str(schedules_directory),
             ],
         )
 

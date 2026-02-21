@@ -11,71 +11,70 @@ from beanschedule.plugins.schedules import schedules
 
 @pytest.fixture
 def sample_schedule_yaml(tmp_path):
-    """Create a sample YAML schedule file."""
-    schedule_yaml = tmp_path / "schedules.yaml"
-    schedule_yaml.write_text(
+    """Create a sample schedules directory."""
+    schedules_dir = tmp_path / "schedules"
+    schedules_dir.mkdir()
+    (schedules_dir / "_config.yaml").write_text(
         """
-version: "1.0"
-
-config:
-  default_currency: USD
-  forecast_months: 12
-
-schedules:
-  - id: rent-monthly
-    enabled: true
-    match:
-      account: Assets:Checking
-      payee_pattern: ".*LANDLORD.*"
-    recurrence:
-      frequency: MONTHLY
-      start_date: 2024-01-01
-      day_of_month: 1
-    transaction:
-      payee: "Rent Payment"
-      narration: "Monthly rent"
-      metadata:
-        schedule_id: rent-monthly
-        category: housing
-      tags: [rent, recurring]
-      postings:
-        - account: Expenses:Housing:Rent
-          amount: 1500.00
-        - account: Assets:Checking
+default_currency: USD
+forecast_months: 12
 """
     )
-    return schedule_yaml
+    (schedules_dir / "rent-monthly.yaml").write_text(
+        """
+id: rent-monthly
+enabled: true
+match:
+  account: Assets:Checking
+  payee_pattern: ".*LANDLORD.*"
+recurrence:
+  frequency: MONTHLY
+  start_date: 2024-01-01
+  day_of_month: 1
+transaction:
+  payee: "Rent Payment"
+  narration: "Monthly rent"
+  metadata:
+    schedule_id: rent-monthly
+    category: housing
+  tags: [rent, recurring]
+  postings:
+    - account: Expenses:Housing:Rent
+      amount: 1500.00
+    - account: Assets:Checking
+"""
+    )
+    return schedules_dir
 
 
 @pytest.fixture
 def disabled_schedule_yaml(tmp_path):
-    """Create YAML with disabled schedule."""
-    schedule_yaml = tmp_path / "schedules.yaml"
-    schedule_yaml.write_text(
+    """Create schedules directory with disabled schedule."""
+    schedules_dir = tmp_path / "schedules"
+    schedules_dir.mkdir()
+    (schedules_dir / "disabled-schedule.yaml").write_text(
         """
-version: "1.0"
-schedules:
-  - id: disabled-schedule
-    enabled: false
-    match:
-      account: Assets:Checking
-      payee_pattern: ".*TEST.*"
-    recurrence:
-      frequency: MONTHLY
-      start_date: 2024-01-01
-      day_of_month: 1
-    transaction:
-      payee: "Test"
-      narration: ""
-      metadata:
-        schedule_id: disabled-schedule
-      postings:
-        - account: Expenses:Test
-          amount: 100.00
-        - account: Assets:Checking
+id: disabled-schedule
+enabled: false
+match:
+  account: Assets:Checking
+  payee_pattern: ".*TEST.*"
+recurrence:
+  frequency: MONTHLY
+  start_date: 2024-01-01
+  day_of_month: 1
+transaction:
+  payee: "Test"
+  narration: ""
+  metadata:
+    schedule_id: disabled-schedule
+  postings:
+    - account: Expenses:Test
+      amount: 100.00
+    - account: Assets:Checking
 """
     )
-    return schedule_yaml
+    return schedules_dir
 
 
 class TestSchedulesPlugin:
@@ -150,12 +149,12 @@ class TestSchedulesPlugin:
         assert "not found" in errors[0].lower()
 
     def test_plugin_auto_discovers_schedules(self, sample_schedule_yaml, monkeypatch):
-        """Should auto-discover schedules.yaml when no config_file provided."""
+        """Should auto-discover schedules/ directory when no config_file provided."""
         from beanschedule import loader
 
-        # Mock find_schedules_location to return our test file
+        # Mock find_schedules_location to return our test directory
         monkeypatch.setattr(
-            loader, "find_schedules_location", lambda: ("file", sample_schedule_yaml)
+            loader, "find_schedules_location", lambda: sample_schedule_yaml
         )
 
         options_map = {"filename": str(sample_schedule_yaml.parent / "main.bean")}
@@ -227,39 +226,39 @@ class TestSchedulesPlugin:
 
     def test_plugin_with_bimonthly_schedule(self, tmp_path):
         """Should generate forecasts for bimonthly schedule (multiple days per month)."""
-        schedule_yaml = tmp_path / "schedules.yaml"
-        schedule_yaml.write_text(
+        schedule_dir = tmp_path / "schedules"
+        schedule_dir.mkdir()
+        (schedule_dir / "_config.yaml").write_text(
             """
-version: "1.0"
-
-config:
-  forecast_months: 12
-
-schedules:
-  - id: paycheck
-    enabled: true
-    match:
-      account: Assets:Checking
-      payee_pattern: ".*PAYROLL.*"
-    recurrence:
-      frequency: MONTHLY_ON_DAYS
-      start_date: 2024-01-05
-      days_of_month: [5, 20]
-    transaction:
-      payee: "Employer"
-      narration: "Paycheck"
-      metadata:
-        schedule_id: paycheck
-      postings:
-        - account: Assets:Checking
-          amount: 2500.00
-        - account: Income:Salary
-          amount: -2500.00
+forecast_months: 12
+"""
+        )
+        (schedule_dir / "paycheck.yaml").write_text(
+            """
+id: paycheck
+enabled: true
+match:
+  account: Assets:Checking
+  payee_pattern: ".*PAYROLL.*"
+recurrence:
+  frequency: MONTHLY_ON_DAYS
+  start_date: 2024-01-05
+  days_of_month: [5, 20]
+transaction:
+  payee: "Employer"
+  narration: "Paycheck"
+  metadata:
+    schedule_id: paycheck
+  postings:
+    - account: Assets:Checking
+      amount: 2500.00
+    - account: Income:Salary
+      amount: -2500.00
 """
         )
 
         options_map = {"filename": str(tmp_path / "main.bean")}
-        result_entries, errors = schedules([], options_map, config=str(schedule_yaml))
+        result_entries, errors = schedules([], options_map, config=str(schedule_dir))
 
         # Should generate 2 forecasts per month (5th and 20th)
         forecast_txns = [e for e in result_entries if isinstance(e, data.Transaction)]
@@ -274,38 +273,37 @@ schedules:
 
     def test_plugin_with_posting_metadata(self, tmp_path):
         """Should include posting-level metadata in beancount postings."""
-        schedule_yaml = tmp_path / "schedules.yaml"
-        schedule_yaml.write_text(
+        schedule_dir = tmp_path / "schedules"
+        schedule_dir.mkdir()
+        (schedule_dir / "test.yaml").write_text(
             """
-version: "1.0"
-schedules:
-  - id: test
-    enabled: true
-    match:
-      account: Assets:Checking
-      payee_pattern: ".*TEST.*"
-    recurrence:
-      frequency: MONTHLY
-      start_date: 2024-01-01
-      day_of_month: 1
-    transaction:
-      payee: "Test"
-      narration: "Test transaction"
+id: test
+enabled: true
+match:
+  account: Assets:Checking
+  payee_pattern: ".*TEST.*"
+recurrence:
+  frequency: MONTHLY
+  start_date: 2024-01-01
+  day_of_month: 1
+transaction:
+  payee: "Test"
+  narration: "Test transaction"
+  metadata:
+    schedule_id: test
+  postings:
+    - account: Expenses:Test
+      amount: 100.00
       metadata:
-        schedule_id: test
-      postings:
-        - account: Expenses:Test
-          amount: 100.00
-          metadata:
-            narration: "Test expense note"
-        - account: Assets:Checking
-          metadata:
-            narration: "Payment from checking"
+        narration: "Test expense note"
+    - account: Assets:Checking
+      metadata:
+        narration: "Payment from checking"
 """
         )
 
         options_map = {"filename": str(tmp_path / "main.bean")}
-        result_entries, errors = schedules([], options_map, config=str(schedule_yaml))
+        result_entries, errors = schedules([], options_map, config=str(schedule_dir))
 
         # Check posting metadata
         forecast_txn = result_entries[0]
@@ -315,39 +313,39 @@ schedules:
 
     def test_plugin_respects_forecast_months_config(self, tmp_path):
         """Should generate forecasts respecting forecast_months config."""
-        schedule_yaml = tmp_path / "schedules.yaml"
+        schedule_dir = tmp_path / "schedules"
+        schedule_dir.mkdir()
         # Set forecast_months to 1 to generate only 1 month ahead
-        schedule_yaml.write_text(
+        (schedule_dir / "_config.yaml").write_text(
             """
-version: "1.0"
-
-config:
-  forecast_months: 1
-
-schedules:
-  - id: test-monthly
-    enabled: true
-    match:
-      account: Assets:Checking
-      payee_pattern: "Test"
-    recurrence:
-      frequency: MONTHLY
-      start_date: 2024-01-01
-      day_of_month: 1
-    transaction:
-      payee: "Test Payment"
-      narration: "Monthly test"
-      metadata:
-        schedule_id: test-monthly
-      postings:
-        - account: Expenses:Test
-          amount: 100.00
-        - account: Assets:Checking
+forecast_months: 1
+"""
+        )
+        (schedule_dir / "test-monthly.yaml").write_text(
+            """
+id: test-monthly
+enabled: true
+match:
+  account: Assets:Checking
+  payee_pattern: "Test"
+recurrence:
+  frequency: MONTHLY
+  start_date: 2024-01-01
+  day_of_month: 1
+transaction:
+  payee: "Test Payment"
+  narration: "Monthly test"
+  metadata:
+    schedule_id: test-monthly
+  postings:
+    - account: Expenses:Test
+      amount: 100.00
+    - account: Assets:Checking
 """
         )
 
         options_map = {"filename": str(tmp_path / "main.bean")}
-        result_entries, errors = schedules([], options_map, config=str(schedule_yaml))
+        result_entries, errors = schedules([], options_map, config=str(schedule_dir))
 
         assert len(errors) == 0
         forecasts = [
@@ -368,35 +366,35 @@ class TestPluginErrorHandling:
     """Tests for plugin error handling."""
 
     def test_invalid_yaml_syntax(self, tmp_path):
-        """Should handle invalid YAML gracefully."""
-        invalid_yaml = tmp_path / "schedules.yaml"
-        invalid_yaml.write_text("invalid: yaml: syntax: here:")
+        """Should handle invalid schedule YAML gracefully (skip and continue)."""
+        schedule_dir = tmp_path / "schedules"
+        schedule_dir.mkdir()
+        (schedule_dir / "invalid-schedule.yaml").write_text(
+            "invalid: yaml: syntax: here:"
+        )
 
         options_map = {"filename": str(tmp_path / "main.bean")}
-        result_entries, errors = schedules([], options_map, config=str(invalid_yaml))
+        result_entries, errors = schedules([], options_map, config=str(schedule_dir))
 
-        # Should have errors
-        assert len(errors) > 0
+        # Invalid schedule files are skipped gracefully
+        assert len(errors) == 0
 
     def test_missing_required_fields(self, tmp_path):
-        """Should handle missing required fields in schedule."""
-        invalid_schedule = tmp_path / "schedules.yaml"
-        invalid_schedule.write_text(
+        """Should handle missing required fields in schedule (skip file gracefully)."""
+        schedule_dir = tmp_path / "schedules"
+        schedule_dir.mkdir()
+        (schedule_dir / "incomplete.yaml").write_text(
             """
-version: "1.0"
-schedules:
-  - id: incomplete
-    # Missing enabled, match, recurrence, transaction
+id: incomplete
+# Missing enabled, match, recurrence, transaction
 """
         )
 
         options_map = {"filename": str(tmp_path / "main.bean")}
-        result_entries, errors = schedules(
-            [], options_map, config=str(invalid_schedule)
-        )
+        result_entries, errors = schedules([], options_map, config=str(schedule_dir))
 
-        # Should handle gracefully (pydantic validation will catch it)
-        assert len(errors) > 0
+        # Invalid schedule files are skipped gracefully
+        assert len(errors) == 0
 
 
 class TestPluginWithLedgerFile:
@@ -408,29 +406,28 @@ class TestPluginWithLedgerFile:
         config_dir = tmp_path / "config"
         config_dir.mkdir()
 
-        schedule_yaml = config_dir / "schedules.yaml"
-        schedule_yaml.write_text(
+        schedule_dir = config_dir / "schedules"
+        schedule_dir.mkdir()
+        (schedule_dir / "test.yaml").write_text(
             """
-version: "1.0"
-schedules:
-  - id: test
-    enabled: true
-    match:
-      account: Assets:Checking
-      payee_pattern: ".*TEST.*"
-    recurrence:
-      frequency: MONTHLY
-      start_date: 2024-01-01
-      day_of_month: 1
-    transaction:
-      payee: "Test"
-      narration: ""
-      metadata:
-        schedule_id: test
-      postings:
-        - account: Expenses:Test
-          amount: 100.00
-        - account: Assets:Checking
+id: test
+enabled: true
+match:
+  account: Assets:Checking
+  payee_pattern: ".*TEST.*"
+recurrence:
+  frequency: MONTHLY
+  start_date: 2024-01-01
+  day_of_month: 1
+transaction:
+  payee: "Test"
+  narration: ""
+  metadata:
+    schedule_id: test
+  postings:
+    - account: Expenses:Test
+      amount: 100.00
+    - account: Assets:Checking
 """
         )
 
@@ -438,9 +435,7 @@ schedules:
         options_map = {"filename": str(tmp_path / "main.bean")}
 
         # Use relative path from ledger location
-        result_entries, errors = schedules(
-            [], options_map, config="config/schedules.yaml"
-        )
+        result_entries, errors = schedules([], options_map, config="config/schedules")
 
         # Should resolve correctly and generate forecasts
         assert len(result_entries) > 0
@@ -450,46 +445,43 @@ schedules:
 class TestPluginFileMetadata:
     """Tests for filename metadata in forecast transactions."""
 
-    def test_single_file_mode_sets_filename(self, tmp_path, monkeypatch):
-        """Should set filename metadata to schedules.yaml for single file mode."""
-
-        schedule_yaml = tmp_path / "schedules.yaml"
-        schedule_yaml.write_text(
+    def test_directory_schedule_sets_individual_filename(self, tmp_path, monkeypatch):
+        """Should set filename metadata to individual schedule file in directory mode."""
+        schedule_dir = tmp_path / "schedules"
+        schedule_dir.mkdir()
+        (schedule_dir / "test-schedule.yaml").write_text(
             """
-version: "1.0"
-schedules:
-  - id: test-schedule
-    enabled: true
-    match:
-      account: Assets:Checking
-      payee_pattern: ".*TEST.*"
-    recurrence:
-      frequency: MONTHLY
-      start_date: 2024-01-01
-      day_of_month: 1
-    transaction:
-      payee: "Test"
-      narration: "Test transaction"
-      metadata:
-        schedule_id: test-schedule
-      postings:
-        - account: Expenses:Test
-          amount: 100.00
-        - account: Assets:Checking
+id: test-schedule
+enabled: true
+match:
+  account: Assets:Checking
+  payee_pattern: ".*TEST.*"
+recurrence:
+  frequency: MONTHLY
+  start_date: 2024-01-01
+  day_of_month: 1
+transaction:
+  payee: "Test"
+  narration: "Test transaction"
+  metadata:
+    schedule_id: test-schedule
+  postings:
+    - account: Expenses:Test
+      amount: 100.00
+    - account: Assets:Checking
 """
         )
 
-        # Change to tmp_path so relative path works
         monkeypatch.chdir(tmp_path)
 
         options_map = {"filename": str(tmp_path / "main.bean")}
-        result_entries, errors = schedules([], options_map, config=str(schedule_yaml))
+        result_entries, errors = schedules([], options_map, config=str(schedule_dir))
 
-        # Check filename metadata
+        assert len(errors) == 0
         forecast_txn = result_entries[0]
         assert "filename" in forecast_txn.meta
-        # Should show relative path from cwd
-        assert forecast_txn.meta["filename"] == "schedules.yaml"
+        # Should show relative path to individual schedule file
+        assert "test-schedule.yaml" in forecast_txn.meta["filename"]
         assert forecast_txn.meta["lineno"] == 0
 
     def test_directory_mode_sets_individual_filenames(self, tmp_path, monkeypatch):
@@ -561,9 +553,7 @@ transaction:
         monkeypatch.chdir(tmp_path)
 
         # Mock auto-discovery to find our directory
-        monkeypatch.setattr(
-            loader, "find_schedules_location", lambda: ("dir", schedules_dir)
-        )
+        monkeypatch.setattr(loader, "find_schedules_location", lambda: schedules_dir)
 
         options_map = {"filename": str(tmp_path / "main.bean")}
         result_entries, errors = schedules([], options_map)
@@ -598,29 +588,28 @@ transaction:
         config_dir = tmp_path / "config"
         config_dir.mkdir()
 
-        schedule_yaml = config_dir / "schedules.yaml"
-        schedule_yaml.write_text(
+        schedule_dir = config_dir / "schedules"
+        schedule_dir.mkdir()
+        (schedule_dir / "test.yaml").write_text(
             """
-version: "1.0"
-schedules:
-  - id: test
-    enabled: true
-    match:
-      account: Assets:Checking
-      payee_pattern: ".*TEST.*"
-    recurrence:
-      frequency: MONTHLY
-      start_date: 2024-01-01
-      day_of_month: 1
-    transaction:
-      payee: "Test"
-      narration: ""
-      metadata:
-        schedule_id: test
-      postings:
-        - account: Expenses:Test
-          amount: 100.00
-        - account: Assets:Checking
+id: test
+enabled: true
+match:
+  account: Assets:Checking
+  payee_pattern: ".*TEST.*"
+recurrence:
+  frequency: MONTHLY
+  start_date: 2024-01-01
+  day_of_month: 1
+transaction:
+  payee: "Test"
+  narration: ""
+  metadata:
+    schedule_id: test
+  postings:
+    - account: Expenses:Test
+      amount: 100.00
+    - account: Assets:Checking
 """
         )
 
@@ -628,11 +617,13 @@ schedules:
         monkeypatch.setenv("BEANSCHEDULE_DISPLAY_BASE", str(tmp_path))
 
         options_map = {"filename": str(tmp_path / "main.bean")}
-        result_entries, errors = schedules([], options_map, config=str(schedule_yaml))
+        result_entries, errors = schedules([], options_map, config=str(schedule_dir))
 
         # Check filename metadata uses relative path from BEANSCHEDULE_DISPLAY_BASE
+        assert len(errors) == 0
         forecast_txn = result_entries[0]
-        assert forecast_txn.meta["filename"] == "config/schedules.yaml"
+        # Should show path relative to BEANSCHEDULE_DISPLAY_BASE
+        assert "config/schedules/test.yaml" in forecast_txn.meta["filename"]
 
 
 class TestAmortizationRoleValidation:
@@ -642,43 +633,42 @@ class TestAmortizationRoleValidation:
         """Should raise helpful error when role is missing on amortization posting."""
         from beanschedule.plugins.schedules import schedules
 
-        schedule_yaml = tmp_path / "schedules.yaml"
-        schedule_yaml.write_text(
+        schedule_dir = tmp_path / "schedules"
+        schedule_dir.mkdir()
+        (schedule_dir / "mortgage-no-role.yaml").write_text(
             """
-version: "1.0"
-schedules:
-  - id: mortgage-no-role
-    enabled: true
-    match:
-      account: Assets:Checking
-      payee_pattern: "MORTGAGE"
-    recurrence:
-      frequency: MONTHLY
-      start_date: 2024-01-01
-      day_of_month: 1
-    amortization:
-      principal: 100000.00
-      annual_rate: 0.06
-      term_months: 360
-      start_date: 2024-01-01
-    transaction:
-      payee: "Mortgage Company"
-      metadata:
-        schedule_id: mortgage-no-role
-      postings:
-        # Missing role fields - should raise error
-        - account: Assets:Checking
-          amount: null
-        - account: Expenses:Mortgage-Interest
-          amount: null
-        - account: Liabilities:Mortgage
-          amount: null
+id: mortgage-no-role
+enabled: true
+match:
+  account: Assets:Checking
+  payee_pattern: "MORTGAGE"
+recurrence:
+  frequency: MONTHLY
+  start_date: 2024-01-01
+  day_of_month: 1
+amortization:
+  principal: 100000.00
+  annual_rate: 0.06
+  term_months: 360
+  start_date: 2024-01-01
+transaction:
+  payee: "Mortgage Company"
+  metadata:
+    schedule_id: mortgage-no-role
+  postings:
+    # Missing role fields - should raise error
+    - account: Assets:Checking
+      amount: null
+    - account: Expenses:Mortgage-Interest
+      amount: null
+    - account: Liabilities:Mortgage
+      amount: null
 """
         )
 
         monkeypatch.chdir(tmp_path)
         options_map = {"filename": str(tmp_path / "main.bean")}
-        result_entries, errors = schedules([], options_map, config=str(schedule_yaml))
+        result_entries, errors = schedules([], options_map, config=str(schedule_dir))
 
         # Should have error
         assert len(errors) == 1
@@ -700,55 +690,54 @@ class TestAmortizationWithEscrow:
         """Should handle amortization with fixed escrow postings."""
         from beanschedule.plugins.schedules import schedules
 
-        schedule_yaml = tmp_path / "schedules.yaml"
-        schedule_yaml.write_text(
+        schedule_dir = tmp_path / "schedules"
+        schedule_dir.mkdir()
+        (schedule_dir / "mortgage-with-escrow.yaml").write_text(
             """
-version: "1.0"
-schedules:
-  - id: mortgage-with-escrow
-    enabled: true
-    match:
-      account: Assets:Checking
-      payee_pattern: "MORTGAGE"
-    recurrence:
-      frequency: MONTHLY
-      start_date: 2024-01-01
-      day_of_month: 1
-    amortization:
-      principal: 100000.00
-      annual_rate: 0.06
-      term_months: 360
-      start_date: 2024-01-01
-    transaction:
-      payee: "Mortgage Company"
-      narration: "Mortgage payment with escrow"
-      metadata:
-        schedule_id: mortgage-with-escrow
-      postings:
-        # Payment account - should balance all below
-        - account: Assets:Checking
-          amount: null
-          role: payment
-        # Amortized amounts
-        - account: Expenses:Mortgage-Interest
-          amount: null
-          role: interest
-        - account: Liabilities:Mortgage
-          amount: null
-          role: principal
-        # Fixed escrow amounts
-        - account: Expenses:Property-Tax-Escrow
-          amount: 350.00
-          role: escrow
-        - account: Expenses:Insurance-Escrow
-          amount: 125.00
-          role: escrow
+id: mortgage-with-escrow
+enabled: true
+match:
+  account: Assets:Checking
+  payee_pattern: "MORTGAGE"
+recurrence:
+  frequency: MONTHLY
+  start_date: 2024-01-01
+  day_of_month: 1
+amortization:
+  principal: 100000.00
+  annual_rate: 0.06
+  term_months: 360
+  start_date: 2024-01-01
+transaction:
+  payee: "Mortgage Company"
+  narration: "Mortgage payment with escrow"
+  metadata:
+    schedule_id: mortgage-with-escrow
+  postings:
+    # Payment account - should balance all below
+    - account: Assets:Checking
+      amount: null
+      role: payment
+    # Amortized amounts
+    - account: Expenses:Mortgage-Interest
+      amount: null
+      role: interest
+    - account: Liabilities:Mortgage
+      amount: null
+      role: principal
+    # Fixed escrow amounts
+    - account: Expenses:Property-Tax-Escrow
+      amount: 350.00
+      role: escrow
+    - account: Expenses:Insurance-Escrow
+      amount: 125.00
+      role: escrow
 """
         )
 
         monkeypatch.chdir(tmp_path)
         options_map = {"filename": str(tmp_path / "main.bean")}
-        result_entries, errors = schedules([], options_map, config=str(schedule_yaml))
+        result_entries, errors = schedules([], options_map, config=str(schedule_dir))
 
         assert len(errors) == 0
         assert len(result_entries) > 0
@@ -792,48 +781,47 @@ schedules:
         """Should include correct amortization metadata with escrow."""
         from beanschedule.plugins.schedules import schedules
 
-        schedule_yaml = tmp_path / "schedules.yaml"
-        schedule_yaml.write_text(
+        schedule_dir = tmp_path / "schedules"
+        schedule_dir.mkdir()
+        (schedule_dir / "test-mortgage.yaml").write_text(
             """
-version: "1.0"
-schedules:
-  - id: test-mortgage
-    enabled: true
-    match:
-      account: Assets:Checking
-      payee_pattern: "TEST"
-    recurrence:
-      frequency: MONTHLY
-      start_date: 2024-01-01
-      day_of_month: 1
-    amortization:
-      principal: 50000.00
-      annual_rate: 0.05
-      term_months: 120
-      start_date: 2024-01-01
-    transaction:
-      payee: "Test"
-      metadata:
-        schedule_id: test-mortgage
-      postings:
-        - account: Assets:Checking
-          amount: null
-          role: payment
-        - account: Expenses:Interest
-          amount: null
-          role: interest
-        - account: Liabilities:Loan
-          amount: null
-          role: principal
-        - account: Expenses:Escrow
-          amount: 200.00
-          role: escrow
+id: test-mortgage
+enabled: true
+match:
+  account: Assets:Checking
+  payee_pattern: "TEST"
+recurrence:
+  frequency: MONTHLY
+  start_date: 2024-01-01
+  day_of_month: 1
+amortization:
+  principal: 50000.00
+  annual_rate: 0.05
+  term_months: 120
+  start_date: 2024-01-01
+transaction:
+  payee: "Test"
+  metadata:
+    schedule_id: test-mortgage
+  postings:
+    - account: Assets:Checking
+      amount: null
+      role: payment
+    - account: Expenses:Interest
+      amount: null
+      role: interest
+    - account: Liabilities:Loan
+      amount: null
+      role: principal
+    - account: Expenses:Escrow
+      amount: 200.00
+      role: escrow
 """
         )
 
         monkeypatch.chdir(tmp_path)
         options_map = {"filename": str(tmp_path / "main.bean")}
-        result_entries, errors = schedules([], options_map, config=str(schedule_yaml))
+        result_entries, errors = schedules([], options_map, config=str(schedule_dir))
 
         forecast_txn = result_entries[0]
 
@@ -957,52 +945,56 @@ class TestStatefulAmortization:
             entries.extend(extra_entries)
         return entries
 
-    def _schedule_yaml(self, compounding="MONTHLY", extra_principal=None):
-        """Build schedule YAML string for the test loan."""
-        lines = [
-            'version: "1.0"',
-            "",
-            "config:",
-            "  forecast_months: 12",
-            "",
-            "schedules:",
-            "  - id: test-loan",
-            "    enabled: true",
-            "    match:",
-            "      account: Assets:Checking",
-            '      payee_pattern: "LOAN"',
-            "    recurrence:",
-            "      frequency: MONTHLY",
-            "      start_date: 2020-01-01",
-            "      day_of_month: 4",
-            "    amortization:",
-            "      annual_rate: 0.06",
-            "      balance_from_ledger: true",
-            "      monthly_payment: 200.00",
-            f"      compounding: {compounding}",
+    def _schedule_yaml(self, tmp_path, compounding="MONTHLY", extra_principal=None):
+        """Build a schedules directory for the test loan and return the directory path."""
+        schedule_dir = tmp_path / "schedules"
+        if not schedule_dir.exists():
+            schedule_dir.mkdir()
+
+        config_lines = [
+            "forecast_months: 12",
+        ]
+        (schedule_dir / "_config.yaml").write_text("\n".join(config_lines))
+
+        schedule_lines = [
+            "id: test-loan",
+            "enabled: true",
+            "match:",
+            "  account: Assets:Checking",
+            '  payee_pattern: "LOAN"',
+            "recurrence:",
+            "  frequency: MONTHLY",
+            "  start_date: 2020-01-01",
+            "  day_of_month: 4",
+            "amortization:",
+            "  annual_rate: 0.06",
+            "  balance_from_ledger: true",
+            "  monthly_payment: 200.00",
+            f"  compounding: {compounding}",
         ]
         if extra_principal is not None:
-            lines.append(f"      extra_principal: {extra_principal}")
-        lines.extend(
+            schedule_lines.append(f"  extra_principal: {extra_principal}")
+        schedule_lines.extend(
             [
-                "    transaction:",
-                '      payee: "Loan Payment"',
-                '      narration: "Monthly loan payment"',
-                "      metadata:",
-                "        schedule_id: test-loan",
-                "      postings:",
-                "        - account: Assets:Checking",
-                "          amount: null",
-                "          role: payment",
-                "        - account: Expenses:Interest",
-                "          amount: null",
-                "          role: interest",
-                f"        - account: {self.LIABILITY_ACCOUNT}",
-                "          amount: null",
-                "          role: principal",
+                "transaction:",
+                '  payee: "Loan Payment"',
+                '  narration: "Monthly loan payment"',
+                "  metadata:",
+                "    schedule_id: test-loan",
+                "  postings:",
+                "    - account: Assets:Checking",
+                "      amount: null",
+                "      role: payment",
+                "    - account: Expenses:Interest",
+                "      amount: null",
+                "      role: interest",
+                f"    - account: {self.LIABILITY_ACCOUNT}",
+                "      amount: null",
+                "      role: principal",
             ]
         )
-        return "\n".join(lines)
+        (schedule_dir / "test-loan.yaml").write_text("\n".join(schedule_lines))
+        return schedule_dir
 
     # ── tests ─────────────────────────────────────────────────────────────
 
@@ -1027,13 +1019,12 @@ class TestStatefulAmortization:
 
         monkeypatch.setattr("beanschedule.plugins.schedules.date", MockDate)
 
-        schedule_yaml = tmp_path / "schedules.yaml"
-        schedule_yaml.write_text(self._schedule_yaml("MONTHLY"))
+        schedule_dir = self._schedule_yaml(tmp_path, "MONTHLY")
         monkeypatch.chdir(tmp_path)
 
         options_map = {"filename": str(tmp_path / "main.bean")}
         result_entries, errors = schedules(
-            self._make_ledger_entries(), options_map, config=str(schedule_yaml)
+            self._make_ledger_entries(), options_map, config=str(schedule_dir)
         )
 
         assert len(errors) == 0
@@ -1093,13 +1084,12 @@ class TestStatefulAmortization:
 
         monkeypatch.setattr("beanschedule.plugins.schedules.date", MockDate)
 
-        schedule_yaml = tmp_path / "schedules.yaml"
-        schedule_yaml.write_text(self._schedule_yaml("DAILY"))
+        schedule_dir = self._schedule_yaml(tmp_path, "DAILY")
         monkeypatch.chdir(tmp_path)
 
         options_map = {"filename": str(tmp_path / "main.bean")}
         result_entries, errors = schedules(
-            self._make_ledger_entries(), options_map, config=str(schedule_yaml)
+            self._make_ledger_entries(), options_map, config=str(schedule_dir)
         )
         assert len(errors) == 0
 
@@ -1128,15 +1118,12 @@ class TestStatefulAmortization:
 
     def test_stateful_with_extra_principal(self, tmp_path, monkeypatch):
         """Extra principal should increase principal posting and total payment."""
-        schedule_yaml = tmp_path / "schedules.yaml"
-        schedule_yaml.write_text(
-            self._schedule_yaml("MONTHLY", extra_principal="50.00")
-        )
+        schedule_dir = self._schedule_yaml(tmp_path, "MONTHLY", extra_principal="50.00")
         monkeypatch.chdir(tmp_path)
 
         options_map = {"filename": str(tmp_path / "main.bean")}
         result_entries, errors = schedules(
-            self._make_ledger_entries(), options_map, config=str(schedule_yaml)
+            self._make_ledger_entries(), options_map, config=str(schedule_dir)
         )
         assert len(errors) == 0
 
@@ -1190,15 +1177,14 @@ class TestStatefulAmortization:
             ],
         )
 
-        schedule_yaml = tmp_path / "schedules.yaml"
-        schedule_yaml.write_text(self._schedule_yaml("MONTHLY"))
+        schedule_dir = self._schedule_yaml(tmp_path, "MONTHLY")
         monkeypatch.chdir(tmp_path)
 
         options_map = {"filename": str(tmp_path / "main.bean")}
         result_entries, errors = schedules(
             self._make_ledger_entries(extra_entries=[phantom]),
             options_map,
-            config=str(schedule_yaml),
+            config=str(schedule_dir),
         )
         assert len(errors) == 0
 
@@ -1216,8 +1202,7 @@ class TestStatefulAmortization:
         self, tmp_path, monkeypatch
     ):
         """Schedule should be silently skipped when liability has no cleared postings."""
-        schedule_yaml = tmp_path / "schedules.yaml"
-        schedule_yaml.write_text(self._schedule_yaml("MONTHLY"))
+        schedule_dir = self._schedule_yaml(tmp_path, "MONTHLY")
         monkeypatch.chdir(tmp_path)
 
         options_map = {"filename": str(tmp_path / "main.bean")}
@@ -1243,7 +1228,7 @@ class TestStatefulAmortization:
         )
 
         result_entries, errors = schedules(
-            [phantom], options_map, config=str(schedule_yaml)
+            [phantom], options_map, config=str(schedule_dir)
         )
         # No hard errors — just a warning log and skip
         assert len(errors) == 0
@@ -1263,41 +1248,39 @@ class TestShadowAccountForecasting:
     SHADOW_ACCOUNT = "Equity:Schedules:Upcoming"
 
     def _make_yaml(self, tmp_path):
-        """Write a simple monthly schedule YAML (no shadow config in YAML)."""
-        schedule_yaml = tmp_path / "schedules.yaml"
-        schedule_yaml.write_text(
+        """Write a simple monthly schedule (directory mode, no shadow config)."""
+        schedule_dir = tmp_path / "schedules"
+        schedule_dir.mkdir()
+        (schedule_dir / "rent-monthly.yaml").write_text(
             """
-version: "1.0"
-
-schedules:
-  - id: rent-monthly
-    enabled: true
-    match:
-      account: Assets:Checking
-      payee_pattern: ".*LANDLORD.*"
-    recurrence:
-      frequency: MONTHLY
-      start_date: 2024-01-01
-      day_of_month: 1
-    transaction:
-      payee: "Rent Payment"
-      narration: "Monthly rent"
-      metadata:
-        schedule_id: rent-monthly
-      postings:
-        - account: Expenses:Housing:Rent
-          amount: 1500.00
-        - account: Assets:Checking
+id: rent-monthly
+enabled: true
+match:
+  account: Assets:Checking
+  payee_pattern: ".*LANDLORD.*"
+recurrence:
+  frequency: MONTHLY
+  start_date: 2024-01-01
+  day_of_month: 1
+transaction:
+  payee: "Rent Payment"
+  narration: "Monthly rent"
+  metadata:
+    schedule_id: rent-monthly
+  postings:
+    - account: Expenses:Housing:Rent
+      amount: 1500.00
+    - account: Assets:Checking
 """
         )
-        return schedule_yaml
+        return schedule_dir
 
     def test_shadow_account_disabled_by_default(self, tmp_path):
         """Without shadow config in directive, forecast postings use the real matched account."""
-        schedule_yaml = self._make_yaml(tmp_path)
+        schedule_dir = self._make_yaml(tmp_path)
         options_map = {"filename": str(tmp_path / "main.bean")}
 
-        result_entries, errors = schedules([], options_map, config=str(schedule_yaml))
+        result_entries, errors = schedules([], options_map, config=str(schedule_dir))
 
         assert len(errors) == 0
         forecast_txn = result_entries[0]
@@ -1311,13 +1294,13 @@ schedules:
 
         from dateutil.relativedelta import relativedelta
 
-        from beanschedule.loader import load_schedules_file
+        from beanschedule.loader import load_schedules_from_directory
         from beanschedule.plugins.schedules import _create_forecast_transaction
         from beanschedule.recurrence import RecurrenceEngine
         from beanschedule.utils import generate_schedule_occurrences
 
-        schedule_yaml = self._make_yaml(tmp_path)
-        sf = load_schedules_file(schedule_yaml)
+        schedule_dir = self._make_yaml(tmp_path)
+        sf = load_schedules_from_directory(schedule_dir)
         assert sf is not None
         engine = RecurrenceEngine()
         today = date.today()
@@ -1344,13 +1327,13 @@ schedules:
 
         from dateutil.relativedelta import relativedelta
 
-        from beanschedule.loader import load_schedules_file
+        from beanschedule.loader import load_schedules_from_directory
         from beanschedule.plugins.schedules import _create_forecast_transaction
         from beanschedule.recurrence import RecurrenceEngine
         from beanschedule.utils import generate_schedule_occurrences
 
-        schedule_yaml = self._make_yaml(tmp_path)
-        sf = load_schedules_file(schedule_yaml)
+        schedule_dir = self._make_yaml(tmp_path)
+        sf = load_schedules_from_directory(schedule_dir)
         assert sf is not None
         engine = RecurrenceEngine()
         today = date.today()
@@ -1375,13 +1358,13 @@ schedules:
 
         from dateutil.relativedelta import relativedelta
 
-        from beanschedule.loader import load_schedules_file
+        from beanschedule.loader import load_schedules_from_directory
         from beanschedule.plugins.schedules import _create_forecast_transaction
         from beanschedule.recurrence import RecurrenceEngine
         from beanschedule.utils import generate_schedule_occurrences
 
-        schedule_yaml = self._make_yaml(tmp_path)
-        sf = load_schedules_file(schedule_yaml)
+        schedule_dir = self._make_yaml(tmp_path)
+        sf = load_schedules_from_directory(schedule_dir)
         assert sf is not None
         engine = RecurrenceEngine()
         today = date.today()
@@ -1405,10 +1388,8 @@ schedules:
         """shadow_upcoming_account passed via plugin directive dict is applied to all forecasts."""
         from beanschedule import loader
 
-        schedule_yaml = self._make_yaml(tmp_path)
-        monkeypatch.setattr(
-            loader, "find_schedules_location", lambda: ("file", schedule_yaml)
-        )
+        schedule_dir = self._make_yaml(tmp_path)
+        monkeypatch.setattr(loader, "find_schedules_location", lambda: schedule_dir)
         options_map = {"filename": str(tmp_path / "main.bean")}
 
         result_entries, errors = schedules(
@@ -1432,10 +1413,8 @@ schedules:
         """An Open directive is automatically added for the shadow account."""
         from beanschedule import loader
 
-        schedule_yaml = self._make_yaml(tmp_path)
-        monkeypatch.setattr(
-            loader, "find_schedules_location", lambda: ("file", schedule_yaml)
-        )
+        schedule_dir = self._make_yaml(tmp_path)
+        monkeypatch.setattr(loader, "find_schedules_location", lambda: schedule_dir)
         options_map = {"filename": str(tmp_path / "main.bean")}
 
         result_entries, errors = schedules(
@@ -1458,10 +1437,8 @@ schedules:
         """No duplicate Open directive is added if the account is already open in the ledger."""
         from beanschedule import loader
 
-        schedule_yaml = self._make_yaml(tmp_path)
-        monkeypatch.setattr(
-            loader, "find_schedules_location", lambda: ("file", schedule_yaml)
-        )
+        schedule_dir = self._make_yaml(tmp_path)
+        monkeypatch.setattr(loader, "find_schedules_location", lambda: schedule_dir)
         options_map = {"filename": str(tmp_path / "main.bean")}
 
         existing_open = data.Open(
@@ -1498,42 +1475,38 @@ class TestShadowOverdueForecasting:
 
     def _make_yaml(self, tmp_path):
         """Write a schedule that has been recurring since well before today."""
-        schedule_yaml = tmp_path / "schedules.yaml"
-        schedule_yaml.write_text(
+        schedule_dir = tmp_path / "schedules"
+        schedule_dir.mkdir()
+        (schedule_dir / "rent-monthly.yaml").write_text(
             """
-version: "1.0"
-
-schedules:
-  - id: rent-monthly
-    enabled: true
-    match:
-      account: Assets:Checking
-      payee_pattern: ".*LANDLORD.*"
-    recurrence:
-      frequency: MONTHLY
-      start_date: 2020-01-01
-      day_of_month: 1
-    transaction:
-      payee: "Rent Payment"
-      narration: "Monthly rent"
-      metadata:
-        schedule_id: rent-monthly
-      postings:
-        - account: Expenses:Housing:Rent
-          amount: 1500.00
-        - account: Assets:Checking
+id: rent-monthly
+enabled: true
+match:
+  account: Assets:Checking
+  payee_pattern: ".*LANDLORD.*"
+recurrence:
+  frequency: MONTHLY
+  start_date: 2020-01-01
+  day_of_month: 1
+transaction:
+  payee: "Rent Payment"
+  narration: "Monthly rent"
+  metadata:
+    schedule_id: rent-monthly
+  postings:
+    - account: Expenses:Housing:Rent
+      amount: 1500.00
+    - account: Assets:Checking
 """
         )
-        return schedule_yaml
+        return schedule_dir
 
     def test_overdue_transactions_not_generated_by_default(self, tmp_path, monkeypatch):
         """Without shadow_overdue_account, plugin starts from tomorrow — no past dates."""
         from beanschedule import loader
 
-        schedule_yaml = self._make_yaml(tmp_path)
-        monkeypatch.setattr(
-            loader, "find_schedules_location", lambda: ("file", schedule_yaml)
-        )
+        schedule_dir = self._make_yaml(tmp_path)
+        monkeypatch.setattr(loader, "find_schedules_location", lambda: schedule_dir)
         options_map = {"filename": str(tmp_path / "main.bean")}
 
         result_entries, errors = schedules(
@@ -1549,10 +1522,8 @@ schedules:
         """With shadow_overdue_account, past-due occurrences are generated."""
         from beanschedule import loader
 
-        schedule_yaml = self._make_yaml(tmp_path)
-        monkeypatch.setattr(
-            loader, "find_schedules_location", lambda: ("file", schedule_yaml)
-        )
+        schedule_dir = self._make_yaml(tmp_path)
+        monkeypatch.setattr(loader, "find_schedules_location", lambda: schedule_dir)
         options_map = {"filename": str(tmp_path / "main.bean")}
 
         result_entries, errors = schedules(
@@ -1573,10 +1544,8 @@ schedules:
         """Past-due transactions use shadow_overdue_account, not the real account."""
         from beanschedule import loader
 
-        schedule_yaml = self._make_yaml(tmp_path)
-        monkeypatch.setattr(
-            loader, "find_schedules_location", lambda: ("file", schedule_yaml)
-        )
+        schedule_dir = self._make_yaml(tmp_path)
+        monkeypatch.setattr(loader, "find_schedules_location", lambda: schedule_dir)
         options_map = {"filename": str(tmp_path / "main.bean")}
 
         result_entries, errors = schedules(
@@ -1605,10 +1574,8 @@ schedules:
         """Future transactions use shadow_upcoming_account when both are configured."""
         from beanschedule import loader
 
-        schedule_yaml = self._make_yaml(tmp_path)
-        monkeypatch.setattr(
-            loader, "find_schedules_location", lambda: ("file", schedule_yaml)
-        )
+        schedule_dir = self._make_yaml(tmp_path)
+        monkeypatch.setattr(loader, "find_schedules_location", lambda: schedule_dir)
         options_map = {"filename": str(tmp_path / "main.bean")}
 
         result_entries, errors = schedules(
@@ -1644,10 +1611,8 @@ schedules:
         from datetime import date as dt_date
         from dateutil.relativedelta import relativedelta
 
-        schedule_yaml = self._make_yaml(tmp_path)
-        monkeypatch.setattr(
-            loader, "find_schedules_location", lambda: ("file", schedule_yaml)
-        )
+        schedule_dir = self._make_yaml(tmp_path)
+        monkeypatch.setattr(loader, "find_schedules_location", lambda: schedule_dir)
         options_map = {"filename": str(tmp_path / "main.bean")}
 
         # Create a real imported transaction for last month's rent
@@ -1718,10 +1683,8 @@ schedules:
         from datetime import date as dt_date
         from dateutil.relativedelta import relativedelta
 
-        schedule_yaml = self._make_yaml(tmp_path)
-        monkeypatch.setattr(
-            loader, "find_schedules_location", lambda: ("file", schedule_yaml)
-        )
+        schedule_dir = self._make_yaml(tmp_path)
+        monkeypatch.setattr(loader, "find_schedules_location", lambda: schedule_dir)
         options_map = {"filename": str(tmp_path / "main.bean")}
 
         today = dt_date.today()

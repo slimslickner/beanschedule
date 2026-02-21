@@ -1,21 +1,21 @@
 """Beanschedule plugin for Beancount - generates forecast transactions from YAML schedules.
 
-This plugin reads schedule definitions from schedules.yaml and generates
+This plugin reads schedule definitions from a schedules/ directory and generates
 forecast transactions for future occurrences.
 
 Usage in ledger:
     plugin "beanschedule.plugins.schedules"
 
     ; Or specify custom path:
-    plugin "beanschedule.plugins.schedules" "path/to/schedules.yaml"
+    plugin "beanschedule.plugins.schedules" "path/to/schedules"
 
 The plugin will:
-1. Auto-discover schedules.yaml (or use provided path)
+1. Auto-discover schedules/ directory (or use provided path)
 2. Load schedule definitions
 3. Generate forecast transactions for enabled schedules
 4. Return them as # (forecast) flag transactions
 
-Schedules are defined in YAML format. Example:
+Schedules are defined in individual YAML files within the schedules/ directory. Example:
 
     version: "1.0"
     schedules:
@@ -108,12 +108,12 @@ def schedules(entries, options_map, config=None):
         entries: Existing beancount entries (the full ledger being read)
         options_map: Beancount options (includes filename for path resolution)
         config: Can be:
-            - A string: path to schedules.yaml (auto-discovers if not provided)
+            - A string: path to schedules/ directory (auto-discovers if not provided)
             - A dict: forecast configuration with keys:
                 - forecast_months: months to forecast ahead (overrides YAML config)
                 - min_forecast_date: forecast start date (overrides YAML config)
                 - include_past_dates: include past dates in placeholders (overrides YAML config)
-            - None: auto-discover schedules.yaml
+            - None: auto-discover schedules/ directory
 
     Returns:
         Tuple of (entries + forecast_entries, errors)
@@ -121,16 +121,16 @@ def schedules(entries, options_map, config=None):
         - Errors is a list of error strings (empty if successful)
 
     Example:
-        ; Auto-discover schedules.yaml in ledger directory
+        ; Auto-discover schedules/ in ledger directory
         plugin "beanschedule.plugins.schedules"
 
         ; Custom path relative to ledger file
-        plugin "beanschedule.plugins.schedules" "schedules/payroll.yaml"
+        plugin "beanschedule.plugins.schedules" "schedules"
     """
     from beanschedule.loader import (
         find_schedules_location,
-        load_schedules_file,
         load_schedules_from_directory,
+        load_schedules_from_path,
     )
     from beanschedule.recurrence import RecurrenceEngine
     from beanschedule.utils import (
@@ -199,18 +199,16 @@ def schedules(entries, options_map, config=None):
                 errors.append(error_msg)
                 return entries, errors
 
-            schedule_file = load_schedules_file(schedule_path)
+            schedule_file = load_schedules_from_path(schedule_path)
         else:
             # Auto-discover
-            schedule_location = find_schedules_location()
-            if schedule_location:
-                location_type, schedule_path = schedule_location
-                if location_type == "dir":
-                    schedule_file = load_schedules_from_directory(schedule_path)
-                else:  # "file"
-                    schedule_file = load_schedules_file(schedule_path)
+            schedule_path = find_schedules_location()
+            if schedule_path:
+                schedule_file = load_schedules_from_directory(schedule_path)
             else:
-                logger.info("No schedules.yaml found, skipping forecast generation")
+                logger.info(
+                    "No schedules directory found, skipping forecast generation"
+                )
                 return entries, []
 
         if not schedule_file:
@@ -574,7 +572,7 @@ def _create_forecast_transaction(
         beancount.core.data.Transaction with forecast flag (#)
     """
     # Compute display filename for metadata
-    display_filename = "<schedules.yaml>"  # Default fallback
+    display_filename = "<schedules>"  # Default fallback
     if schedule.source_file:
         # Try to make path relative to CWD or base directory from env var
         base_dir = os.getenv("BEANSCHEDULE_DISPLAY_BASE")
