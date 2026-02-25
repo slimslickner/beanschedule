@@ -873,10 +873,13 @@ def _apply_schedule_postings(
     if not schedule.transaction.postings:
         return transaction.postings
 
-    # Get original amount from first posting (for null amounts)
+    # Get original amount from the posting matching the schedule's match account
+    match_account = schedule.match.account
     original_amount = None
-    if transaction.postings:
-        original_amount = transaction.postings[0].units
+    for p in transaction.postings:
+        if p.account == match_account:
+            original_amount = p.units
+            break
 
     currency = (
         original_amount.currency if original_amount else constants.DEFAULT_CURRENCY
@@ -907,21 +910,21 @@ def _apply_schedule_postings(
                 posting_amount = amount.Amount(
                     Decimal(str(posting_template.amount)), currency
                 )
-            elif posting_template.account == transaction.postings[0].account:
+            elif posting_template.account == match_account:
                 # No amount, matches imported account → use imported amount
                 posting_amount = original_amount
             else:
                 # No amount, doesn't match imported account → let beancount balance
                 posting_amount = None
         # No amortization split - use original logic
+        elif posting_template.account == match_account:
+            # Match account always uses the imported amount (preserves actual bank data)
+            posting_amount = original_amount
         elif posting_template.amount is None:
-            # Use imported amount (or None for second+ postings)
-            if posting_template.account == transaction.postings[0].account:
-                posting_amount = original_amount
-            else:
-                posting_amount = None
+            # Secondary posting with no amount → let beancount balance
+            posting_amount = None
         else:
-            # Use schedule amount
+            # Secondary posting with explicit amount → use schedule amount
             posting_amount = amount.Amount(
                 Decimal(str(posting_template.amount)), currency
             )
