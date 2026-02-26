@@ -1118,6 +1118,14 @@ def _create_placeholder_transaction(
                 posting_amount = amount.Amount(
                     Decimal(str(posting_template.amount)), constants.DEFAULT_CURRENCY
                 )
+            elif (
+                posting_template.account == schedule.match.account
+                and schedule.match.amount is not None
+            ):
+                # Use match.amount for the match account posting to show expected amount
+                posting_amount = amount.Amount(
+                    Decimal(str(schedule.match.amount)), constants.DEFAULT_CURRENCY
+                )
             else:
                 posting_amount = None
 
