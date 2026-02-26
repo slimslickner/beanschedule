@@ -4,7 +4,7 @@ from datetime import date
 from decimal import Decimal
 
 from beanschedule.matcher import TransactionMatcher
-from beanschedule.schema import GlobalConfig, Posting
+from beanschedule.schema import GlobalConfig
 
 
 class TestTransactionMatcher:
@@ -176,7 +176,7 @@ class TestAmountMatching:
     def test_amount_within_tolerance(
         self, sample_transaction, sample_schedule, global_config
     ):
-        """Test amount within tolerance."""
+        """Test amount within tolerance uses match.amount as reference."""
         matcher = TransactionMatcher(global_config)
 
         txn = sample_transaction(
@@ -187,11 +187,8 @@ class TestAmountMatching:
         )
 
         schedule = sample_schedule(
+            amount=Decimal("-1500.00"),
             amount_tolerance=Decimal("5.00"),
-            postings=[
-                Posting(account="Assets:Bank:Checking", amount=Decimal("-1500.00")),
-                Posting(account="Expenses:Housing:Rent", amount=Decimal("1500.00")),
-            ],
         )
 
         # Within tolerance should score > 0
@@ -201,7 +198,7 @@ class TestAmountMatching:
     def test_amount_outside_tolerance(
         self, sample_transaction, sample_schedule, global_config
     ):
-        """Test amount outside tolerance."""
+        """Test amount outside tolerance uses match.amount as reference."""
         matcher = TransactionMatcher(global_config)
 
         txn = sample_transaction(
@@ -212,11 +209,8 @@ class TestAmountMatching:
         )
 
         schedule = sample_schedule(
+            amount=Decimal("-1500.00"),
             amount_tolerance=Decimal("5.00"),
-            postings=[
-                Posting(account="Assets:Bank:Checking", amount=Decimal("-1500.00")),
-                Posting(account="Expenses:Housing:Rent", amount=Decimal("1500.00")),
-            ],
         )
 
         # Outside tolerance should score 0.0
@@ -283,11 +277,8 @@ class TestAmountMatching:
         )
 
         schedule = sample_schedule(
+            amount=Decimal("-1500.00"),
             amount_tolerance=Decimal("0.00"),
-            postings=[
-                Posting(account="Assets:Bank:Checking", amount=Decimal("-1500.00")),
-                Posting(account="Expenses:Housing:Rent", amount=Decimal("1500.00")),
-            ],
         )
 
         # Zero tolerance, off by 0.01 should score 0.0

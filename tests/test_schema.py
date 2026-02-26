@@ -73,6 +73,58 @@ class TestMatchCriteria:
         )
         assert criteria.amount is None
 
+    def test_amount_tolerance_requires_amount(self):
+        """Test that amount_tolerance without amount is rejected."""
+        with pytest.raises(ValueError, match="amount_tolerance requires amount"):
+            MatchCriteria(
+                account="Assets:Bank:Checking",
+                payee_pattern="Test",
+                amount=None,
+                amount_tolerance=Decimal("5.00"),
+            )
+
+    def test_amount_and_range_are_mutually_exclusive(self):
+        """Test that amount and amount_min/max cannot both be set."""
+        with pytest.raises(ValueError, match="mutually exclusive"):
+            MatchCriteria(
+                account="Assets:Bank:Checking",
+                payee_pattern="Test",
+                amount=Decimal("-100.00"),
+                amount_min=Decimal("-110.00"),
+                amount_max=Decimal("-90.00"),
+            )
+
+    def test_range_requires_both_min_and_max(self):
+        """Test that amount_min without amount_max is rejected."""
+        with pytest.raises(ValueError, match="both be set"):
+            MatchCriteria(
+                account="Assets:Bank:Checking",
+                payee_pattern="Test",
+                amount_min=Decimal("-110.00"),
+            )
+
+    def test_amount_with_tolerance_is_valid(self):
+        """Test that amount + amount_tolerance is valid."""
+        criteria = MatchCriteria(
+            account="Assets:Bank:Checking",
+            payee_pattern="Test",
+            amount=Decimal("-1500.00"),
+            amount_tolerance=Decimal("50.00"),
+        )
+        assert criteria.amount == Decimal("-1500.00")
+        assert criteria.amount_tolerance == Decimal("50.00")
+
+    def test_range_without_amount_is_valid(self):
+        """Test that amount_min + amount_max without amount is valid."""
+        criteria = MatchCriteria(
+            account="Assets:Bank:Checking",
+            payee_pattern="Test",
+            amount_min=Decimal("-110.00"),
+            amount_max=Decimal("-90.00"),
+        )
+        assert criteria.amount_min == Decimal("-110.00")
+        assert criteria.amount_max == Decimal("-90.00")
+
 
 class TestRecurrenceRule:
     """Tests for RecurrenceRule validation."""
