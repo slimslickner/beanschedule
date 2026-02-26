@@ -690,10 +690,22 @@ def _create_forecast_transaction(
     null_amount_indices = []
     specified_amounts = []
     amortized_amounts = {}  # Track which postings will use amortization
+    match_account_amounts = {}  # Track match account postings using match.amount
 
     for idx, posting_template in enumerate(schedule.transaction.postings):
         if posting_template.amount is not None:
             specified_amounts.append(Decimal(str(posting_template.amount)))
+        elif (
+            posting_template.account == schedule.match.account
+            and schedule.match.amount is not None
+            and not amortization_split
+            and posting_template.role
+            not in ("payment", "interest", "principal", "escrow")
+        ):
+            # Match account posting with null amount — use match.amount for the forecast
+            match_amount = Decimal(str(schedule.match.amount))
+            match_account_amounts[idx] = match_amount
+            specified_amounts.append(match_amount)
         else:
             null_amount_indices.append(idx)
             # Check if this null posting will be filled by amortization
@@ -743,7 +755,11 @@ def _create_forecast_transaction(
         if posting_template.amount is not None:
             posting_amount_value = Decimal(str(posting_template.amount))
 
-        # Priority 2: Use amortized amount
+        # Priority 2: Use match.amount for match account posting (null template)
+        elif idx in match_account_amounts:
+            posting_amount_value = match_account_amounts[idx]
+
+        # Priority 3: Use amortized amount
         elif idx in amortized_amounts:
             posting_amount_value = amortized_amounts[idx]
 
