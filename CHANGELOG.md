@@ -9,7 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Breaking Changes
 
-- **`narration` field removed from the `Posting` model.** The top-level `narration:` key on posting items in schedule YAML files is no longer supported. Posting metadata (including narration) must now be placed inside a `metadata:` dict on the posting.
+- **`match.amount` is now the authoritative source for amount matching.** Posting amounts are for enrichment only and play no role in matching. Set `match.amount` explicitly to enable amount-based scoring.
+
+- **`match.amount_tolerance` requires `match.amount`.** Previously silently ignored if `amount` was unset; now raises a validation error.
+
+- **`match.amount` and `match.amount_min`/`amount_max` are mutually exclusive.** Setting both raises a validation error. `amount_min`/`amount_max` must also be set together.
+
+- **The `match.account` posting always uses the imported bank amount.** A non-null posting amount on the match account no longer overrides the actual imported value.
+
+- **`narration` field removed from the `Posting` model.** Use `metadata.narration` instead.
 
 - **Skip marker flag `S` removed.** The `S` Beancount flag is reserved by Beancount itself and is no longer recognized as a skip marker. Use the `#skipped` tag or `schedule_skipped` metadata instead.
 
