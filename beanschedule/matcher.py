@@ -181,8 +181,13 @@ class TransactionMatcher:
         Calculate amount matching score.
 
         Supports:
-        - Exact amount with tolerance (derived from posting for matched account)
-        - Amount range (min/max)
+        - Exact amount with tolerance: uses match.amount as reference, match.amount_tolerance as ±bound.
+          If amount_tolerance is None, falls back to default_amount_tolerance_percent.
+        - Amount range: uses match.amount_min / match.amount_max.
+        - No amount criteria (match.amount is None): any amount scores 1.0.
+
+        Posting amounts in the schedule's transaction block are for enrichment only
+        and play no role here.
 
         Returns:
             Score from 0.0 to 1.0 (linear decay from exact to tolerance boundary)
@@ -190,36 +195,33 @@ class TransactionMatcher:
         if not transaction.postings:
             return 0.0
 
-        # Get amount from first posting; posting may have no units or a None number
-        first_posting = transaction.postings[0]
-        if not first_posting.units or first_posting.units.number is None:
+        # Get amount from the posting matching the schedule's match account
+        match_account = schedule.match.account
+        txn_amount = None
+        for p in transaction.postings:
+            if p.account == match_account and p.units and p.units.number is not None:
+                txn_amount = p.units.number
+                break
+        if txn_amount is None:
             return 0.0
-        txn_amount = first_posting.units.number
 
         match_criteria = schedule.match
 
-        # Check if using amount range
-        if (
-            match_criteria.amount_min is not None
-            and match_criteria.amount_max is not None
-        ):
-            amount_min = match_criteria.amount_min
-            amount_max = match_criteria.amount_max
-            if amount_min <= txn_amount <= amount_max:
+        # Range mode: schema guarantees both min and max are set together
+        if match_criteria.amount_min is not None:
+            if match_criteria.amount_min <= txn_amount <= match_criteria.amount_max:  # type: ignore[operator]
                 return 1.0
             return 0.0
 
-        # Derive expected amount from schedule's posting for the matched account
-        expected_amount = self._get_expected_amount_from_postings(schedule)
-
+        # Exact + tolerance mode
+        expected_amount = match_criteria.amount
         if expected_amount is None:
-            # No amount criteria - match any amount
+            # No amount criteria — match any amount
             return 1.0
 
         tolerance = match_criteria.amount_tolerance
-
         if tolerance is None:
-            # Use default percentage tolerance
+            # Fall back to percentage-based default
             tolerance = abs(expected_amount) * Decimal(
                 str(self.config.default_amount_tolerance_percent),
             )
@@ -235,30 +237,6 @@ class TransactionMatcher:
         # Linear interpolation: 1.0 at exact match, 0.0 at tolerance boundary
         score = 1.0 - float(diff / tolerance)
         return max(0.0, min(1.0, score))
-
-    def _get_expected_amount_from_postings(self, schedule: Schedule) -> Decimal | None:
-        """
-        Get expected amount from schedule postings by finding the posting
-        that matches the schedule's match account.
-
-        Args:
-            schedule: Schedule with transaction postings
-
-        Returns:
-            Expected amount from matched account posting, or None if not found
-        """
-        if not schedule.transaction.postings:
-            return None
-
-        # Find the posting for the matched account
-        for posting in schedule.transaction.postings:
-            if posting.account == schedule.match.account:
-                if posting.amount is not None:
-                    return Decimal(str(posting.amount))
-                return None
-
-        # If matched account not found in postings, no amount criteria
-        return None
 
     def _date_score(
         self,

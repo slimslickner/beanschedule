@@ -26,18 +26,37 @@ def _validate_nonnegative(v: Any, name: str) -> Any:
 
 
 class MatchCriteria(BaseModel):
-    """Matching criteria for identifying transactions."""
+    """Matching criteria for identifying transactions.
+
+    Amount matching supports two mutually exclusive modes:
+    - Exact with tolerance: set ``amount`` (reference value) and optionally
+      ``amount_tolerance`` (±). If ``amount_tolerance`` is set, ``amount`` is required.
+    - Range: set both ``amount_min`` and ``amount_max``.
+
+    Posting amounts in the schedule's ``transaction`` block are for enrichment only
+    and play no role in matching.
+    """
 
     account: str = Field(..., description="Account to match (exact)")
     payee_pattern: str = Field(..., description="Payee pattern (regex or fuzzy)")
     amount: Decimal | None = Field(
         None,
-        description="[DEPRECATED] Expected amount - prefer specifying amount in postings instead. "
-        "Amount is now derived from the posting for the matched account.",
+        description=(
+            "Reference amount for matching (used with amount_tolerance). "
+            "Must match the sign of the posting on match.account as it appears "
+            "in the imported transaction (e.g. negative for outgoing payments on "
+            "asset/liability accounts)."
+        ),
     )
-    amount_tolerance: Decimal | None = Field(None, description="Amount tolerance (±)")
-    amount_min: Decimal | None = Field(None, description="Minimum amount for range")
-    amount_max: Decimal | None = Field(None, description="Maximum amount for range")
+    amount_tolerance: Decimal | None = Field(
+        None, description="Amount tolerance (±). Requires amount to be set."
+    )
+    amount_min: Decimal | None = Field(
+        None, description="Minimum amount for range matching"
+    )
+    amount_max: Decimal | None = Field(
+        None, description="Maximum amount for range matching"
+    )
     date_window_days: int | None = Field(
         constants.DEFAULT_DATE_WINDOW_DAYS, description="Date matching window (±days)"
     )
@@ -57,6 +76,30 @@ class MatchCriteria(BaseModel):
         if v is not None and v < 0:
             raise ValueError("date_window_days must be non-negative")
         return v
+
+    @model_validator(mode="after")
+    def validate_amount_fields(self) -> "MatchCriteria":
+        """Enforce mutual exclusivity and dependency of amount fields."""
+        has_tolerance = self.amount_tolerance is not None
+        has_amount = self.amount is not None
+        has_range = self.amount_min is not None or self.amount_max is not None
+
+        if has_tolerance and not has_amount:
+            raise ValueError(
+                "amount_tolerance requires amount to be set (tolerance has no reference without it)"
+            )
+
+        if has_amount and has_range:
+            raise ValueError(
+                "amount and amount_min/amount_max are mutually exclusive — use one or the other"
+            )
+
+        if has_range and (self.amount_min is None or self.amount_max is None):
+            raise ValueError(
+                "amount_min and amount_max must both be set for range matching"
+            )
+
+        return self
 
 
 class RecurrenceRule(BaseModel):

@@ -29,9 +29,8 @@ transaction:
     utility_type: electric
   postings:
     - account: Assets:US:BofA:Checking
-      amount: -65.00
+      amount: null
     - account: Expenses:Home:Electricity
-      amount: 65.00
 missing_transaction:
   create_placeholder: true
   flag: "!"
