@@ -5,8 +5,6 @@ This module centralizes all magic strings, thresholds, and default values
 to improve maintainability and make configuration easier.
 """
 
-from decimal import Decimal
-
 # ============================================================================
 # File Paths and Directories
 # ============================================================================
@@ -98,9 +96,6 @@ MONTHLY_GAP_RANGE = (25, 35)  # 28-32 days
 QUARTERLY_GAP_RANGE = (85, 95)  # 88-92 days
 YEARLY_GAP_RANGE = (355, 375)  # 360-370 days
 
-# Month-end detection
-MONTH_END_DAYS = (28, 29, 30, 31)
-
 # ============================================================================
 # Confidence Calculation Weights (for pattern detection)
 # ============================================================================
@@ -112,36 +107,6 @@ SAMPLE_SIZE_WEIGHT = 0.2  # More transactions = higher confidence
 # Sample size scoring parameters
 SAMPLE_SIZE_INTERCEPT = 0.7
 SAMPLE_SIZE_DENOMINATOR = 15.0
-
-# ============================================================================
-# Financial/Decimal Constants
-# ============================================================================
-
-CENTS_PRECISION = Decimal("0.01")  # Currency rounding precision
-MONTHS_PER_YEAR = 12
-ZERO_BALANCE = Decimal("0")
-
-# ============================================================================
-# Display/Formatting Constants
-# ============================================================================
-
-MAX_TABLE_COLUMN_WIDTH = 30  # Max width for table columns in CLI
-
-# ============================================================================
-# Frequency Interval Constants
-# ============================================================================
-
-BIWEEKLY_INTERVAL = 2  # Bi-weekly interval (2 weeks)
-MONTHLY_WEEKLY_INTERVAL = 4  # Monthly frequency expressed as weekly intervals
-QUARTERLY_MONTHS = 3  # Quarterly = 3 months
-SEMIANNUAL_MONTHS = 6  # Semi-annual = 6 months
-
-# ============================================================================
-# Pattern Detection Thresholds
-# ============================================================================
-
-MIN_GAPS_FOR_STDEV = 2  # Minimum gaps needed for standard deviation
-MONTH_END_THRESHOLD = 0.5  # Threshold for month-end detection (50% of dates)
 
 # ============================================================================
 # Miscellaneous Constants

@@ -39,13 +39,16 @@ transaction:
   postings:
     - account: Assets:Bank:Checking
       amount: null
-      role: payment # Mark as payment amount
+      role: payment # Uses the imported bank amount
     - account: Liabilities:Mortgage
       amount: null
-      role: principal # Interest is calculated, principal is remainder
+      role: principal # Computed: payment - interest
     - account: Expenses:Housing:Interest
       amount: null
-      role: interest
+      role: interest # Computed from balance and rate
+    - account: Expenses:Housing:Escrow
+      amount: 350.00
+      role: escrow # Fixed amount (e.g., property tax/insurance escrow)
 ```
 
 **How it works:**
@@ -64,6 +67,35 @@ transaction:
 - `extra_principal` - Additional principal paid toward the loan each month, reducing payoff timeline and total interest. Use this to model accelerated payoff scenarios.
 
 The payment is derived from the loan terms. If actual payment differs significantly, use stateful mode instead.
+
+#### Amortization Overrides
+
+For mid-loan changes (refinancing, lump-sum payments, rate changes), use the `overrides` list. Each override takes effect from its `effective_date` forward:
+
+```yaml
+amortization:
+  principal: 300000.00
+  annual_rate: 0.0675
+  term_months: 360
+  start_date: 2024-01-01
+  overrides:
+    - effective_date: 2029-01-01
+      principal: 285432.18 # New balance after lump-sum payment
+      extra_principal: 500.00 # Start paying extra
+    - effective_date: 2030-06-01
+      annual_rate: 0.055 # Refinanced to lower rate
+      term_months: 300 # New remaining term
+```
+
+Override fields (all optional — only set what changes):
+
+| Field             | Description                               |
+| ----------------- | ----------------------------------------- |
+| `effective_date`  | When the override takes effect (required) |
+| `principal`       | New principal balance                     |
+| `annual_rate`     | New annual interest rate                  |
+| `term_months`     | New remaining term in months              |
+| `extra_principal` | New extra principal per period            |
 
 ### Stateful Mode (Recommended for Real-World Loans)
 
@@ -119,7 +151,9 @@ transaction:
 3. Splits payment: interest + principal + extra principal
 4. Forecast plugin uses this calculation for each forecasted month
 
-**Important:** Stateful mode only counts cleared (`*`) transactions when computing balance. Forecast (`#`) and placeholder (`!`) entries are excluded so the plugin doesn't double-count its own predictions.
+**Important:** Stateful mode only counts cleared (`*`) and pending (`P`) transactions when computing balance. Forecast (`#`) and placeholder (`!`) entries are excluded so the plugin doesn't double-count its own predictions.
+
+**Staleness warning:** If the most recent cleared posting to the liability account is more than 60 days old, the plugin logs a warning. This may indicate missing payments that could make forecasts inaccurate.
 
 ### Compounding Modes
 
@@ -367,7 +401,56 @@ Option 2: Create interactively:
 beanschedule create --ledger ledger.beancount --date 2024-01-15
 ```
 
+## Advanced Recurrence Types
+
+Beyond the standard frequencies (`MONTHLY`, `WEEKLY`, `YEARLY`, `INTERVAL`, `BIMONTHLY`), beanschedule supports these advanced recurrence types:
+
+### MONTHLY_ON_DAYS
+
+Generate on multiple specific days of each month (functionally identical to `BIMONTHLY`):
+
+```yaml
+recurrence:
+  frequency: MONTHLY_ON_DAYS
+  days_of_month: [5, 20] # 5th and 20th of each month
+  start_date: 2024-01-05
+```
+
+### NTH_WEEKDAY
+
+Generate on the Nth occurrence of a weekday in each month:
+
+```yaml
+# 2nd Tuesday of each month
+recurrence:
+  frequency: NTH_WEEKDAY
+  nth_occurrence: 2           # 1-5 or -1 for "last"
+  day_of_week: TUE
+  start_date: 2024-01-09
+
+# Last Friday of each month
+recurrence:
+  frequency: NTH_WEEKDAY
+  nth_occurrence: -1
+  day_of_week: FRI
+  start_date: 2024-01-26
+```
+
+### LAST_DAY_OF_MONTH
+
+Generate on the last day of each month (handles 28-31 day months automatically):
+
+```yaml
+recurrence:
+  frequency: LAST_DAY_OF_MONTH
+  start_date: 2024-01-31
+```
+
 ## Advanced Matching
+
+### Pre-existing schedule_id Fast Path
+
+If an imported transaction already has `schedule_id` metadata (e.g., manually added or from a previous import), the hook matches it directly to the corresponding schedule at confidence 1.0, bypassing fuzzy matching entirely.
 
 ### Regex Payee Patterns
 
@@ -407,13 +490,16 @@ match:
   amount_max: -200.00 # Electric bill varies $50-$200
 ```
 
-**Percentage tolerance:**
+**Using the default percentage tolerance:**
 
 ```yaml
 match:
   amount: -500.00
-  amount_tolerance: 0.05 # ±5%
+  # Omit amount_tolerance to use default_amount_tolerance_percent from _config.yaml
+  # With default of 0.02 (2%), this matches -490.00 to -510.00
 ```
+
+**Note:** `amount_tolerance` is always an **absolute amount** (e.g., `10.00` means ±$10.00, not ±10%). To get percentage-based tolerance, omit `amount_tolerance` and configure `default_amount_tolerance_percent` in `_config.yaml`.
 
 ## Configuration Best Practices
 

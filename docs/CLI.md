@@ -70,6 +70,8 @@ Display detailed information about a schedule:
 ```bash
 beanschedule show rent-payment
 beanschedule show rent-payment --count 12  # Show next 12 occurrences
+beanschedule show rent-payment --from 2024-01-01 --to 2024-12-31  # Explicit date range
+beanschedule show rent-payment --schedules-path my-schedules/
 ```
 
 Output:
@@ -172,7 +174,12 @@ beanschedule detect ledger.beancount \
   --fuzzy-threshold 0.85 \
   --amount-tolerance 0.05 \
   --min-occurrences 3
+
+# Skip patterns already covered by existing schedules
+beanschedule detect ledger.beancount --schedules-path schedules/
 ```
+
+**Note:** The `detect` command automatically skips patterns that match existing schedule IDs in the `--schedules-path` directory (default: `schedules/`), avoiding duplicate schedule suggestions.
 
 Output:
 
@@ -194,8 +201,8 @@ Create a schedule interactively from a ledger transaction:
 # Find a transaction and create schedule from it
 beanschedule create --ledger ledger.beancount --date 2024-01-15
 
-# Specify account
-beanschedule create --ledger ledger.beancount --date 2024-01-15 --account Assets:Checking
+# Specify output location
+beanschedule create --ledger ledger.beancount --date 2024-01-15 --output schedules/rent.yaml
 ```
 
 Interactive process:
@@ -225,7 +232,7 @@ List all pending transactions:
 
 ```bash
 beanschedule pending list
-beanschedule pending list --format json
+beanschedule pending list --file my-pending.beancount  # Specify file directly
 ```
 
 Output:
@@ -274,6 +281,7 @@ Remove the pending file if empty:
 
 ```bash
 beanschedule pending clean
+beanschedule pending clean --file my-pending.beancount  # Specify file directly
 ```
 
 ## Skip Markers
@@ -283,7 +291,7 @@ beanschedule pending clean
 Mark a scheduled transaction as intentionally skipped:
 
 ```bash
-# Single date
+# Direct mode: skip specific dates
 beanschedule skip rent-payment 2026-02-15
 
 # Multiple dates
@@ -297,7 +305,12 @@ beanschedule skip rent-payment 2026-03-01 --output ledger.beancount
 
 # Custom schedule location
 beanschedule skip payment-id 2026-02-01 --schedules-path my-schedules/
+
+# Interactive mode: select from missing transactions in ledger
+beanschedule skip --select --ledger ledger.beancount
 ```
+
+**Interactive mode** (`--select`): Scans the ledger for missing scheduled transactions within a ±90 day window around today. Presents a numbered list (overdue items marked with `*`) and lets you select which to skip. Requires `--ledger`.
 
 Output:
 
@@ -305,8 +318,8 @@ Output:
 2026-02-15 * "Payee" "[SKIPPED] Prepaid"
   #skipped
   schedule_id: "rent-payment"
-  schedule_skipped: "Prepaid"
-  Assets:Checking
+  schedule_skipped: "true"
+  Assets:Checking  0 USD
 ```
 
 ## Loan Amortization
@@ -378,6 +391,14 @@ beanschedule skip g<TAB>      # → gym-membership
 ```
 
 Tab completion works for schedule IDs in commands like `show`, `generate`, `skip`, and `amortize`. Other arguments (dates, file paths, etc.) are not auto-completed.
+
+## Environment Variables
+
+| Variable                    | Purpose                                                        |
+| --------------------------- | -------------------------------------------------------------- |
+| `BEANSCHEDULE_DIR`          | Override schedules directory location (used by auto-discovery) |
+| `BEANSCHEDULE_PENDING`      | Override `pending.beancount` file location                     |
+| `BEANSCHEDULE_DISPLAY_BASE` | Base path for relative source file display in plugin metadata  |
 
 ## Tips
 

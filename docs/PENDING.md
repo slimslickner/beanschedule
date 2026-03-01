@@ -88,6 +88,7 @@ Creates:
 
 ```bash
 beanschedule pending list
+beanschedule pending list --file my-pending.beancount  # Specify file directly
 ```
 
 Output:
@@ -108,6 +109,7 @@ Remove empty pending file:
 
 ```bash
 beanschedule pending clean
+beanschedule pending clean --file my-pending.beancount  # Specify file directly
 
 # Preview without making changes
 beanschedule pending clean --dry-run
@@ -133,6 +135,58 @@ If you prefer editing the file directly:
 - Must have `#pending` tag
 - Amount must be specified (no null amounts)
 - No metadata required
+- Posting-level `narration:` is standard Beancount posting metadata syntax (indented under a posting) because the `;;` notation from autobean.narration will not work otherwise.
+
+## Recommended Ledger Setup
+
+Because the schedule hook **removes matched entries from `pending.beancount`** during import, you should keep pending transactions out of the ledger file that beangulp reads. The recommended approach is to use two entry-point files:
+
+```
+ledger/
+  main.bean                # Full ledger (daily use, Fava, reporting)
+  main_no_plugins.bean     # Import-only ledger (beangulp reads this)
+  pending.bean             # Pending transactions (auto-managed)
+  accounts.bean
+  2025.bean
+  ...
+```
+
+**`main.bean`** — your full ledger for Fava, reporting, and day-to-day use:
+
+```beancount
+include "accounts.bean"
+include "2025.bean"
+include "pending.beancount"
+
+plugin "beanschedule.plugins.schedules" "{'forecast_months': 3}"
+plugin "beancount.plugins.zerosum"
+```
+
+**`main_no_plugins.bean`** — a stripped-down entry point used only by beangulp:
+
+```beancount
+include "accounts.bean"
+include "2025.bean"
+
+; No plugins — zerosum and schedules would interfere with import matching
+; No pending.beancount — the hook manages it directly and deletes matched entries
+```
+
+Point your beangulp importer config at the no-plugins file:
+
+```python
+# importers/config.py
+from beanschedule import schedule_hook
+
+LEDGER = "main_no_plugins.bean"
+HOOKS = [schedule_hook]
+```
+
+**Why this matters:**
+
+- **No `pending.beancount` include** — the hook reads `pending.beancount` directly and removes matched entries. If beangulp also parses it via `include`, the hook would see pending entries as both pending *and* existing ledger transactions, causing conflicts
+- **No plugins** — plugins like zerosum and the schedules forecast plugin generate synthetic transactions that can interfere with the hook's matching logic during import
+- **Separate concerns** — `main.bean` is for viewing your complete financial picture; `main_no_plugins.bean` is purely for feeding clean data to the import pipeline
 
 ## How It Works
 
