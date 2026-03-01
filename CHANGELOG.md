@@ -7,59 +7,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.4.0]
+
 ### Breaking Changes
 
 - **`match.amount` is now the authoritative source for amount matching.** Posting amounts are for enrichment only and play no role in matching. Set `match.amount` explicitly to enable amount-based scoring.
-
 - **`match.amount_tolerance` requires `match.amount`.** Previously silently ignored if `amount` was unset; now raises a validation error.
-
 - **`match.amount` and `match.amount_min`/`amount_max` are mutually exclusive.** Setting both raises a validation error. `amount_min`/`amount_max` must also be set together.
-
 - **The `match.account` posting always uses the imported bank amount.** A non-null posting amount on the match account no longer overrides the actual imported value.
-
-- **`narration` field removed from the `Posting` model.** Use `metadata.narration` instead.
-
-- **Skip marker flag `S` removed.** The `S` Beancount flag is reserved by Beancount itself and is no longer recognized as a skip marker. Use the `#skipped` tag or `schedule_skipped` metadata instead.
-
-  **Before:**
-
-  ```yaml
-  postings:
-    - account: Expenses:Housing:Mortgage-Interest
-      amount: 1250.00
-      narration: Mortgage Interest
-  ```
-
-  **After:**
-
-  ```yaml
-  postings:
-    - account: Expenses:Housing:Mortgage-Interest
-      amount: 1250.00
-      metadata:
-        narration: Mortgage Interest
-  ```
-
-  Posting entries with `narration: null` should simply have that line removed. This change does not affect `transaction.narration` or `missing_transaction.narration_prefix`, which remain unchanged.
+- **`narration` field removed from the `Posting` model.** Use `metadata.narration` instead. Does not affect `transaction.narration` or `missing_transaction.narration_prefix`.
+- **Skip marker flag `S` removed.** Reserved by Beancount itself; no longer recognized. Use the `#skipped` tag or `schedule_skipped` metadata instead.
+- **Schedule loading is directory-only.** File-mode loading removed; schedules must be in a directory.
 
 ### Added
 
 - **Skip markers** — mark scheduled occurrences as intentionally skipped using the `#skipped` tag or `schedule_skipped` metadata. CLI: `beanschedule skip <id> <date>`
 - **Configurable forecasting** — `forecast_months`, `min_forecast_date`, and `include_past_dates` settings in global config
 - **Pending transactions** — stage one-time transactions in `pending.beancount` that auto-match and enrich on import. CLI: `beanschedule pending`
-- **Shadow account forecasting** (plugin) — redirect plugin-generated forecast postings to configurable shadow equity accounts (`shadow_upcoming_account`, `shadow_overdue_account`) so balance assertions on real accounts are never affected
-- **`filing_account` metadata** (plugin) — all plugin-generated transactions now carry the original `match.account` value before any shadow redirect, for reliable filtering and reporting
-- **`#scheduled` tag** (plugin) — all plugin-generated transactions are tagged `#scheduled` for easy filtering
-- **`forecast_flag` directive** (plugin) — customize the Beancount flag on plugin-generated transactions (default `#`)
-- **Auto-open shadow accounts** (plugin) — `Open` directives for shadow accounts are generated automatically using the earliest occurrence date
-- **`autobean.narration` compatibility** — `filename` and `lineno` metadata are now set on plugin-generated transactions
-- **Auto-accounts on pending** — pending transaction matching now auto-creates missing accounts
-- Posting-level `metadata` dict now supports arbitrary key/value pairs on schedule postings (not just `narration`).
-- Pending transactions now capture all transaction-level and posting-level metadata from `.beancount` files, not just `narration`.
+- **Shadow account forecasting** (plugin) — redirect forecast postings to configurable shadow equity accounts (`shadow_upcoming_account`, `shadow_overdue_account`) so balance assertions on real accounts are never affected
+- **`filing_account` metadata** (plugin) — all plugin-generated transactions carry the original `match.account` before any shadow redirect
+- **`#scheduled` tag** (plugin) — all plugin-generated transactions are tagged `#scheduled`
+- **`forecast_flag`** (plugin) — customize the Beancount flag on plugin-generated transactions (default `#`)
+- **Auto-open shadow accounts** (plugin) — `Open` directives for shadow accounts are generated automatically
+- **`autobean.narration` compatibility** — `filename` and `lineno` metadata now set on plugin-generated transactions
+- **Auto-accounts on pending** — pending transaction matching auto-creates missing `Open` directives
+- Posting-level `metadata` dict supports arbitrary key/value pairs (not just `narration`)
+- Pending transactions capture all transaction-level and posting-level metadata from `.beancount` files
 
 ### Fixed
 
-- **Duplicate forecast detection** (plugin) — `filter_occurrences_by_existing_transactions()` now uses date-window matching (same logic as the hook), suppressing forecasts when an actual transaction falls within `date_window_days` of the expected date rather than requiring an exact date match
+- **Duplicate forecast detection** (plugin) — `filter_occurrences_by_existing_transactions()` now uses date-window matching, suppressing forecasts when an actual transaction falls within `date_window_days` rather than requiring an exact date match
+- Skip entries with auto-balancing postings no longer cause errors in amortization
 
 ## [1.3.0]
 
