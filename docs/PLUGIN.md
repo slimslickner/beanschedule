@@ -131,8 +131,15 @@ The plugin:
    - `schedule_id` metadata for tracking
    - `filing_account` metadata with the original `match.account` (before any shadow redirect)
    - `#scheduled` tag on every generated transaction (used internally for filtering)
+   - `filename` and `lineno` metadata for `autobean.narration` compatibility
 4. **Respects skips** - Excludes dates marked with skip markers
 5. **Excludes placeholders** - Does not duplicate placeholder generation
+
+### Environment Variables
+
+| Variable                    | Description                                                                             |
+| --------------------------- | --------------------------------------------------------------------------------------- |
+| `BEANSCHEDULE_DISPLAY_BASE` | If set, source file paths in forecast metadata are displayed relative to this base path |
 
 ### Forecasts vs Placeholders
 

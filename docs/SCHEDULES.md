@@ -25,7 +25,7 @@ placeholder_flag: "!" # Flag for missing transactions
 
 # Forecast configuration (optional)
 forecast_months: 3 # Look N months ahead for plugin
-min_forecast_date: null # Override start date (optional)
+min_forecast_date: null # Earliest forecast start date (optional)
 include_past_dates: false # Generate placeholders for past dates
 ```
 
@@ -152,7 +152,7 @@ amount_min: -50.00
 amount_max: -200.00
 ```
 
-**Note:** If you specify `amount_tolerance` in your schedule, it overrides the percentage default from config. The tolerance can be either a fixed amount (e.g., 10.00) or a percentage (e.g., 0.05 for ±5%), depending on how it's specified in your config.
+**Note:** `amount_tolerance` is always an **absolute amount** (e.g., `10.00` means ±$10). It is not a percentage. If you omit `amount_tolerance`, the global `default_amount_tolerance_percent` from `_config.yaml` is applied as a percentage of `amount` instead.
 
 ### Recurrence Section
 
@@ -197,6 +197,31 @@ recurrence:
   month: 9
   day_of_month: 15
   start_date: 2024-09-15
+
+# Multiple days per month (e.g., paychecks on 5th and 20th)
+recurrence:
+  frequency: MONTHLY_ON_DAYS
+  days_of_month: [5, 20]
+  start_date: 2024-01-05
+
+# Nth weekday of month (e.g., 2nd Tuesday)
+recurrence:
+  frequency: NTH_WEEKDAY
+  nth_occurrence: 2        # 1-5 or -1 for last
+  day_of_week: TUE
+  start_date: 2024-01-09
+
+# Last day of each month
+recurrence:
+  frequency: LAST_DAY_OF_MONTH
+  start_date: 2024-01-31
+
+# End date (optional — stop generating after this date)
+recurrence:
+  frequency: MONTHLY
+  day_of_month: 15
+  start_date: 2024-01-15
+  end_date: 2025-12-15     # null = ongoing (default)
 ```
 
 ### Transaction Section
@@ -209,8 +234,10 @@ transaction:
   narration: Monthly Rent # Overrides narration from import
   tags:
     - housing
+  links:
+    - lease-2024 # Optional: Beancount links to add
   metadata:
-    schedule_id: rent-payment # Recommended: track which schedule matched
+    schedule_id: rent-payment # Required: must match the schedule's id field
     category: housing
     property: main-residence
   postings:
@@ -239,6 +266,19 @@ transaction:
       amount: 180.00
     - account: Assets:Retirement:401k
       amount: 320.00
+```
+
+### Posting Metadata
+
+Each posting supports a `metadata` dict for arbitrary key/value pairs that are added as Beancount posting-level metadata:
+
+```yaml
+postings:
+  - account: Expenses:Electronics:Audio
+    amount: 85.00
+    metadata:
+      narration: "Bose QuietComfort 45 headphones"
+      order_id: "ABC-123"
 ```
 
 ### Missing Transaction Placeholders
@@ -281,11 +321,10 @@ beanschedule skip rent-payment 2024-03-01 --reason "Paid early"
   Assets:Bank:Checking
 ```
 
-Skip markers are recognized by any of these methods:
+Skip markers are recognized by either of these methods:
 
-- Flag `*` with `#skipped` tag (recommended - matches CLI generation)
-- `schedule_skipped` metadata key
-- Flag `S` (legacy/alternative)
+- `#skipped` tag (recommended — matches CLI generation)
+- `schedule_skipped` metadata key (any value)
 
 Skip markers prevent placeholder creation for intentionally skipped dates.
 
@@ -388,7 +427,7 @@ transaction:
 
 1. **Check enabled**: Is `missing_transaction.create_placeholder: true`?
 
-2. **Check forecast window**: Placeholders only generate within the forecast window (default 3 months ahead)
+2. **Check forecast window**: Placeholders only generate within the forecast window (default 3 months ahead). By default (`include_past_dates: false`), placeholders are only created for dates that are imminent or overdue (near today). Set `include_past_dates: true` in `_config.yaml` to also generate placeholders for all past missing dates
 
 3. **Check skips**: If a skip marker exists for that date, no placeholder will be created
 
