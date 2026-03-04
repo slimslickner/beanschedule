@@ -51,7 +51,7 @@ SCHEDULE_FILE_VERSION = "1.0"
 
 # Forecast configuration defaults
 DEFAULT_FORECAST_MONTHS = 3  # How many months forward to forecast
-DEFAULT_INCLUDE_PAST_DATES = False  # Whether to generate placeholders for past dates
+DEFAULT_INCLUDE_PAST_DATES = True  # Whether to generate placeholders for past dates
 
 # ============================================================================
 # Matching Algorithm Scoring Weights
