@@ -732,12 +732,21 @@ def _match_ledger_transactions_lazy(
         # Check if this is a skip marker transaction
         is_skip = _is_skip_marker(entry)
 
-        # Find matching expected occurrence within date window
+        # Find matching expected occurrence within date window.
+        # Prefer schedule_matched_date (authoritative record written at enrich time)
+        # over entry.date, since the actual bank date may fall outside the window.
         date_window = schedule.match.date_window_days or 0
+        matched_date_str = entry.meta.get(constants.META_SCHEDULE_MATCHED_DATE)
+        comparison_date = entry.date
+        if matched_date_str:
+            try:
+                comparison_date = date.fromisoformat(matched_date_str)
+            except ValueError:
+                pass
 
         for sched, expected_date in expected_occurrences.get(main_account, []):
             if sched.id == schedule_id:
-                days_diff = abs((entry.date - expected_date).days)
+                days_diff = abs((comparison_date - expected_date).days)
                 if days_diff <= date_window:
                     matched.add((schedule_id, expected_date))
                     if is_skip:
