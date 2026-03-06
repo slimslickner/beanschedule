@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.4.1]
+
+### Fixed
+
+- **Ledger matching now uses `schedule_matched_date` for date window comparison.** Previously, when checking existing ledger transactions to avoid false "missing" warnings, the hook compared `entry.date` (the actual bank posting date) against the expected schedule date. If the bank's posting date fell outside `date_window_days` of the scheduled occurrence — which is common — the occurrence was incorrectly flagged as missing again on re-import. The hook now uses `schedule_matched_date` metadata (written at enrich time) as the authoritative comparison date, falling back to `entry.date` when the metadata is absent.
+
 ## [1.4.0]
 
 ### Breaking Changes
