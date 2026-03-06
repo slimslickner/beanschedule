@@ -745,6 +745,52 @@ class TestLedgerTransactionMatching:
         assert matched_txn.meta["schedule_id"] == "rent"
 
 
+    def test_ledger_transaction_with_schedule_matched_date_outside_entry_window(
+        self, sample_transaction, sample_schedule, global_config
+    ):
+        """Test that schedule_matched_date is used for window comparison, not entry.date.
+
+        Regression test: a transaction already enriched by the hook stores
+        schedule_matched_date indicating which occurrence it was matched to.
+        On re-import, the ledger matcher must use that stored date (not entry.date)
+        so that the occurrence is not falsely flagged as missing when the actual
+        bank transaction date falls outside the date_window_days.
+        """
+        # Simulate a previously enriched ledger transaction:
+        # - actual bank date is 2026-03-04
+        # - matched to the 2026-02-28 occurrence (5 days apart)
+        # - schedule date_window_days=3, so entry.date alone would miss the window
+        ledger_meta = data.new_metadata("ledger.beancount", 10)
+        ledger_meta["schedule_id"] = "insurance"
+        ledger_meta["schedule_matched_date"] = "2026-02-28"
+        ledger_txn = sample_transaction(
+            date(2026, 3, 4),  # actual bank date, 5 days after expected
+            "State Farm",
+            "Assets:Bank:Checking",
+            Decimal("-57.03"),
+        )
+        ledger_txn = ledger_txn._replace(meta=ledger_meta)
+
+        schedule = sample_schedule(
+            id="insurance",
+            payee_pattern="State Farm",
+            amount=Decimal("-57.03"),
+            start_date=date(2026, 1, 28),
+            day_of_month=28,
+            account="Assets:Bank:Checking",
+        )
+        # date_window_days=3 (default), so entry.date (Mar 4) vs expected (Feb 28) = 5 days > 3
+        # But schedule_matched_date (Feb 28) vs expected (Feb 28) = 0 days → should match
+
+        schedule_file = ScheduleFile(schedules=[schedule], config=global_config)
+
+        with patch("beanschedule.hook.load_schedules", return_value=schedule_file):
+            result = schedule_hook([], existing_entries=[ledger_txn])
+
+        # No placeholders - the Feb 28 occurrence is already covered by the ledger entry
+        assert len(result) == 0
+
+
 class TestAmortizationEnrichment:
     """Tests for amortization integration in the beangulp hook."""
 
