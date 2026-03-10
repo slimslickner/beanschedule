@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.4.2]
+
+### Changed
+
+- **`#pending` tag is no longer required in `pending.beancount`.** All transactions in the file are treated as pending automatically. The tag is still added by `beanschedule pending create` as a visual marker but is not enforced.
+- **`beanschedule pending create` now places `#pending` inline** on the transaction header line (standard beancount tag syntax) rather than as a separate indented line.
+
 ## [1.4.1]
 
 ### Fixed
