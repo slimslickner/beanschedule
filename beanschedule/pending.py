@@ -5,7 +5,7 @@ pending charges) and have them automatically match and enrich imported transacti
 when they arrive via the beangulp hook.
 
 A pending transaction:
-- Is defined in pending.beancount with #pending tag
+- Is defined in pending.beancount (all transactions in the file are treated as pending)
 - Contains pre-defined splits with detailed posting narration
 - Matches on account + amount + date (within 4-day window)
 - Is automatically removed after matching (one-time use)
@@ -13,7 +13,6 @@ A pending transaction:
 Example pending transaction::
 
     2026-02-20 ! "Amazon" "Wireless headphones ordered"
-      #pending
       Assets:Checking  -89.99 USD
       Expenses:Electronics:Audio  85.00 USD
         narration: "Bose QuietComfort 45"
@@ -97,29 +96,11 @@ def find_pending_file() -> Path | None:
     return None
 
 
-def is_pending_marker(entry: data.Transaction) -> bool:
-    """
-    Check if transaction is a pending marker.
-
-    A transaction is a pending marker if it has:
-    - #pending tag
-
-    Args:
-        entry: Transaction to check
-
-    Returns:
-        True if this is a pending marker
-    """
-    # Check tags (Beancount stores tags without the # symbol)
-    return bool(entry.tags and "pending" in entry.tags)
-
-
 def load_pending_transactions(file_path: Path) -> list[PendingTransaction]:
     """
     Load pending transactions from beancount file.
 
-    Parses the beancount file and extracts all transactions marked as pending
-    (#pending tag).
+    Parses the beancount file and extracts all transactions.
 
     Automatically injects the auto_accounts plugin at runtime (without modifying the file)
     to create account open directives for any accounts used in pending transactions.
@@ -139,9 +120,7 @@ def load_pending_transactions(file_path: Path) -> list[PendingTransaction]:
         # Check for ;; comments and warn about using narration metadata instead
         if ";;" in content:
             logger.warning(
-                "Pending file contains ;; comments. "
-                "Consider using posting-level 'narration:' metadata instead for better integration. "
-                'Example: Assets:Checking  -50.00 USD\n  narration: "Your description here"'
+                "Pending file contains ;; comments, use posting-level 'narration:' metadata instead"
             )
 
         # Prepend auto_accounts plugin directive (in-memory only, doesn't modify file)
@@ -164,10 +143,6 @@ def load_pending_transactions(file_path: Path) -> list[PendingTransaction]:
 
     for entry in entries:
         if not isinstance(entry, data.Transaction):
-            continue
-
-        # Check if this is a pending transaction
-        if not is_pending_marker(entry):
             continue
 
         # Extract postings

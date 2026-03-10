@@ -744,7 +744,6 @@ class TestLedgerTransactionMatching:
         matched_txn = result[0][1][0]
         assert matched_txn.meta["schedule_id"] == "rent"
 
-
     def test_ledger_transaction_with_schedule_matched_date_outside_entry_window(
         self, sample_transaction, sample_schedule, global_config
     ):
