@@ -421,10 +421,10 @@ class TestGlobalConfig:
         config = GlobalConfig(min_forecast_date=test_date)
         assert config.min_forecast_date == test_date
 
-    def test_include_past_dates_defaults_to_false(self):
-        """Test that include_past_dates defaults to False."""
+    def test_include_past_dates_defaults_to_true(self):
+        """Test that include_past_dates defaults to True."""
         config = GlobalConfig()
-        assert config.include_past_dates is False
+        assert config.include_past_dates is True
 
     def test_include_past_dates_true(self):
         """Test setting include_past_dates to True."""
@@ -800,3 +800,56 @@ class TestStatefulAmortizationConfig:
                 annual_rate=Decimal("0.05"),
                 term_months=360,
             )
+
+
+class TestPostingCurrency:
+    """Tests for per-posting currency field."""
+
+    def test_posting_currency_defaults_to_none(self):
+        """Posting.currency is None by default (inherits schedule default)."""
+        posting = Posting(account="Expenses:Food")
+        assert posting.currency is None
+
+    def test_posting_currency_explicit(self):
+        """Posting.currency can be set to a specific currency."""
+        posting = Posting(
+            account="Income:Vacation", amount=Decimal("8"), currency="VACDAY"
+        )
+        assert posting.currency == "VACDAY"
+
+    def test_posting_currency_stock(self):
+        """Posting.currency works with stock tickers."""
+        posting = Posting(
+            account="Assets:Vesting", amount=Decimal("10"), currency="TSLA"
+        )
+        assert posting.currency == "TSLA"
+
+    def test_posting_currency_yaml_round_trip(self):
+        """Posting.currency is preserved through dict serialization."""
+        posting = Posting(account="Income:RSU", amount=Decimal("5"), currency="AAPL")
+        data = posting.model_dump()
+        assert data["currency"] == "AAPL"
+        restored = Posting(**data)
+        assert restored.currency == "AAPL"
+
+
+class TestGlobalConfigDefaultCurrency:
+    """Tests for GlobalConfig.default_currency nullable behaviour."""
+
+    def test_default_currency_is_none_by_default(self):
+        """GlobalConfig.default_currency defaults to None (auto-detect)."""
+        config = GlobalConfig()
+        assert config.default_currency is None
+
+    def test_default_currency_can_be_set_explicitly(self):
+        """GlobalConfig.default_currency accepts an explicit currency string."""
+        config = GlobalConfig(default_currency="EUR")
+        assert config.default_currency == "EUR"
+
+    def test_default_currency_none_in_yaml_round_trip(self):
+        """None default_currency round-trips through dict."""
+        config = GlobalConfig()
+        data = config.model_dump()
+        assert data["default_currency"] is None
+        restored = GlobalConfig(**data)
+        assert restored.default_currency is None
