@@ -12,7 +12,6 @@ from beanschedule.pending import (
     PendingTransaction,
     enrich_from_pending,
     find_pending_file,
-    is_pending_marker,
     load_pending_transactions,
     match_pending_transaction,
     remove_pending_transactions,
@@ -54,52 +53,6 @@ class TestPendingTransaction:
         assert len(pending.postings) == 3
 
 
-class TestIsPendingMarker:
-    """Test is_pending_marker function."""
-
-    def test_pending_tag_is_pending(self):
-        """Test #pending tag marks as pending."""
-        txn = data.Transaction(
-            meta={"lineno": 1},
-            date=date(2026, 2, 20),
-            flag="!",
-            payee="Test",
-            narration="Test",
-            tags=frozenset(["pending"]),
-            links=frozenset(),
-            postings=[],
-        )
-        assert is_pending_marker(txn)
-
-    def test_normal_transaction_not_pending(self):
-        """Test normal transaction is not marked as pending."""
-        txn = data.Transaction(
-            meta={"lineno": 1},
-            date=date(2026, 2, 20),
-            flag="*",
-            payee="Test",
-            narration="Test",
-            tags=frozenset(),
-            links=frozenset(),
-            postings=[],
-        )
-        assert not is_pending_marker(txn)
-
-    def test_different_tag_not_pending(self):
-        """Test other tags don't mark as pending."""
-        txn = data.Transaction(
-            meta={"lineno": 1},
-            date=date(2026, 2, 20),
-            flag="*",
-            payee="Test",
-            narration="Test",
-            tags=frozenset(["other-tag"]),
-            links=frozenset(),
-            postings=[],
-        )
-        assert not is_pending_marker(txn)
-
-
 class TestLoadPendingTransactions:
     """Test loading pending transactions from file."""
 
@@ -139,8 +92,8 @@ class TestLoadPendingTransactions:
         pending = load_pending_transactions(Path("/nonexistent/file.beancount"))
         assert pending == []
 
-    def test_load_file_with_non_pending(self):
-        """Test loading file ignores non-pending transactions."""
+    def test_load_file_all_transactions(self):
+        """Test loading file loads all transactions regardless of tags."""
         with tempfile.NamedTemporaryFile(
             mode="w", suffix=".beancount", delete=False
         ) as f:
@@ -150,7 +103,6 @@ class TestLoadPendingTransactions:
   Expenses:Food
 
 2026-02-20 ! "Amazon" "Pending transaction"
-  #pending
   Assets:Checking  -89.99 USD
   Expenses:Electronics  89.99 USD
 """)
@@ -159,8 +111,10 @@ class TestLoadPendingTransactions:
 
         try:
             pending = load_pending_transactions(file_path)
-            assert len(pending) == 1
-            assert pending[0].payee == "Amazon"
+            assert len(pending) == 2
+            narrations = {p.narration for p in pending}
+            assert "Normal transaction" in narrations
+            assert "Pending transaction" in narrations
         finally:
             file_path.unlink()
 
@@ -220,8 +174,7 @@ class TestLoadPendingTransactions:
             mode="w", suffix=".beancount", delete=False
         ) as f:
             f.write("""
-2026-02-20 ! "Amazon" "Wireless headphones"
-  #pending
+2026-02-20 ! "Amazon" "Wireless headphones" #pending
   Assets:Checking  -89.99 USD  ;; This is a comment
   Expenses:Electronics  89.99 USD
 """)
@@ -233,12 +186,7 @@ class TestLoadPendingTransactions:
                 pending = load_pending_transactions(file_path)
                 assert len(pending) == 1
 
-            # Check that warning was logged
-            assert any(
-                "contains ;; comments" in record.message
-                and "narration:" in record.message
-                for record in caplog.records
-            )
+            assert any("contains ;; comments" in record.message for record in caplog.records)
         finally:
             file_path.unlink()
 

@@ -162,8 +162,7 @@ def create_pending(
     output_path = Path(output)
 
     lines = []
-    lines.append(f'{txn_date.strftime("%Y-%m-%d")} ! "{payee}" "{narration}"')
-    lines.append("  #pending")
+    lines.append(f'{txn_date.strftime("%Y-%m-%d")} ! "{payee}" "{narration}" #pending')
     lines.append(f"  {account}  {amount} USD")
 
     for split in splits:
