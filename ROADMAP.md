@@ -4,9 +4,9 @@ Improvement areas identified from a full repository review.
 
 ## Top Priority
 
-- [ ] **Multi-currency postings in schedule YAML** — allow individual postings to specify a currency other than the default (e.g., vacation days accrued as `VACDAY`, RSU grants as `STOCK`). A posting with a non-default currency would include an explicit `currency` key alongside its `amount`. This enables paycheck schedules with mixed-unit postings like salary (USD), vacation accrual (VACDAY), and vested shares (TSLA) in a single schedule entry.
+- [x] **Multi-currency postings in schedule YAML** — allow individual postings to specify a currency other than the default (e.g., vacation days accrued as `VACDAY`, RSU grants as `STOCK`). A posting with a non-default currency would include an explicit `currency` key alongside its `amount`. This enables paycheck schedules with mixed-unit postings like salary (USD), vacation accrual (VACDAY), and vested shares (TSLA) in a single schedule entry.
 
-- [ ] **Read `operating_currency` from ledger options** — `GlobalConfig.default_currency` currently defaults to `"USD"` and is never read from the ledger's `option "operating_currency"` directive. When no explicit `default_currency` is set in `beanschedule.yaml`, the hook should fall back to the ledger's `operating_currency`.
+- [x] **Read `operating_currency` from ledger options** — `GlobalConfig.default_currency` currently defaults to `"USD"` and is never read from the ledger's `option "operating_currency"` directive. When no explicit `default_currency` is set in `beanschedule.yaml`, the hook should fall back to the ledger's `operating_currency`.
 
 ## Quick Wins (< 1 day)
 

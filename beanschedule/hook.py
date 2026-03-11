@@ -31,6 +31,22 @@ from .utils import (
 logger = logging.getLogger(__name__)
 
 
+def _detect_operating_currency(
+    entries: list[data.Directive] | None,
+) -> str | None:
+    """Infer the operating currency from existing ledger entries.
+
+    Scans transactions in the provided entries and returns the currency of the
+    first posting found.  Returns None if no transactions with postings exist.
+    """
+    for entry in entries or []:
+        if isinstance(entry, data.Transaction):
+            for posting in entry.postings:
+                if posting.units and posting.units.currency:
+                    return posting.units.currency
+    return None
+
+
 def schedule_hook(
     extracted_entries_list: list,
     existing_entries: list[data.Directive] | None = None,
@@ -116,6 +132,13 @@ def schedule_hook(
     if not enabled_schedules:
         logger.info("No enabled schedules, returning entries unchanged")
         return extracted_entries_list
+
+    # Resolve effective default currency: explicit config > ledger entries > USD
+    effective_currency: str = schedule_file.config.default_currency or (
+        _detect_operating_currency(ledger_entries) or constants.DEFAULT_CURRENCY
+    )
+    if schedule_file.config.default_currency is None:
+        logger.debug("Auto-detected operating currency: %s", effective_currency)
 
     # NEW: Load pending transactions (one-time transactions to match and enrich)
     pending_file_path = find_pending_file()
@@ -274,6 +297,7 @@ def schedule_hook(
                         score,
                         amort_split,
                         split_lookup_date,
+                        effective_currency,
                     )
                     modified_entries.append(enriched_txn)
                     # Mark occurrence as matched
@@ -306,6 +330,7 @@ def schedule_hook(
         matched_occurrences,
         schedule_file.config.placeholder_flag,
         schedule_file.config,
+        effective_currency,
     )
 
     if placeholders:
@@ -783,6 +808,7 @@ def _enrich_transaction(
     score: float,
     amortization_split: PaymentSplit | None = None,
     split_lookup_date: date | None = None,
+    default_currency: str = constants.DEFAULT_CURRENCY,
 ) -> data.Transaction:
     """
     Enrich transaction with schedule metadata, tags, and postings.
@@ -845,7 +871,7 @@ def _enrich_transaction(
     # Handle postings
     if schedule.transaction.postings:
         new_postings = _apply_schedule_postings(
-            transaction, schedule, amortization_split
+            transaction, schedule, amortization_split, default_currency
         )
     else:
         new_postings = transaction.postings
@@ -863,6 +889,7 @@ def _apply_schedule_postings(
     transaction: data.Transaction,
     schedule: Schedule,
     amortization_split: PaymentSplit | None = None,
+    default_currency: str = constants.DEFAULT_CURRENCY,
 ) -> list[data.Posting]:
     """
     Apply schedule posting template to transaction.
@@ -890,19 +917,26 @@ def _apply_schedule_postings(
             original_amount = p.units
             break
 
-    currency = (
-        original_amount.currency if original_amount else constants.DEFAULT_CURRENCY
-    )
+    # Default currency for this transaction: use imported transaction's currency,
+    # falling back to the schedule's effective default currency.
+    txn_currency = original_amount.currency if original_amount else default_currency
 
     new_postings = []
     for posting_template in schedule.transaction.postings:
+        # Per-posting currency: explicit > transaction currency
+        posting_currency = posting_template.currency or txn_currency
+
         # Determine posting amount
         if amortization_split is not None:
             # Role-aware amount mapping for amortization
             if posting_template.role == "interest":
-                posting_amount = amount.Amount(amortization_split.interest, currency)
+                posting_amount = amount.Amount(
+                    amortization_split.interest, posting_currency
+                )
             elif posting_template.role == "principal":
-                posting_amount = amount.Amount(amortization_split.principal, currency)
+                posting_amount = amount.Amount(
+                    amortization_split.principal, posting_currency
+                )
             elif posting_template.role == "payment":
                 # Payment posting uses the imported bank amount
                 posting_amount = original_amount
@@ -910,14 +944,14 @@ def _apply_schedule_postings(
                 # Escrow has explicit amount from template
                 if posting_template.amount is not None:
                     posting_amount = amount.Amount(
-                        Decimal(str(posting_template.amount)), currency
+                        Decimal(str(posting_template.amount)), posting_currency
                     )
                 else:
                     posting_amount = None
             elif posting_template.amount is not None:
                 # Explicit amount from template (no role, or non-amortization role)
                 posting_amount = amount.Amount(
-                    Decimal(str(posting_template.amount)), currency
+                    Decimal(str(posting_template.amount)), posting_currency
                 )
             elif posting_template.account == match_account:
                 # No amount, matches imported account → use imported amount
@@ -935,7 +969,7 @@ def _apply_schedule_postings(
         else:
             # Secondary posting with explicit amount → use schedule amount
             posting_amount = amount.Amount(
-                Decimal(str(posting_template.amount)), currency
+                Decimal(str(posting_template.amount)), posting_currency
             )
 
         posting = data.Posting(
@@ -956,6 +990,7 @@ def _create_placeholders(
     matched_occurrences: set[tuple[str, date]],
     placeholder_flag: str,
     config=None,
+    default_currency: str = constants.DEFAULT_CURRENCY,
 ) -> list[data.Transaction]:
     """
     Create placeholder transactions for missing scheduled transactions.
@@ -1014,7 +1049,7 @@ def _create_placeholders(
 
             # Create placeholder transaction
             placeholder = _create_placeholder_transaction(
-                schedule, expected_date, placeholder_flag
+                schedule, expected_date, placeholder_flag, default_currency
             )
             placeholders.append(placeholder)
 
@@ -1089,6 +1124,7 @@ def _create_placeholder_transaction(
     schedule: Schedule,
     expected_date: date,
     placeholder_flag: str,
+    default_currency: str = constants.DEFAULT_CURRENCY,
 ) -> data.Transaction:
     """
     Create a placeholder transaction for missing scheduled transaction.
@@ -1123,9 +1159,11 @@ def _create_placeholder_transaction(
     if schedule.transaction.postings:
         postings = []
         for posting_template in schedule.transaction.postings:
+            # Per-posting currency overrides the schedule default
+            posting_currency = posting_template.currency or default_currency
             if posting_template.amount is not None:
                 posting_amount = amount.Amount(
-                    Decimal(str(posting_template.amount)), constants.DEFAULT_CURRENCY
+                    Decimal(str(posting_template.amount)), posting_currency
                 )
             elif (
                 posting_template.account == schedule.match.account
@@ -1133,7 +1171,7 @@ def _create_placeholder_transaction(
             ):
                 # Use match.amount for the match account posting to show expected amount
                 posting_amount = amount.Amount(
-                    Decimal(str(schedule.match.amount)), constants.DEFAULT_CURRENCY
+                    Decimal(str(schedule.match.amount)), posting_currency
                 )
             else:
                 posting_amount = None

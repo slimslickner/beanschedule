@@ -1426,7 +1426,10 @@ def skip(
             skip_markers = []
             for sched, skip_date in selected:
                 marker = _generate_skip_marker(
-                    sched, skip_date, reason, schedule_file.config.default_currency
+                    sched,
+                    skip_date,
+                    reason,
+                    schedule_file.config.default_currency or constants.DEFAULT_CURRENCY,
                 )
                 skip_markers.append(marker)
 
@@ -1473,7 +1476,10 @@ def skip(
             skip_markers = []
             for d in parsed_dates:
                 marker = _generate_skip_marker(
-                    schedule, d, reason, schedule_file.config.default_currency
+                    schedule,
+                    d,
+                    reason,
+                    schedule_file.config.default_currency or constants.DEFAULT_CURRENCY,
                 )
                 skip_markers.append(marker)
 

@@ -193,6 +193,14 @@ class Posting(BaseModel):
 
     account: str = Field(..., description="Account name")
     amount: Decimal | None = Field(None, description="Amount (null = use imported)")
+    currency: str | None = Field(
+        None,
+        description=(
+            "Currency for this posting (overrides default_currency). "
+            "Use for non-default-currency postings such as vacation days (VACDAY) "
+            "or stock grants (TSLA). When null, the schedule's default currency is used."
+        ),
+    )
     metadata: dict[str, Any] = Field(
         default_factory=dict, description="Posting metadata (e.g. narration, order_id)"
     )
@@ -479,8 +487,14 @@ class Schedule(BaseModel):
 class GlobalConfig(BaseModel):
     """Global configuration for beanschedule."""
 
-    default_currency: str = Field(
-        constants.DEFAULT_CURRENCY, description="Default currency for transactions"
+    default_currency: str | None = Field(
+        None,
+        description=(
+            "Default currency for transactions. When null (the default), the currency "
+            "is auto-detected: the plugin reads it from the ledger's "
+            "'option \"operating_currency\"' directive; the hook infers it from the "
+            "existing ledger entries. Set explicitly to override auto-detection."
+        ),
     )
     fuzzy_match_threshold: float = Field(
         constants.DEFAULT_FUZZY_MATCH_THRESHOLD,
