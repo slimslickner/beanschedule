@@ -1031,3 +1031,275 @@ class TestAmortizationEnrichment:
         assert enriched_txn.meta["schedule_id"] == "rent"
         assert "schedule_matched_date" in enriched_txn.meta
         assert "schedule_confidence" in enriched_txn.meta
+
+
+class TestMultiCurrencyPostings:
+    """Tests for per-posting currency override on enriched transactions."""
+
+    def test_enriched_posting_uses_per_posting_currency(
+        self, sample_transaction, sample_schedule, global_config
+    ):
+        """A posting with an explicit currency field uses that currency."""
+        from beanschedule.schema import Posting
+
+        postings = [
+            Posting(account="Assets:Bank:Checking"),
+            Posting(account="Income:Salary", amount=Decimal("3000.00")),
+            Posting(account="Income:Vacation", amount=Decimal("8"), currency="VACDAY"),
+        ]
+        schedule = sample_schedule(
+            id="paycheck",
+            account="Assets:Bank:Checking",
+            payee_pattern="ACME PAYROLL",
+            amount=Decimal("-3000.00"),
+            postings=postings,
+        )
+
+        txn = sample_transaction(
+            date(2024, 1, 15),
+            "ACME PAYROLL",
+            "Assets:Bank:Checking",
+            Decimal("-3000.00"),
+        )
+
+        extracted_entries = [("bank.csv", [txn], "Assets:Bank:Checking", None)]
+        schedule_file = ScheduleFile(schedules=[schedule], config=global_config)
+
+        with patch("beanschedule.hook.load_schedules", return_value=schedule_file):
+            result = schedule_hook(extracted_entries)
+
+        enriched = result[0][1][0]
+        vacation_posting = next(
+            p for p in enriched.postings if p.account == "Income:Vacation"
+        )
+        assert vacation_posting.units.currency == "VACDAY"
+        assert vacation_posting.units.number == Decimal("8")
+
+    def test_mixed_currency_paycheck_all_postings_correct(
+        self, sample_transaction, sample_schedule, global_config
+    ):
+        """Paycheck with USD salary/taxes + VACHR vacation + GOOGL RSU all resolve correctly.
+
+        Mirrors the paycheck-biweekly.yaml example schedule: USD postings inherit
+        the imported transaction's currency, while VACHR and GOOGL postings use
+        their explicit currency overrides.
+        """
+        from beanschedule.schema import Posting
+
+        postings = [
+            Posting(account="Assets:Bank:Checking"),
+            Posting(account="Income:Salary", amount=Decimal("-4615.38")),
+            Posting(account="Expenses:Taxes:Federal", amount=Decimal("1062.92")),
+            Posting(
+                account="Assets:Vacation", amount=Decimal("4.00"), currency="VACHR"
+            ),
+            Posting(
+                account="Income:Vacation", amount=Decimal("-4.00"), currency="VACHR"
+            ),
+            Posting(account="Assets:Vesting", amount=Decimal("5.00"), currency="GOOGL"),
+            Posting(account="Income:RSU", amount=Decimal("-5.00"), currency="GOOGL"),
+        ]
+        schedule = sample_schedule(
+            id="paycheck",
+            account="Assets:Bank:Checking",
+            payee_pattern="HOOGLE PAYROLL",
+            amount=Decimal("1350.60"),
+            postings=postings,
+        )
+
+        txn = sample_transaction(
+            date(2024, 1, 18),
+            "HOOGLE PAYROLL",
+            "Assets:Bank:Checking",
+            Decimal("1350.60"),
+            currency="USD",
+        )
+
+        extracted_entries = [("bank.csv", [txn], "Assets:Bank:Checking", None)]
+        schedule_file = ScheduleFile(schedules=[schedule], config=global_config)
+
+        with patch("beanschedule.hook.load_schedules", return_value=schedule_file):
+            result = schedule_hook(extracted_entries)
+
+        enriched = result[0][1][0]
+        by_account = {p.account: p for p in enriched.postings}
+
+        # USD postings inherit the imported transaction's currency
+        assert by_account["Income:Salary"].units.currency == "USD"
+        assert by_account["Income:Salary"].units.number == Decimal("-4615.38")
+        assert by_account["Expenses:Taxes:Federal"].units.currency == "USD"
+
+        # VACHR postings use their explicit currency override
+        assert by_account["Assets:Vacation"].units.currency == "VACHR"
+        assert by_account["Assets:Vacation"].units.number == Decimal("4.00")
+        assert by_account["Income:Vacation"].units.currency == "VACHR"
+        assert by_account["Income:Vacation"].units.number == Decimal("-4.00")
+
+        # GOOGL postings use their explicit currency override
+        assert by_account["Assets:Vesting"].units.currency == "GOOGL"
+        assert by_account["Assets:Vesting"].units.number == Decimal("5.00")
+        assert by_account["Income:RSU"].units.currency == "GOOGL"
+        assert by_account["Income:RSU"].units.number == Decimal("-5.00")
+
+    def test_enriched_posting_inherits_txn_currency_when_no_override(
+        self, sample_transaction, sample_schedule, global_config
+    ):
+        """A posting without an explicit currency inherits the imported transaction's currency."""
+        from beanschedule.schema import Posting
+
+        postings = [
+            Posting(account="Assets:Bank:Checking"),
+            Posting(account="Expenses:Rent", amount=Decimal("1500.00")),
+        ]
+        schedule = sample_schedule(
+            id="rent",
+            account="Assets:Bank:Checking",
+            payee_pattern="LANDLORD",
+            amount=Decimal("-1500.00"),
+            postings=postings,
+        )
+
+        txn = sample_transaction(
+            date(2024, 1, 15),
+            "LANDLORD",
+            "Assets:Bank:Checking",
+            Decimal("-1500.00"),
+            currency="EUR",
+        )
+
+        extracted_entries = [("bank.csv", [txn], "Assets:Bank:Checking", None)]
+        schedule_file = ScheduleFile(schedules=[schedule], config=global_config)
+
+        with patch("beanschedule.hook.load_schedules", return_value=schedule_file):
+            result = schedule_hook(extracted_entries)
+
+        enriched = result[0][1][0]
+        expense_posting = next(
+            p for p in enriched.postings if p.account == "Expenses:Rent"
+        )
+        # Should inherit EUR from the imported transaction
+        assert expense_posting.units.currency == "EUR"
+
+
+class TestOperatingCurrencyDetection:
+    """Tests for auto-detecting operating currency from ledger entries."""
+
+    def test_detect_operating_currency_from_existing_entries(
+        self, sample_transaction, sample_schedule, global_config
+    ):
+        """Hook detects operating currency from existing ledger entries when config is None."""
+        from beanschedule.schema import Posting
+
+        postings = [
+            Posting(account="Assets:Bank:Checking"),
+            Posting(account="Expenses:Rent", amount=Decimal("1500.00")),
+        ]
+        schedule = sample_schedule(
+            account="Assets:Bank:Checking",
+            payee_pattern="LANDLORD",
+            amount=Decimal("-1500.00"),
+            postings=postings,
+        )
+        # GlobalConfig with default_currency=None → should auto-detect
+        assert global_config.default_currency is None
+
+        txn = sample_transaction(
+            date(2024, 1, 15),
+            "LANDLORD",
+            "Assets:Bank:Checking",
+            Decimal("-1500.00"),
+            currency="EUR",
+        )
+        existing_txn = sample_transaction(
+            date(2024, 1, 1),
+            "Some existing",
+            "Assets:Bank:Checking",
+            Decimal("100.00"),
+            currency="EUR",
+        )
+
+        extracted_entries = [("bank.csv", [txn], "Assets:Bank:Checking", None)]
+        schedule_file = ScheduleFile(schedules=[schedule], config=global_config)
+
+        with patch("beanschedule.hook.load_schedules", return_value=schedule_file):
+            result = schedule_hook(extracted_entries, existing_entries=[existing_txn])
+
+        enriched = result[0][1][0]
+        expense_posting = next(
+            p for p in enriched.postings if p.account == "Expenses:Rent"
+        )
+        assert expense_posting.units.currency == "EUR"
+
+    def test_detect_currency_falls_back_to_usd_when_no_entries(
+        self, sample_transaction, sample_schedule, global_config
+    ):
+        """Hook falls back to USD when no existing entries and no explicit config."""
+        from beanschedule.schema import Posting
+
+        postings = [
+            Posting(account="Assets:Bank:Checking"),
+            Posting(account="Expenses:Food", amount=Decimal("50.00")),
+        ]
+        schedule = sample_schedule(
+            account="Assets:Bank:Checking",
+            payee_pattern="GROCER",
+            amount=Decimal("-50.00"),
+            postings=postings,
+        )
+        assert global_config.default_currency is None
+
+        txn = sample_transaction(
+            date(2024, 1, 15),
+            "GROCER",
+            "Assets:Bank:Checking",
+            Decimal("-50.00"),
+        )
+
+        extracted_entries = [("bank.csv", [txn], "Assets:Bank:Checking", None)]
+        schedule_file = ScheduleFile(schedules=[schedule], config=global_config)
+
+        with patch("beanschedule.hook.load_schedules", return_value=schedule_file):
+            result = schedule_hook(extracted_entries, existing_entries=None)
+
+        enriched = result[0][1][0]
+        expense_posting = next(
+            p for p in enriched.postings if p.account == "Expenses:Food"
+        )
+        assert expense_posting.units.currency == "USD"
+
+    def test_explicit_config_currency_used_for_placeholders(
+        self, sample_transaction, sample_schedule, global_config
+    ):
+        """Explicit default_currency in config is used for placeholder posting amounts.
+
+        When default_currency is set explicitly, it is used for placeholder
+        transactions (which have no real imported amount to inherit from).
+        Real enriched transactions use the imported transaction's own currency.
+        """
+        from datetime import date as date_
+
+        from beanschedule.schema import Posting
+        from beanschedule.hook import _create_placeholder_transaction
+
+        postings = [
+            Posting(account="Assets:Bank:Checking", amount=Decimal("-1500.00")),
+            Posting(account="Expenses:Rent", amount=Decimal("1500.00")),
+        ]
+        schedule = sample_schedule(
+            id="rent",
+            account="Assets:Bank:Checking",
+            payee_pattern="LANDLORD",
+            amount=Decimal("-1500.00"),
+            postings=postings,
+        )
+
+        placeholder = _create_placeholder_transaction(
+            schedule, date_(2024, 1, 15), "!", default_currency="GBP"
+        )
+
+        expense_posting = next(
+            p for p in placeholder.postings if p.account == "Expenses:Rent"
+        )
+        # Placeholder should use the explicitly configured currency
+        assert expense_posting.units is not None
+        assert expense_posting.units.currency == "GBP"

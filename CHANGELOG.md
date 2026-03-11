@@ -7,6 +7,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.5.0]
+
+### Breaking Changes
+
+- **`include_past_dates` now defaults to `true`.** Previously, scheduled transactions with expected dates in the past were silently skipped unless `include_past_dates: true` was set explicitly. The new default surfaces overdue transactions as placeholders and warnings. Users who prefer the old behavior can opt out:
+
+  ```yaml
+  # _config.yaml
+  include_past_dates: false
+  ```
+
+- **`GlobalConfig.default_currency` now defaults to `null` (auto-detected) instead of `"USD"`.** The hook infers the currency from existing ledger entries; the plugin reads it from the ledger's `option "operating_currency"` directive. Set explicitly in `_config.yaml` to override:
+
+  ```yaml
+  # _config.yaml
+  default_currency: EUR
+  ```
+
+### Added
+
+- **Multi-currency postings** — individual postings in a schedule can now specify a `currency` field, allowing mixed-unit transactions such as a paycheck that accrues vacation hours (`VACHR`) and vests shares (`GOOGL`) alongside standard USD postings:
+
+  ```yaml
+  postings:
+    - account: Assets:Bank:Checking
+      amount: null                      # uses imported bank amount (USD)
+    - account: Income:Salary
+      amount: -4615.38                  # USD (inherits default)
+    - account: Assets:Vacation
+      amount: 4.00
+      currency: VACHR                   # explicit non-default currency
+    - account: Assets:Vesting
+      amount: 5.00
+      currency: GOOGL                   # explicit non-default currency
+  ```
+
+- **Auto-detect `operating_currency`** — when `default_currency` is not set in `_config.yaml`, the hook scans existing ledger entries to infer the operating currency, and the forecast plugin reads `option "operating_currency"` from the ledger options map. Falls back to `USD` if neither source is available.
+
 ## [1.4.2]
 
 ### Changed

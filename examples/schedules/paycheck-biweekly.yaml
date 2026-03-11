@@ -1,5 +1,6 @@
 # Bi-weekly paycheck (matches actual Hoogle payroll in example ledger)
-# Demonstrates: WEEKLY frequency, multiple payee patterns, complex multi-posting transaction
+# Demonstrates: WEEKLY frequency, multiple payee patterns, complex multi-posting transaction,
+# and multi-currency postings (VACHR vacation accrual, GOOGL RSU vesting)
 id: paycheck-biweekly
 enabled: true
 match:
@@ -56,6 +57,28 @@ transaction:
       amount: 106.62
       metadata:
         narration: Medicare Tax
+    # Vacation accrual: 4 hours per paycheck in VACHR (non-default currency)
+    - account: Assets:Vacation
+      amount: 4.00
+      currency: VACHR
+      metadata:
+        narration: Vacation Accrual
+    - account: Income:US:Hoogle:Vacation
+      amount: -4.00
+      currency: VACHR
+      metadata:
+        narration: Vacation Accrual
+    # RSU vesting: 5 shares of GOOGL per paycheck (non-default currency)
+    - account: Assets:US:Hoogle:Vesting
+      amount: 5.00
+      currency: GOOGL
+      metadata:
+        narration: RSU Vesting
+    - account: Income:US:Hoogle:RSU
+      amount: -5.00
+      currency: GOOGL
+      metadata:
+        narration: RSU Vesting
 missing_transaction:
   create_placeholder: true
   flag: "!"

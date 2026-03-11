@@ -23,6 +23,11 @@ option "operating_currency" "USD"
   export: "IGNORE"
   name: "Employer Vacation Hours"
 
+2004-08-19 commodity GOOGL
+  export: "NASDAQ:GOOGL"
+  name: "Alphabet Inc. Class A"
+  price: "USD:google/NASDAQ:GOOGL"
+
 1980-05-12 commodity IRAUSD
   export: "IGNORE"
   name: "US 401k and IRA Contributions"

@@ -53,6 +53,8 @@ from pathlib import Path
 from beancount.core import amount, data
 from dateutil.relativedelta import relativedelta
 
+from beanschedule.constants import DEFAULT_CURRENCY
+
 logger = logging.getLogger(__name__)
 
 __plugins__ = ("schedules",)
@@ -245,6 +247,21 @@ def schedules(entries, options_map, config=None):
         logger.error(error_msg)
         errors.append(error_msg)
         return entries, errors
+
+    # Resolve effective default currency:
+    # explicit beanschedule.yaml config > ledger operating_currency option > USD
+    if schedule_file.config.default_currency is not None:
+        effective_currency = schedule_file.config.default_currency
+    else:
+        ledger_currencies = options_map.get("operating_currency", [])
+        effective_currency = (
+            ledger_currencies[0] if ledger_currencies else DEFAULT_CURRENCY
+        )
+        if ledger_currencies:
+            logger.debug(
+                "Using ledger operating_currency as default: %s", effective_currency
+            )
+    schedule_file.config.default_currency = effective_currency
 
     # 2. Determine forecast horizon
     # Determine forecast window based on configuration
@@ -800,9 +817,14 @@ def _create_forecast_transaction(
                 f"to account '{posting_template.account}' (index {idx})"
             )
 
+        posting_currency = (
+            posting_template.currency
+            or global_config.default_currency
+            or DEFAULT_CURRENCY
+        )
         posting_amount = amount.Amount(
             Decimal(posting_amount_value),
-            global_config.default_currency,
+            posting_currency,
         )
 
         # Redirect matched account posting to shadow account if configured
