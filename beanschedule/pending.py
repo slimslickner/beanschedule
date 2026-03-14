@@ -21,6 +21,7 @@ Example pending transaction::
 
 import logging
 import os
+import re
 from datetime import date as date_type
 from decimal import Decimal
 from pathlib import Path
@@ -178,7 +179,9 @@ def load_pending_transactions(file_path: Path) -> list[PendingTransaction]:
                 PostingTemplate(
                     account=p.account,
                     amount=posting_amount,
+                    currency=None,
                     metadata=posting_meta,
+                    role=None,
                 )
             )
 
@@ -314,6 +317,53 @@ def enrich_from_pending(
         narration=narration,
         postings=new_postings,
     )
+
+
+def convert_semicolon_comments_to_narration(content: str) -> str:
+    """
+    Convert ;; posting comments to narration: metadata.
+
+    Transforms:
+        Expenses:Shopping  42.39 USD  ;; Some comment
+
+    Into:
+        Expenses:Shopping  42.39 USD
+            narration: "Some comment"
+
+    Multiple ;; comments on the same line become multiple narration entries:
+        Expenses:Shopping  50.00 USD  ;; Item 1  ;; Item 2
+        # Becomes:
+        Expenses:Shopping  50.00 USD
+            narration: "Item 1"
+            narration: "Item 2"
+
+    Returns:
+        Modified content with ;; comments converted to narration metadata.
+    """
+    lines = content.splitlines()
+    result = []
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+        if ";;" not in line:
+            result.append(line)
+            i += 1
+            continue
+
+        match = re.match(r"^(\s*)(.+?)(\s*;;.*)$", line)
+        if match:
+            indent, posting_line, comment_part = match.groups()
+            result.append(indent + posting_line)
+            comments = comment_part.split(";;")
+            for comment in comments:
+                comment = comment.strip()
+                if comment:
+                    result.append(indent + '  narration: "' + comment + '"')
+        else:
+            result.append(line)
+        i += 1
+
+    return "\n".join(result)
 
 
 def remove_pending_transactions(

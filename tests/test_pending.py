@@ -34,14 +34,23 @@ class TestPendingTransaction:
                 Posting(
                     account="Assets:Checking",
                     amount=Decimal("-89.99"),
+                    currency=None,
+                    metadata={},
+                    role=None,
                 ),
                 Posting(
                     account="Expenses:Electronics:Audio",
                     amount=Decimal("85.00"),
+                    currency=None,
+                    metadata={},
+                    role=None,
                 ),
                 Posting(
                     account="Expenses:Shopping:Shipping",
                     amount=Decimal("4.99"),
+                    currency=None,
+                    metadata={},
+                    role=None,
                 ),
             ],
         )
@@ -186,9 +195,157 @@ class TestLoadPendingTransactions:
                 pending = load_pending_transactions(file_path)
                 assert len(pending) == 1
 
-            assert any("contains ;; comments" in record.message for record in caplog.records)
+            assert any(
+                "contains ;; comments" in record.message for record in caplog.records
+            )
         finally:
             file_path.unlink()
+
+
+class TestFixSemicolonComments:
+    """Test ;; comment to narration conversion."""
+
+    def test_single_comment_conversion(self):
+        """Test converting a single ;; comment to narration metadata."""
+        from beanschedule.pending import convert_semicolon_comments_to_narration
+
+        content = """2026-02-20 ! "Amazon" "Test" #pending
+  Assets:Checking  -89.99 USD
+  Expenses:Electronics  85.00 USD  ;; Headphones
+"""
+        result = convert_semicolon_comments_to_narration(content)
+        assert ";; Headphones" not in result
+        assert 'narration: "Headphones"' in result
+        assert "Expenses:Electronics  85.00 USD" in result
+
+    def test_multiple_comments_same_line(self):
+        """Test converting multiple ;; comments on same posting line."""
+        from beanschedule.pending import convert_semicolon_comments_to_narration
+
+        content = """2026-02-20 ! "Store" "Test" #pending
+  Assets:Checking  -50.00 USD
+  Expenses:Shopping  50.00 USD  ;; Item 1  ;; Item 2
+"""
+        result = convert_semicolon_comments_to_narration(content)
+        assert ";;" not in result
+        assert result.count("narration:") == 2
+        assert 'narration: "Item 1"' in result
+        assert 'narration: "Item 2"' in result
+
+    def test_comment_with_whitespace(self):
+        """Test comment with extra whitespace is handled."""
+        from beanschedule.pending import convert_semicolon_comments_to_narration
+
+        content = """2026-02-20 ! "Amazon" "Test" #pending
+  Assets:Checking  -89.99 USD
+  Expenses:Electronics  85.00 USD  ;;   Extra spaces   ;; And more
+"""
+        result = convert_semicolon_comments_to_narration(content)
+        assert "Extra spaces" in result
+        assert "And more" in result
+
+    def test_posting_with_existing_metadata(self):
+        """Test conversion when posting already has metadata."""
+        from beanschedule.pending import convert_semicolon_comments_to_narration
+
+        content = """2026-02-20 ! "Amazon" "Test" #pending
+  Assets:Checking  -89.99 USD
+  Expenses:Electronics  85.00 USD
+    order_id: "AMZ-001"  ;; Headphones
+"""
+        result = convert_semicolon_comments_to_narration(content)
+        assert 'order_id: "AMZ-001"' in result
+        assert 'narration: "Headphones"' in result
+
+    def test_no_changes_needed(self):
+        """Test file already using proper narration metadata."""
+        from beanschedule.pending import convert_semicolon_comments_to_narration
+
+        content = '''2026-02-20 ! "Amazon" "Test" #pending
+  Assets:Checking  -89.99 USD
+  Expenses:Electronics  85.00 USD
+    narration: "Headphones"'''
+
+        result = convert_semicolon_comments_to_narration(content)
+        assert result == content
+
+    def test_transaction_level_comment_not_converted(self):
+        """Test that ;; comments on transaction lines are not converted."""
+        from beanschedule.pending import convert_semicolon_comments_to_narration
+
+        content = """;; This is a transaction-level comment
+2026-02-20 ! "Amazon" "Test" #pending
+  Assets:Checking  -89.99 USD
+  Expenses:Shopping  89.99 USD  ;; Purchase
+"""
+        result = convert_semicolon_comments_to_narration(content)
+        # Transaction-level comment should remain
+        assert "transaction-level comment" in result
+        # Posting-level comment should be converted
+        assert 'narration: "Purchase"' in result
+
+
+class TestPendingFixCommand:
+    """Test beanschedule pending fix CLI command."""
+
+    def test_fix_command_dry_run(self, tmp_path):
+        """Test fix command with --dry-run shows preview."""
+        from click.testing import CliRunner
+        from beanschedule.cli import main as cli_main
+
+        pending_file = tmp_path / "pending.beancount"
+        pending_file.write_text("""2026-02-20 ! "Amazon" "Test" #pending
+  Assets:Checking  -89.99 USD
+  Expenses:Electronics  85.00 USD  ;; Headphones
+""")
+
+        runner = CliRunner()
+        result = runner.invoke(
+            cli_main, ["pending", "fix", "-f", str(pending_file), "--dry-run"]
+        )
+
+        assert result.exit_code == 0
+        assert "Would fix" in result.output
+        assert ";; Headphones" in result.output
+
+    def test_fix_command_actual_fix(self, tmp_path):
+        """Test fix command actually modifies file."""
+        from click.testing import CliRunner
+        from beanschedule.cli import main as cli_main
+
+        pending_file = tmp_path / "pending.beancount"
+        pending_file.write_text("""2026-02-20 ! "Amazon" "Test" #pending
+  Assets:Checking  -89.99 USD
+  Expenses:Electronics  85.00 USD  ;; Headphones
+""")
+
+        runner = CliRunner()
+        result = runner.invoke(cli_main, ["pending", "fix", "-f", str(pending_file)])
+
+        assert result.exit_code == 0
+        assert "Fixed" in result.output
+
+        content = pending_file.read_text()
+        assert ";; Headphones" not in content
+        assert 'narration: "Headphones"' in content
+
+    def test_fix_command_no_changes_needed(self, tmp_path):
+        """Test fix command when file has no ;; comments."""
+        from click.testing import CliRunner
+        from beanschedule.cli import main as cli_main
+
+        pending_file = tmp_path / "pending.beancount"
+        pending_file.write_text("""2026-02-20 ! "Amazon" "Test" #pending
+  Assets:Checking  -89.99 USD
+  Expenses:Electronics  85.00 USD
+    narration: "Headphones"
+""")
+
+        runner = CliRunner()
+        result = runner.invoke(cli_main, ["pending", "fix", "-f", str(pending_file)])
+
+        assert result.exit_code == 0
+        assert "No ;; comments found" in result.output
 
 
 class TestMatchPendingTransaction:
@@ -345,16 +502,23 @@ class TestEnrichFromPending:
                 Posting(
                     account="Assets:Checking",
                     amount=Decimal("-89.99"),
+                    currency=None,
+                    metadata={},
+                    role=None,
                 ),
                 Posting(
                     account="Expenses:Electronics:Audio",
                     amount=Decimal("85.00"),
+                    currency=None,
                     metadata={"narration": "Bose QuietComfort 45"},
+                    role=None,
                 ),
                 Posting(
                     account="Expenses:Shopping:Shipping",
                     amount=Decimal("4.99"),
+                    currency=None,
                     metadata={"narration": "Shipping"},
+                    role=None,
                 ),
             ],
         )
@@ -401,8 +565,20 @@ class TestEnrichFromPending:
             narration="Purchase",
             metadata={"receipt": "REC-123", "category": "shopping"},
             postings=[
-                Posting(account="Assets:Checking", amount=Decimal("-50.00")),
-                Posting(account="Expenses:Shopping", amount=Decimal("50.00")),
+                Posting(
+                    account="Assets:Checking",
+                    amount=Decimal("-50.00"),
+                    currency=None,
+                    metadata={},
+                    role=None,
+                ),
+                Posting(
+                    account="Expenses:Shopping",
+                    amount=Decimal("50.00"),
+                    currency=None,
+                    metadata={},
+                    role=None,
+                ),
             ],
         )
 
@@ -441,15 +617,23 @@ class TestEnrichFromPending:
             payee="Amazon",
             narration="Order",
             postings=[
-                Posting(account="Assets:Checking", amount=Decimal("-89.99")),
+                Posting(
+                    account="Assets:Checking",
+                    amount=Decimal("-89.99"),
+                    currency=None,
+                    metadata={},
+                    role=None,
+                ),
                 Posting(
                     account="Expenses:Electronics",
                     amount=Decimal("89.99"),
+                    currency=None,
                     metadata={
                         "narration": "Headphones",
                         "order_id": "AMZ-001",
                         "asin": "B08N5KWB9H",
                     },
+                    role=None,
                 ),
             ],
         )
@@ -490,16 +674,26 @@ class TestEnrichFromPending:
             payee="Store",
             narration="Purchase",
             postings=[
-                Posting(account="Assets:Checking", amount=Decimal("-127.45")),
+                Posting(
+                    account="Assets:Checking",
+                    amount=Decimal("-127.45"),
+                    currency=None,
+                    metadata={},
+                    role=None,
+                ),
                 Posting(
                     account="Expenses:Food:Groceries",
                     amount=Decimal("100.00"),
+                    currency=None,
                     metadata={"narration": "Food items"},
+                    role=None,
                 ),
                 Posting(
                     account="Expenses:Supplies",
                     amount=Decimal("27.45"),
+                    currency=None,
                     metadata={"narration": "Household supplies"},
+                    role=None,
                 ),
             ],
         )

@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`beanschedule pending fix` command** — Converts deprecated `;;` posting comments to proper `narration:` metadata. Run this command before importing to fix deprecated comment syntax in `pending.beancount` files:
+
+  ```bash
+  # Preview changes
+  beanschedule pending fix --dry-run
+
+  # Apply fixes
+  beanschedule pending fix
+  ```
+
+  Transforms:
+  ```beancount
+  Expenses:Shopping  50.00 USD  ;; Item description
+  ```
+  Into:
+  ```beancount
+  Expenses:Shopping  50.00 USD
+    narration: "Item description"
+  ```
+
 ## [1.5.0]
 
 ### Breaking Changes
