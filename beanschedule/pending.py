@@ -55,6 +55,12 @@ class PendingTransaction(BaseModel):
     metadata: dict[str, Any] = Field(
         default_factory=dict, description="Additional transaction metadata"
     )
+    tags: frozenset[str] = Field(
+        default_factory=frozenset, description="Transaction tags"
+    )
+    links: frozenset[str] = Field(
+        default_factory=frozenset, description="Transaction links (e.g. ^abc-123)"
+    )
     postings: list[PostingTemplate] = Field(
         ..., description="Pre-defined posting splits"
     )
@@ -194,6 +200,8 @@ def load_pending_transactions(file_path: Path) -> list[PendingTransaction]:
                 payee=entry.payee or "",
                 narration=entry.narration or "",
                 metadata=txn_metadata,
+                tags=entry.tags or frozenset(),
+                links=entry.links or frozenset(),
                 postings=postings,
             )
             pending_txns.append(pending)
@@ -315,6 +323,8 @@ def enrich_from_pending(
         meta=new_meta,
         payee=payee,
         narration=narration,
+        tags=(txn.tags | pending.tags) - frozenset({"pending"}),
+        links=txn.links | pending.links,
         postings=new_postings,
     )
 
