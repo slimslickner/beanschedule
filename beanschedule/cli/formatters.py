@@ -196,6 +196,110 @@ def print_detection_table(candidates: list) -> None:
         click.echo(row)
 
 
+def print_match_table(schedules: list) -> None:
+    """Print schedules as a table focused on match criteria (ID, account, amount).
+
+    Displays the schedule ID, the account used for matching, and the expected
+    amount (exact ± tolerance, range, or "(any)").
+    """
+    id_width = max(max(len(s.id) for s in schedules), len("ID"))
+    account_width = max(max(len(s.match.account) for s in schedules), len("Account"))
+
+    click.echo(f"{'ID':<{id_width}}  {'Account':<{account_width}}  Amount")
+    click.echo("-" * (id_width + account_width + 2 + 2 + 10))
+
+    for s in schedules:
+        m = s.match
+        if m.amount is not None:
+            if m.amount_tolerance is not None:
+                amount_str = f"{m.amount} ± {m.amount_tolerance}"
+            else:
+                amount_str = str(m.amount)
+        elif m.amount_min is not None and m.amount_max is not None:
+            amount_str = f"{m.amount_min} to {m.amount_max}"
+        else:
+            amount_str = "(any)"
+
+        click.echo(
+            f"{s.id:<{id_width}}  {s.match.account:<{account_width}}  {amount_str}"
+        )
+
+    click.echo(f"\nTotal: {len(schedules)} schedules")
+
+
+def print_postings_table(schedule) -> None:
+    """Print a schedule's transaction postings as a table.
+
+    Each posting is one row. Metadata keys are pivoted to columns, with all
+    unique keys collected across all postings.
+    """
+    postings = schedule.transaction.postings
+    if not postings:
+        click.echo("No postings defined for this schedule.")
+        return
+
+    # Collect all metadata keys across all postings (preserving insertion order)
+    meta_keys: list[str] = []
+    for p in postings:
+        for k in p.metadata:
+            if k not in meta_keys:
+                meta_keys.append(k)
+
+    # Calculate column widths
+    account_width = max(max(len(p.account) for p in postings), len("Account"))
+    amount_width = max(
+        max(
+            len(str(p.amount)) if p.amount is not None else len("(auto)")
+            for p in postings
+        ),
+        len("Amount"),
+    )
+    currency_width = max(
+        max(len(p.currency or "") for p in postings),
+        len("Currency"),
+    )
+    role_width = max(
+        max(len(p.role or "") for p in postings),
+        len("Role"),
+    )
+    meta_widths = {
+        k: max(
+            max(len(str(p.metadata.get(k, ""))) for p in postings),
+            len(k),
+        )
+        for k in meta_keys
+    }
+
+    # Build header
+    header_parts = [
+        f"{'Account':<{account_width}}",
+        f"{'Amount':<{amount_width}}",
+        f"{'Currency':<{currency_width}}",
+        f"{'Role':<{role_width}}",
+    ]
+    for k in meta_keys:
+        header_parts.append(f"{k:<{meta_widths[k]}}")
+    header = "  ".join(header_parts)
+    click.echo(header)
+    click.echo("-" * len(header))
+
+    # Print rows
+    for p in postings:
+        amount_str = str(p.amount) if p.amount is not None else "(auto)"
+        row_parts = [
+            f"{p.account:<{account_width}}",
+            f"{amount_str:<{amount_width}}",
+            f"{(p.currency or ''):<{currency_width}}",
+            f"{(p.role or ''):<{role_width}}",
+        ]
+        for k in meta_keys:
+            val = str(p.metadata.get(k, ""))
+            row_parts.append(f"{val:<{meta_widths[k]}}")
+        click.echo("  ".join(row_parts))
+
+    click.echo(f"\nTotal: {len(postings)} postings")
+
+
 def print_detection_json(candidates: list) -> None:
     """Print detected patterns as JSON."""
     output = []
