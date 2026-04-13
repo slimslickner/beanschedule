@@ -288,12 +288,22 @@ def filter_occurrences_by_existing_transactions(
         return occurrence_dates
 
     # Build set of covered dates (O(m) where m = schedule_txns)
-    # For each transaction date, mark all dates within date_window as covered
+    # For each transaction, use schedule_matched_date if present (authoritative expected
+    # date written at enrich time), else fall back to txn.date.  This handles the common
+    # case where the bank posts on a different day than the scheduled date (e.g., expected
+    # on 2026-02-28 but posted on 2026-03-04 — schedule_matched_date records 2026-02-28).
     covered_dates: set[date] = set()
     for txn in schedule_txns:
-        # Add the transaction date itself and all dates within the window
+        matched_date_str = txn.meta.get(constants.META_SCHEDULE_MATCHED_DATE)
+        anchor: date = txn.date
+        if matched_date_str:
+            try:
+                anchor = date.fromisoformat(str(matched_date_str))
+            except ValueError:
+                pass
+        # Mark all dates within the window around the anchor as covered
         for offset in range(-date_window, date_window + 1):
-            covered_dates.add(txn.date + timedelta(days=offset))
+            covered_dates.add(anchor + timedelta(days=offset))
 
     # Filter occurrences (O(n) where n = occurrence_dates, O(1) lookup per date)
     return [occ_date for occ_date in occurrence_dates if occ_date not in covered_dates]

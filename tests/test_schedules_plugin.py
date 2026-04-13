@@ -1748,3 +1748,87 @@ transaction:
         assert len(overdue_txns_for_month) == 0, (
             "Should not generate overdue when existing transaction is within date_window"
         )
+
+    def test_overdue_not_generated_when_schedule_matched_date_outside_window(
+        self, tmp_path, monkeypatch
+    ):
+        """Regression: posting date outside window but schedule_matched_date matches.
+
+        When the bank posts a transaction several days after the scheduled date
+        (e.g., expected 2026-02-28, posted 2026-03-04 — 4 days apart, outside a 3-day
+        window), the hook enriches the transaction with schedule_matched_date=2026-02-28.
+        The plugin must use that metadata as the anchor so it does not generate a
+        duplicate overdue forecast for 2026-02-28.
+        """
+        from beanschedule import loader
+        from beancount.core import amount, data
+        from decimal import Decimal
+        from datetime import date as dt_date
+        from dateutil.relativedelta import relativedelta
+
+        schedule_dir = self._make_yaml(tmp_path)
+        monkeypatch.setattr(loader, "find_schedules_location", lambda: schedule_dir)
+        options_map = {"filename": str(tmp_path / "main.bean")}
+
+        today = dt_date.today()
+        # Expected occurrence: 1st of last month
+        last_month_first = (today - relativedelta(months=1)).replace(day=1)
+        # Actual posting: 5 days later — *outside* the default 3-day window
+        actual_posting_date = last_month_first + relativedelta(days=5)
+
+        existing_txn = data.Transaction(
+            meta={
+                "filename": "main.bean",
+                "lineno": 1,
+                "schedule_id": "rent-monthly",
+                # Authoritative expected date recorded by the hook at enrich time
+                "schedule_matched_date": last_month_first.isoformat(),
+            },
+            date=actual_posting_date,
+            flag="*",
+            payee="Rent Payment",
+            narration="Monthly rent",
+            tags=frozenset(),
+            links=frozenset(),
+            postings=[
+                data.Posting(
+                    "Expenses:Housing:Rent",
+                    amount.Amount(Decimal("1500.00"), "USD"),
+                    None,
+                    None,
+                    None,
+                    None,
+                ),
+                data.Posting(
+                    "Assets:Checking",
+                    amount.Amount(Decimal("-1500.00"), "USD"),
+                    None,
+                    None,
+                    None,
+                    None,
+                ),
+            ],
+        )
+
+        result_entries, errors = schedules(
+            [existing_txn],
+            options_map,
+            config={
+                "forecast_months": 0,
+                "shadow_overdue_account": self.OVERDUE_ACCOUNT,
+            },
+        )
+
+        assert len(errors) == 0
+        overdue_txns_for_month = [
+            e
+            for e in result_entries
+            if isinstance(e, data.Transaction)
+            and e.date.year == last_month_first.year
+            and e.date.month == last_month_first.month
+            and e.flag == "#"
+        ]
+        assert len(overdue_txns_for_month) == 0, (
+            "Should not generate overdue when schedule_matched_date covers the expected date, "
+            "even if the actual posting date is outside the date window"
+        )
