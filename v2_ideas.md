@@ -79,6 +79,12 @@ The db should be committed to git alongside the ledger. Because SQLite is binary
 
 Use Beancount's built-in entry hashing rather than a custom implementation.
 
+> **Design consideration:** The native hash is content-derived, so editing a matched transaction (fixing a narration, adjusting an amount) will change its hash and orphan the corresponding SQLite row. This is especially relevant for amortization matches, which explicitly rewrite a transaction's postings upon confirmation — breaking the hash immediately after it is recorded.
+>
+> An alternative is to assign a random UUID to each transaction as metadata (e.g. `id: "550e8400-e29b-41d4-a716-446655440000"`) and use that as `tx_hash`. This requires a one-time backfill script and a load-time validation plugin to ensure all transactions carry an ID, but the reference survives any future edits.
+>
+> For an initial implementation, native hashing is simpler — no ledger changes required. The `beanschedule reset` command can handle the orphaned-row case when edits happen. Migrating to UUID-based IDs later is straightforward: add the metadata field, backfill the ledger, update the schema to store the UUID instead of the content hash.
+
 ### Schema (draft)
 
 ```sql
