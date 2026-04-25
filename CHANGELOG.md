@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.5.1]
+
 ### Added
 
 - **`beanschedule pending fix` command** — Converts deprecated `;;` posting comments to proper `narration:` metadata. Run this command before importing to fix deprecated comment syntax in `pending.beancount` files:
@@ -28,6 +30,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Expenses:Shopping  50.00 USD
     narration: "Item description"
   ```
+
+- **`beanschedule list --format match`** — New output format showing each schedule's ID, match account, and expected amount (exact ± tolerance, range, or `(any)`). Useful for quickly auditing match criteria without the full schedule table.
+
+- **`beanschedule show --postings`** — New flag to display a schedule's transaction postings as a table. Columns: account, amount, currency, role, and one column per unique metadata key (pivoted across all postings).
+
+- Missing scheduled transaction warnings now include the expected amount and account on each line, making it easier to identify which transactions are overdue at a glance.
+
+### Fixed
+
+- **Plugin duplicate forecast when posting date exceeds `date_window_days`** — `filter_occurrences_by_existing_transactions` now reads `schedule_matched_date` metadata (written by the hook at enrich time) as the anchor for the covered-date window, falling back to `txn.date` when absent. Fixes the case where the bank posts outside the schedule's window (e.g., expected 2026-02-28, posted 2026-03-04) and the occurrence was incorrectly treated as uncovered, generating a spurious overdue forecast.
+
+- **`_detect_operating_currency` now uses frequency counting** — Previously returned the currency of the first posting found. Commodity currencies (e.g., `VEHICLE.2014SUBARU`) appearing early in the ledger could shadow the true operating currency (e.g., `USD`). Now counts occurrences across all postings and returns the most frequent.
+
+- **Pending enrichment now preserves tags and links** — Tags and links from `pending.beancount` entries are merged onto the enriched transaction. The `#pending` tag is stripped from the result.
+
+### Performance
+
+- **`filter_occurrences_by_existing_transactions` O(n×m) → O(n+m)** — Replaced nested loops with upfront covered-dates set construction: iterate transactions once to build the set, then filter occurrences with O(1) lookups. Eliminates quadratic behavior for large ledgers with many schedules and a long forecast window.
 
 ## [1.5.0]
 
