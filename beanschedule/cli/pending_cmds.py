@@ -8,6 +8,7 @@ from pathlib import Path
 import click
 
 from beanschedule.pending import (
+    convert_semicolon_comments_to_narration,
     find_pending_file,
     load_pending_transactions,
 )
@@ -269,3 +270,69 @@ def clean_pending(file: str, dry_run: bool):
             f"Warning: File contains {len(pending_txns)} pending transaction(s) - not cleaning",
             err=True,
         )
+
+
+@pending.command("fix")
+@click.option(
+    "--file",
+    "-f",
+    type=click.Path(exists=True),
+    help="Pending transactions file (auto-detected if not specified)",
+)
+@click.option(
+    "--dry-run",
+    "-n",
+    is_flag=True,
+    help="Show what would be changed without making changes",
+)
+def fix_pending(file: str, dry_run: bool):
+    """Convert ;; posting comments to narration: metadata.
+
+    Transforms ;; comments on posting lines into proper narration metadata.
+    Run this before importing to fix deprecated comment syntax.
+
+    Examples:
+
+        beanschedule pending fix
+        beanschedule pending fix --dry-run
+        beanschedule pending fix --file my-pending.beancount
+    """
+    # Find pending file if not specified
+    if not file:
+        pending_file = find_pending_file()
+        if not pending_file:
+            click.echo("No pending.beancount file found", err=True)
+            click.echo("   Create one with: beanschedule pending create", err=True)
+            return
+        file = str(pending_file)
+
+    pending_path = Path(file)
+    original_content = pending_path.read_text()
+
+    # Check if file contains any ;; comments
+    if ";;" not in original_content:
+        click.echo(f"No ;; comments found in {pending_path}")
+        return
+
+    # Convert comments
+    fixed_content = convert_semicolon_comments_to_narration(original_content)
+
+    # Count changes
+    original_lines = original_content.splitlines()
+    fixed_lines = fixed_content.splitlines()
+    changes = sum(1 for o, f in zip(original_lines, fixed_lines) if o != f)
+
+    if dry_run:
+        click.echo(f"Would fix {changes} line(s) in {pending_path}:")
+        click.echo("\n--- Changes preview ---")
+        diff_lines = []
+        for i, (orig, fixed) in enumerate(zip(original_lines, fixed_lines), 1):
+            if orig != fixed:
+                diff_lines.append(f"  Line {i}:")
+                diff_lines.append(f"    - {orig}")
+                diff_lines.append(f"    + {fixed}")
+        click.echo("\n".join(diff_lines))
+        click.echo("\n--- End preview ---")
+    else:
+        pending_path.write_text(fixed_content)
+        click.echo(f"Fixed {changes} line(s) in {pending_path}")

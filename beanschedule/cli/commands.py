@@ -32,6 +32,8 @@ from .formatters import (
     print_amortization_table,
     print_detection_json,
     print_detection_table,
+    print_match_table,
+    print_postings_table,
     print_schedule_csv,
     print_schedule_table,
 )
@@ -106,9 +108,9 @@ def validate(path: str):
 @click.option(
     "--format",
     "output_format",
-    type=click.Choice(["table", "json", "csv"]),
+    type=click.Choice(["table", "json", "csv", "match"]),
     default="table",
-    help="Output format (default: table)",
+    help="Output format (default: table). Use 'match' to show ID, account, and amount.",
 )
 @click.option("--enabled-only", is_flag=True, help="Show only enabled schedules")
 def list_schedules(path: str, output_format: str, enabled_only: bool):
@@ -120,6 +122,7 @@ def list_schedules(path: str, output_format: str, enabled_only: bool):
         beanschedule list schedules/
         beanschedule list schedules/ --enabled-only
         beanschedule list schedules/ --format json
+        beanschedule list schedules/ --format match
     """
     path_obj = Path(path)
 
@@ -149,6 +152,8 @@ def list_schedules(path: str, output_format: str, enabled_only: bool):
             click.echo(json.dumps(schedules_data, indent=2, default=str))
         elif output_format == "csv":
             print_schedule_csv(schedules)
+        elif output_format == "match":
+            print_match_table(schedules)
 
     except Exception as e:
         click.echo(f"Error: {e}", err=True)
@@ -249,12 +254,19 @@ def generate(schedule_id: str, start_date, end_date, schedules_path: str):
     default="schedules",
     help="Path to schedules file or directory (default: schedules)",
 )
+@click.option(
+    "--postings",
+    "show_postings",
+    is_flag=True,
+    help="Show transaction postings as a table (account, amount, metadata columns)",
+)
 def show(  # noqa: PLR0912, PLR0915
     schedule_id: str,
     count: int,
     from_date,
     to_date,
     schedules_path: str,
+    show_postings: bool,
 ):
     """Show detailed information about a specific schedule.
 
@@ -264,6 +276,7 @@ def show(  # noqa: PLR0912, PLR0915
         beanschedule show mortgage-payment
         beanschedule show mortgage-payment --count 10
         beanschedule show mortgage-payment --from 2024-01-01 --to 2024-12-31
+        beanschedule show mortgage-payment --postings
     """
     path_obj = Path(schedules_path)
 
@@ -357,6 +370,10 @@ def show(  # noqa: PLR0912, PLR0915
             click.echo(f"  Narration: {schedule.transaction.narration}")
         if schedule.transaction.tags:
             click.echo(f"  Tags: {schedule.transaction.tags}")
+
+        if show_postings:
+            click.echo("\nPostings:")
+            print_postings_table(schedule)
 
         # Next occurrences
         sorted_occurrences = sorted(occurrences)[:count]
