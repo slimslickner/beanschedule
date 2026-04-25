@@ -36,15 +36,20 @@ def _detect_operating_currency(
 ) -> str | None:
     """Infer the operating currency from existing ledger entries.
 
-    Scans transactions in the provided entries and returns the currency of the
-    first posting found.  Returns None if no transactions with postings exist.
+    Counts currency frequency across all postings and returns the most common.
+    The operating currency (e.g. USD) appears in nearly every transaction while
+    commodities (e.g. VEHICLE.2014SUBARU) appear rarely.
     """
+    counts: dict[str, int] = {}
     for entry in entries or []:
         if isinstance(entry, data.Transaction):
             for posting in entry.postings:
                 if posting.units and posting.units.currency:
-                    return posting.units.currency
-    return None
+                    c = posting.units.currency
+                    counts[c] = counts.get(c, 0) + 1
+    if not counts:
+        return None
+    return max(counts, key=lambda c: counts[c])
 
 
 def schedule_hook(
@@ -352,8 +357,22 @@ def schedule_hook(
             expected_date = placeholder.meta.get(
                 constants.META_SCHEDULE_EXPECTED_DATE, "unknown"
             )
+            amount_str = next(
+                (str(p.units) for p in placeholder.postings if p.units is not None),
+                "?",
+            )
+            account_str = (
+                placeholder.postings[0].account
+                if placeholder.postings
+                else "unknown account"
+            )
             logger.warning(
-                "  • %s - %s (%s)", expected_date, placeholder.payee, schedule_id
+                "  • %s - %s %s @ %s (%s)",
+                expected_date,
+                placeholder.payee,
+                amount_str,
+                account_str,
+                schedule_id,
             )
         logger.warning("=" * 70)
 
