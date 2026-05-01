@@ -1,14 +1,15 @@
 """Pydantic schema models for schedule validation."""
 
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
+from dateutil.rrule import rrulestr
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from . import constants
-from .types import CompoundingFrequency, DayOfWeek, FlagType, FrequencyType
+from .types import CompoundingFrequency, FlagType
 
 
 def _validate_positive(v: Any, name: str) -> Any:
@@ -102,90 +103,85 @@ class MatchCriteria(BaseModel):
         return self
 
 
+_LEGACY_WEEKDAY_MAP = {
+    "MON": "MO",
+    "TUE": "TU",
+    "WED": "WE",
+    "THU": "TH",
+    "FRI": "FR",
+    "SAT": "SA",
+    "SUN": "SU",
+}
+
+
+def _build_rrule_from_legacy(data: dict[str, Any]) -> str:
+    """Convert old frequency/day_of_month/etc fields to an RRULE string."""
+    freq_raw = data.get("frequency", "")
+    # Handle both enum instances and plain strings
+    frequency = (getattr(freq_raw, "value", freq_raw) or "").upper()
+    day_of_month = data.get("day_of_month")
+    month = data.get("month")
+    dow_raw = data.get("day_of_week") or ""
+    day_of_week = (getattr(dow_raw, "value", dow_raw) or "").upper()
+    interval = int(data.get("interval") or 1)
+    days_of_month = data.get("days_of_month")
+    interval_months = data.get("interval_months")
+    nth_occurrence = data.get("nth_occurrence")
+
+    if frequency == "MONTHLY":
+        return f"FREQ=MONTHLY;BYMONTHDAY={day_of_month}"
+    if frequency == "WEEKLY":
+        byday = _LEGACY_WEEKDAY_MAP.get(day_of_week, day_of_week)
+        parts = ["FREQ=WEEKLY"]
+        if interval > 1:
+            parts.append(f"INTERVAL={interval}")
+        parts.append(f"BYDAY={byday}")
+        return ";".join(parts)
+    if frequency == "YEARLY":
+        return f"FREQ=YEARLY;BYMONTH={month};BYMONTHDAY={day_of_month}"
+    if frequency == "INTERVAL":
+        return f"FREQ=MONTHLY;INTERVAL={interval_months};BYMONTHDAY={day_of_month}"
+    if frequency in ("BIMONTHLY", "MONTHLY_ON_DAYS"):
+        days_str = ",".join(str(d) for d in (days_of_month or []))
+        return f"FREQ=MONTHLY;BYMONTHDAY={days_str}"
+    if frequency == "NTH_WEEKDAY":
+        byday = _LEGACY_WEEKDAY_MAP.get(day_of_week, day_of_week)
+        nth = int(nth_occurrence or 1)
+        prefix = f"+{nth}" if nth > 0 else str(nth)
+        return f"FREQ=MONTHLY;BYDAY={prefix}{byday}"
+    if frequency == "LAST_DAY_OF_MONTH":
+        return "FREQ=MONTHLY;BYMONTHDAY=-1"
+    raise ValueError(f"Unknown legacy frequency: {frequency!r}")
+
+
 class RecurrenceRule(BaseModel):
     """Recurrence rule for generating expected dates."""
 
-    frequency: FrequencyType = Field(..., description="Recurrence frequency")
+    rrule: str = Field(
+        ...,
+        description="RRULE string (RFC 5545), e.g. FREQ=MONTHLY;BYMONTHDAY=15",
+    )
     start_date: date = Field(..., description="Start date for recurrence")
     end_date: date | None = Field(None, description="End date (null = ongoing)")
 
-    # Monthly/Yearly
-    day_of_month: int | None = Field(None, description="Day of month (1-31)")
-    month: int | None = Field(None, description="Month for yearly (1-12)")
-
-    # Weekly
-    day_of_week: DayOfWeek | None = Field(None, description="Day of week")
-    interval: int | None = Field(1, description="Interval (e.g., 2 for bi-weekly)")
-
-    # Bi-monthly / MONTHLY_ON_DAYS
-    days_of_month: list[int] | None = Field(
-        None, description="Days of month (for BIMONTHLY/MONTHLY_ON_DAYS)"
-    )
-
-    # Interval (every X months)
-    interval_months: int | None = Field(None, description="Month interval")
-
-    # NTH_WEEKDAY (e.g., 2nd Tuesday)
-    nth_occurrence: int | None = Field(
-        None, description="Nth occurrence of weekday (1-5, -1 for last)"
-    )
-
-    @field_validator("day_of_month")
+    @model_validator(mode="before")
     @classmethod
-    def validate_day_of_month(cls, v: int | None) -> int | None:
-        """Ensure day_of_month is in valid range."""
-        if v is not None and (
-            v < constants.MIN_DAY_OF_MONTH or v > constants.MAX_DAY_OF_MONTH
-        ):
-            msg = f"day_of_month must be between {constants.MIN_DAY_OF_MONTH} and {constants.MAX_DAY_OF_MONTH}"
-            raise ValueError(msg)
-        return v
+    def migrate_legacy_format(cls, data: Any) -> Any:
+        """Convert old frequency/day_of_month/etc fields to rrule string."""
+        if isinstance(data, dict) and "frequency" in data and "rrule" not in data:
+            data = dict(data)
+            data["rrule"] = _build_rrule_from_legacy(data)
+        return data
 
-    @field_validator("month")
+    @field_validator("rrule")
     @classmethod
-    def validate_month(cls, v: int | None) -> int | None:
-        """Ensure month is in valid range."""
-        if v is not None and (v < constants.MIN_MONTH or v > constants.MAX_MONTH):
-            msg = (
-                f"month must be between {constants.MIN_MONTH} and {constants.MAX_MONTH}"
-            )
-            raise ValueError(msg)
-        return v
-
-    @field_validator("interval")
-    @classmethod
-    def validate_interval(cls, v: int | None) -> int | None:
-        """Ensure interval is positive."""
-        if v is not None and v < 1:
-            raise ValueError("interval must be at least 1")
-        return v
-
-    @field_validator("interval_months")
-    @classmethod
-    def validate_interval_months(cls, v: int | None) -> int | None:
-        """Ensure interval_months is positive."""
-        if v is not None and v < 1:
-            raise ValueError("interval_months must be at least 1")
-        return v
-
-    @field_validator("days_of_month")
-    @classmethod
-    def validate_days_of_month(cls, v: list[int] | None) -> list[int] | None:
-        """Ensure days_of_month are in valid range."""
-        if v is not None:
-            for day in v:
-                if day < constants.MIN_DAY_OF_MONTH or day > constants.MAX_DAY_OF_MONTH:
-                    msg = f"days_of_month must be between {constants.MIN_DAY_OF_MONTH} and {constants.MAX_DAY_OF_MONTH}"
-                    raise ValueError(msg)
-        return v
-
-    @field_validator("nth_occurrence")
-    @classmethod
-    def validate_nth_occurrence(cls, v: int | None) -> int | None:
-        """Ensure nth_occurrence is valid (1-5 or -1 for last)."""
-        if v is not None and (v < -1 or v == 0 or v > 5):
-            raise ValueError("nth_occurrence must be 1-5 or -1 (for last)")
-        return v
+    def validate_rrule(cls, v: str) -> str:
+        """Ensure rrule is parseable by dateutil."""
+        try:
+            rrulestr(v, dtstart=datetime(2024, 1, 1), ignoretz=True)
+        except Exception as e:
+            raise ValueError(f"Invalid RRULE '{v}': {e}") from e
+        return v.upper()
 
 
 class Posting(BaseModel):

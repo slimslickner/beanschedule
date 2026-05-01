@@ -14,6 +14,54 @@ from beanschedule import constants
 from beanschedule.loader import load_schedules_from_path
 from beanschedule.types import DayOfWeek, FrequencyType
 
+_WEEKDAY_RRULE = {
+    DayOfWeek.MON: "MO",
+    DayOfWeek.TUE: "TU",
+    DayOfWeek.WED: "WE",
+    DayOfWeek.THU: "TH",
+    DayOfWeek.FRI: "FR",
+    DayOfWeek.SAT: "SA",
+    DayOfWeek.SUN: "SU",
+}
+
+
+def build_rrule(
+    frequency: FrequencyType,
+    day_of_month: int | None = None,
+    month: int | None = None,
+    day_of_week: DayOfWeek | None = None,
+    interval: int = 1,
+    days_of_month: list[int] | None = None,
+    interval_months: int | None = None,
+    nth_occurrence: int | None = None,
+) -> str:
+    """Build an RRULE string from discrete frequency parameters."""
+    if frequency == FrequencyType.MONTHLY:
+        return f"FREQ=MONTHLY;BYMONTHDAY={day_of_month}"
+    if frequency == FrequencyType.WEEKLY:
+        byday = _WEEKDAY_RRULE[day_of_week]
+        parts = ["FREQ=WEEKLY"]
+        if interval > 1:
+            parts.append(f"INTERVAL={interval}")
+        parts.append(f"BYDAY={byday}")
+        return ";".join(parts)
+    if frequency == FrequencyType.YEARLY:
+        return f"FREQ=YEARLY;BYMONTH={month};BYMONTHDAY={day_of_month}"
+    if frequency == FrequencyType.INTERVAL:
+        return f"FREQ=MONTHLY;INTERVAL={interval_months};BYMONTHDAY={day_of_month}"
+    if frequency in (FrequencyType.BIMONTHLY, FrequencyType.MONTHLY_ON_DAYS):
+        days_str = ",".join(str(d) for d in (days_of_month or []))
+        return f"FREQ=MONTHLY;BYMONTHDAY={days_str}"
+    if frequency == FrequencyType.NTH_WEEKDAY:
+        byday = _WEEKDAY_RRULE[day_of_week]
+        nth = int(nth_occurrence or 1)
+        prefix = f"+{nth}" if nth > 0 else str(nth)
+        return f"FREQ=MONTHLY;BYDAY={prefix}{byday}"
+    if frequency == FrequencyType.LAST_DAY_OF_MONTH:
+        return "FREQ=MONTHLY;BYMONTHDAY=-1"
+    raise ValueError(f"Unknown frequency: {frequency}")
+
+
 logger = logging.getLogger(__name__)
 
 
@@ -111,25 +159,16 @@ def build_schedule_dict(  # noqa: PLR0913
     days_of_month: list[int] | None = None,
     interval_months: int | None = None,
 ) -> dict[str, Any]:
-    """Build a complete schedule dictionary matching the Pydantic schema.
-
-    Args:
-        schedule_id: Unique schedule identifier.
-        txn_details: Transaction details from extract_transaction_details().
-        payee_pattern: Payee pattern for matching.
-        amount_tolerance: Amount tolerance (±).
-        date_window_days: Date matching window in days.
-        frequency: Recurrence frequency type.
-        day_of_month: Day of month for MONTHLY/YEARLY.
-        month: Month for YEARLY.
-        day_of_week: Day of week for WEEKLY.
-        interval: Interval for WEEKLY (e.g., 2 for biweekly).
-        days_of_month: Days of month for BIMONTHLY.
-        interval_months: Month interval for INTERVAL.
-
-    Returns:
-        Dictionary representing a complete Schedule.
-    """
+    """Build a complete schedule dictionary matching the Pydantic schema."""
+    rrule = build_rrule(
+        frequency=frequency,
+        day_of_month=day_of_month,
+        month=month,
+        day_of_week=day_of_week,
+        interval=interval,
+        days_of_month=days_of_month,
+        interval_months=interval_months,
+    )
     return {
         "id": schedule_id,
         "enabled": True,
@@ -145,15 +184,9 @@ def build_schedule_dict(  # noqa: PLR0913
             "date_window_days": date_window_days,
         },
         "recurrence": {
-            "frequency": frequency.value,
+            "rrule": rrule,
             "start_date": str(txn_details["date"]),
             "end_date": None,
-            "day_of_month": day_of_month,
-            "month": month,
-            "day_of_week": day_of_week.value if day_of_week else None,
-            "interval": interval,
-            "days_of_month": days_of_month,
-            "interval_months": interval_months,
         },
         "transaction": {
             "payee": txn_details["payee"],
@@ -216,19 +249,16 @@ def save_detected_schedules(candidates: list, output_dir: Path) -> int:
                 "date_window_days": 3,
             },
             "recurrence": {
-                "frequency": candidate.frequency.frequency.value,
+                "rrule": build_rrule(
+                    frequency=candidate.frequency.frequency,
+                    day_of_month=candidate.frequency.day_of_month,
+                    month=candidate.frequency.month,
+                    day_of_week=candidate.frequency.day_of_week,
+                    interval=candidate.frequency.interval or 1,
+                    interval_months=candidate.frequency.interval_months,
+                ),
                 "start_date": str(candidate.first_date),
                 "end_date": None,
-                "day_of_month": candidate.frequency.day_of_month,
-                "month": candidate.frequency.month,
-                "day_of_week": (
-                    candidate.frequency.day_of_week.value
-                    if candidate.frequency.day_of_week
-                    else None
-                ),
-                "interval": candidate.frequency.interval,
-                "days_of_month": None,
-                "interval_months": candidate.frequency.interval_months,
             },
             "transaction": {
                 "payee": candidate.payee,

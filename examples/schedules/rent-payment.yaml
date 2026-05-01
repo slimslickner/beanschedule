@@ -11,15 +11,8 @@ match:
   amount_max: null
   date_window_days: 3
 recurrence:
-  frequency: MONTHLY
+  rrule: FREQ=MONTHLY;BYMONTHDAY=6
   start_date: 2013-01-06
-  end_date: null
-  day_of_month: 6
-  month: null
-  day_of_week: null
-  interval: 1
-  days_of_month: null
-  interval_months: null
 transaction:
   payee: RiverBank Properties
   narration: Paying the rent

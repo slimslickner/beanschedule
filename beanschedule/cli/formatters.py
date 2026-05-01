@@ -24,18 +24,18 @@ def print_schedule_table(schedules: list) -> None:
 
     # Print header
     click.echo(
-        f"{'ID':<{id_width}}  {'Status':<8}  {'Frequency':<12}  {'Payee':<{payee_width}}"
+        f"{'ID':<{id_width}}  {'Status':<8}  {'RRULE':<30}  {'Payee':<{payee_width}}"
     )
-    click.echo("-" * (id_width + 8 + 12 + payee_width + 6))
+    click.echo("-" * (id_width + 8 + 30 + payee_width + 6))
 
     # Print schedules
     for s in schedules:
         status = "enabled " if s.enabled else "disabled"
-        frequency = s.recurrence.frequency.value
+        rrule = s.recurrence.rrule[:30]
         payee = (s.transaction.payee or "")[:payee_width]
 
         click.echo(
-            f"{s.id:<{id_width}}  {status:<8}  {frequency:<12}  {payee:<{payee_width}}"
+            f"{s.id:<{id_width}}  {status:<8}  {rrule:<30}  {payee:<{payee_width}}"
         )
 
     click.echo(f"\nTotal: {len(schedules)} schedules")
@@ -50,14 +50,14 @@ def print_schedule_csv(schedules: list) -> None:
     Account, and Expected amount.
     """
     writer = csv.writer(sys.stdout)
-    writer.writerow(["ID", "Enabled", "Frequency", "Payee", "Account", "Amount"])
+    writer.writerow(["ID", "Enabled", "RRULE", "Payee", "Account", "Amount"])
 
     for s in schedules:
         writer.writerow(
             [
                 s.id,
                 "true" if s.enabled else "false",
-                s.recurrence.frequency.value,
+                s.recurrence.rrule,
                 s.transaction.payee or "",
                 s.match.account,
                 s.match.amount or "",

@@ -17,7 +17,7 @@ from beanschedule.schema import (
     ScheduleFile,
     TransactionTemplate,
 )
-from beanschedule.types import DayOfWeek, FlagType, FrequencyType
+from beanschedule.types import FlagType
 
 # ============================================================================
 # Transaction and Posting Builders
@@ -122,28 +122,16 @@ def make_match_criteria(
 
 
 def make_recurrence_rule(
-    frequency: FrequencyType = FrequencyType.MONTHLY,
+    rrule: str = "FREQ=MONTHLY;BYMONTHDAY=15",
     start_date: date = date(2024, 1, 1),
     end_date: date | None = None,
-    day_of_month: int | None = 15,
-    month: int | None = None,
-    day_of_week: DayOfWeek | None = None,
-    interval: int = 1,
-    days_of_month: list[int] | None = None,
-    interval_months: int | None = None,
     **kwargs,
 ) -> RecurrenceRule:
-    """Create RecurrenceRule with sensible defaults for the given frequency."""
+    """Create RecurrenceRule with an RRULE string."""
     return RecurrenceRule(
-        frequency=frequency,
+        rrule=rrule,
         start_date=start_date,
         end_date=end_date,
-        day_of_month=day_of_month,
-        month=month,
-        day_of_week=day_of_week,
-        interval=interval,
-        days_of_month=days_of_month,
-        interval_months=interval_months,
     )
 
 
@@ -190,13 +178,12 @@ def make_transaction_template(
 def make_schedule(
     id: str = "test-schedule",
     enabled: bool = True,
-    frequency: FrequencyType = FrequencyType.MONTHLY,
+    rrule: str = "FREQ=MONTHLY;BYMONTHDAY=15",
     account: str = "Assets:Bank:Checking",
     payee_pattern: str = "Test Payee",
     amount: Decimal = Decimal("-100.00"),
     amount_tolerance: Decimal = Decimal("5.00"),
     start_date: date = date(2024, 1, 1),
-    day_of_month: int = 15,
     create_placeholder: bool = True,
     **kwargs,
 ) -> Schedule:
@@ -209,11 +196,8 @@ def make_schedule(
     )
 
     recurrence = make_recurrence_rule(
-        frequency=frequency,
+        rrule=rrule,
         start_date=start_date,
-        day_of_month=day_of_month
-        if frequency in [FrequencyType.MONTHLY, FrequencyType.INTERVAL]
-        else None,
     )
 
     transaction = make_transaction_template(
@@ -356,15 +340,9 @@ def sample_schedule_dict(tmp_path):
             "date_window_days": 3,
         },
         "recurrence": {
-            "frequency": "MONTHLY",
+            "rrule": "FREQ=MONTHLY;BYMONTHDAY=15",
             "start_date": "2024-01-01",
             "end_date": None,
-            "day_of_month": 15,
-            "month": None,
-            "day_of_week": None,
-            "interval": 1,
-            "days_of_month": None,
-            "interval_months": None,
         },
         "transaction": {
             "payee": "Test Payee",

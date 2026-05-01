@@ -18,7 +18,6 @@ from beanschedule.schema import (
     ScheduleFile,
     TransactionTemplate,
 )
-from beanschedule.types import FrequencyType
 
 
 class TestMatchCriteria:
@@ -129,118 +128,93 @@ class TestMatchCriteria:
 class TestRecurrenceRule:
     """Tests for RecurrenceRule validation."""
 
-    def test_create_monthly_rule(self):
-        """Test creating valid MONTHLY recurrence rule."""
+    def test_create_monthly_rrule(self):
         rule = RecurrenceRule(
-            frequency=FrequencyType.MONTHLY,
-            start_date=date(2024, 1, 1),
-            day_of_month=15,
+            rrule="FREQ=MONTHLY;BYMONTHDAY=15", start_date=date(2024, 1, 1)
         )
-        assert rule.frequency == FrequencyType.MONTHLY
-        assert rule.day_of_month == 15
+        assert rule.rrule == "FREQ=MONTHLY;BYMONTHDAY=15"
+        assert rule.start_date == date(2024, 1, 1)
+        assert rule.end_date is None
 
-    def test_day_of_month_valid_range(self):
-        """Test that day_of_month accepts 1-31."""
-        for day in [1, 15, 28, 31]:
-            rule = RecurrenceRule(
-                frequency=FrequencyType.MONTHLY,
-                start_date=date(2024, 1, 1),
-                day_of_month=day,
-            )
-            assert rule.day_of_month == day
-
-    def test_day_of_month_zero_rejected(self):
-        """Test that day_of_month=0 is rejected."""
-        with pytest.raises(ValueError, match="day_of_month must be between 1 and 31"):
-            RecurrenceRule(
-                frequency=FrequencyType.MONTHLY,
-                start_date=date(2024, 1, 1),
-                day_of_month=0,
-            )
-
-    def test_day_of_month_32_rejected(self):
-        """Test that day_of_month=32 is rejected."""
-        with pytest.raises(ValueError, match="day_of_month must be between 1 and 31"):
-            RecurrenceRule(
-                frequency=FrequencyType.MONTHLY,
-                start_date=date(2024, 1, 1),
-                day_of_month=32,
-            )
-
-    def test_month_valid_range(self):
-        """Test that month accepts 1-12."""
-        for month in [1, 6, 12]:
-            rule = RecurrenceRule(
-                frequency=FrequencyType.YEARLY,
-                start_date=date(2024, 1, 1),
-                day_of_month=15,
-                month=month,
-            )
-            assert rule.month == month
-
-    def test_month_zero_rejected(self):
-        """Test that month=0 is rejected."""
-        with pytest.raises(ValueError, match="month must be between 1 and 12"):
-            RecurrenceRule(
-                frequency=FrequencyType.YEARLY,
-                start_date=date(2024, 1, 1),
-                month=0,
-            )
-
-    def test_month_13_rejected(self):
-        """Test that month=13 is rejected."""
-        with pytest.raises(ValueError, match="month must be between 1 and 12"):
-            RecurrenceRule(
-                frequency=FrequencyType.YEARLY,
-                start_date=date(2024, 1, 1),
-                month=13,
-            )
-
-    def test_interval_must_be_positive(self):
-        """Test that interval must be at least 1."""
-        with pytest.raises(ValueError, match="interval must be at least 1"):
-            RecurrenceRule(
-                frequency=FrequencyType.WEEKLY,
-                start_date=date(2024, 1, 1),
-                interval=0,
-            )
-
-    def test_interval_months_must_be_positive(self):
-        """Test that interval_months must be at least 1."""
-        with pytest.raises(ValueError, match="interval_months must be at least 1"):
-            RecurrenceRule(
-                frequency=FrequencyType.INTERVAL,
-                start_date=date(2024, 1, 1),
-                day_of_month=15,
-                interval_months=0,
-            )
-
-    def test_days_of_month_valid_range(self):
-        """Test that days_of_month accepts valid days."""
+    def test_rrule_stored_uppercase(self):
         rule = RecurrenceRule(
-            frequency=FrequencyType.BIMONTHLY,
-            start_date=date(2024, 1, 1),
-            days_of_month=[5, 20],
+            rrule="freq=monthly;bymonthday=15", start_date=date(2024, 1, 1)
         )
-        assert rule.days_of_month == [5, 20]
+        assert rule.rrule == "FREQ=MONTHLY;BYMONTHDAY=15"
 
-    def test_days_of_month_invalid_zero(self):
-        """Test that days_of_month rejects 0."""
-        with pytest.raises(ValueError, match="days_of_month must be between 1 and 31"):
+    def test_invalid_rrule_rejected(self):
+        with pytest.raises(ValueError, match="Invalid RRULE"):
+            RecurrenceRule(rrule="NOT_VALID_RRULE", start_date=date(2024, 1, 1))
+
+    def test_invalid_bymonthday_rejected(self):
+        with pytest.raises(ValueError, match="Invalid RRULE"):
             RecurrenceRule(
-                frequency=FrequencyType.BIMONTHLY,
-                start_date=date(2024, 1, 1),
-                days_of_month=[0, 20],
+                rrule="FREQ=MONTHLY;BYMONTHDAY=", start_date=date(2024, 1, 1)
             )
 
-    def test_days_of_month_invalid_32(self):
-        """Test that days_of_month rejects 32."""
-        with pytest.raises(ValueError, match="days_of_month must be between 1 and 31"):
-            RecurrenceRule(
-                frequency=FrequencyType.BIMONTHLY,
-                start_date=date(2024, 1, 1),
-                days_of_month=[5, 32],
-            )
+    def test_end_date_stored(self):
+        rule = RecurrenceRule(
+            rrule="FREQ=MONTHLY;BYMONTHDAY=15",
+            start_date=date(2024, 1, 1),
+            end_date=date(2024, 12, 31),
+        )
+        assert rule.end_date == date(2024, 12, 31)
+
+    def test_legacy_monthly_migration(self):
+        """Old-format YAML with frequency/day_of_month migrates to rrule."""
+        rule = RecurrenceRule.model_validate(
+            {"frequency": "MONTHLY", "start_date": date(2024, 1, 1), "day_of_month": 15}
+        )
+        assert rule.rrule == "FREQ=MONTHLY;BYMONTHDAY=15"
+
+    def test_legacy_weekly_migration(self):
+        rule = RecurrenceRule.model_validate(
+            {
+                "frequency": "WEEKLY",
+                "start_date": date(2024, 1, 1),
+                "day_of_week": "MON",
+                "interval": 2,
+            }
+        )
+        assert rule.rrule == "FREQ=WEEKLY;INTERVAL=2;BYDAY=MO"
+
+    def test_legacy_yearly_migration(self):
+        rule = RecurrenceRule.model_validate(
+            {
+                "frequency": "YEARLY",
+                "start_date": date(2024, 1, 1),
+                "month": 3,
+                "day_of_month": 15,
+            }
+        )
+        assert rule.rrule == "FREQ=YEARLY;BYMONTH=3;BYMONTHDAY=15"
+
+    def test_legacy_interval_migration(self):
+        rule = RecurrenceRule.model_validate(
+            {
+                "frequency": "INTERVAL",
+                "start_date": date(2024, 1, 1),
+                "interval_months": 3,
+                "day_of_month": 15,
+            }
+        )
+        assert rule.rrule == "FREQ=MONTHLY;INTERVAL=3;BYMONTHDAY=15"
+
+    def test_legacy_bimonthly_migration(self):
+        rule = RecurrenceRule.model_validate(
+            {
+                "frequency": "BIMONTHLY",
+                "start_date": date(2024, 1, 1),
+                "days_of_month": [5, 20],
+            }
+        )
+        assert rule.rrule == "FREQ=MONTHLY;BYMONTHDAY=5,20"
+
+    def test_legacy_last_day_migration(self):
+        rule = RecurrenceRule.model_validate(
+            {"frequency": "LAST_DAY_OF_MONTH", "start_date": date(2024, 1, 1)}
+        )
+        assert rule.rrule == "FREQ=MONTHLY;BYMONTHDAY=-1"
 
 
 class TestTransactionTemplate:
@@ -307,9 +281,8 @@ class TestSchedule:
                     payee_pattern="Test",
                 ),
                 recurrence=RecurrenceRule(
-                    frequency=FrequencyType.MONTHLY,
+                    rrule="FREQ=MONTHLY;BYMONTHDAY=15",
                     start_date=date(2024, 1, 1),
-                    day_of_month=15,
                 ),
                 transaction=TransactionTemplate(
                     metadata={"schedule_id": "test"},
@@ -325,9 +298,8 @@ class TestSchedule:
                 payee_pattern="Test",
             ),
             recurrence=RecurrenceRule(
-                frequency=FrequencyType.MONTHLY,
+                rrule="FREQ=MONTHLY;BYMONTHDAY=15",
                 start_date=date(2024, 1, 1),
-                day_of_month=15,
             ),
             transaction=TransactionTemplate(
                 metadata={"schedule_id": "my-schedule"},
@@ -349,9 +321,8 @@ class TestSchedule:
                     payee_pattern="Test",
                 ),
                 recurrence=RecurrenceRule(
-                    frequency=FrequencyType.MONTHLY,
+                    rrule="FREQ=MONTHLY;BYMONTHDAY=15",
                     start_date=date(2024, 1, 1),
-                    day_of_month=15,
                 ),
                 transaction=TransactionTemplate(
                     metadata={"schedule_id": "different-schedule"},

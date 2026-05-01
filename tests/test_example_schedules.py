@@ -123,13 +123,13 @@ class TestExampleSchedulesIntegration:
         schedule_file = load_schedules_from_path(EXAMPLES_SCHEDULES_DIR)
         assert schedule_file is not None, "Failed to load schedules"
 
-        frequencies = set()
+        rrules = set()
         for schedule in schedule_file.schedules:
-            frequencies.add(schedule.recurrence.frequency.value)
+            rrules.add(schedule.recurrence.rrule)
 
-        # Should have multiple frequency types
-        assert len(frequencies) >= 3, (
-            f"Examples should demonstrate multiple frequencies, got: {frequencies}"
+        # Should have multiple distinct rrule patterns
+        assert len(rrules) >= 3, (
+            f"Examples should demonstrate multiple recurrence patterns, got: {rrules}"
         )
 
     def test_example_schedules_demonstrate_different_matching_strategies(self):
