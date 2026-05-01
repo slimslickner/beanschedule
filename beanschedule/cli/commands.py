@@ -214,7 +214,7 @@ def generate(schedule_id: str, start_date, end_date, schedules_path: str):
 
         # Print results
         click.echo(f"Schedule: {schedule.id}")
-        click.echo(f"Frequency: {schedule.recurrence.frequency.value}")
+        click.echo(f"RRULE: {schedule.recurrence.rrule}")
         click.echo(f"Period: {start} to {end}")
         click.echo(f"\nExpected occurrences ({len(occurrences)}):")
 
@@ -321,23 +321,8 @@ def show(  # noqa: PLR0912, PLR0915
         status = "enabled" if schedule.enabled else "disabled"
         click.echo(f"Schedule: {schedule.id}")
         click.echo(f"Status: {status}")
-        click.echo(f"Frequency: {schedule.recurrence.frequency.value}")
-
-        # Show recurrence details
         rule = schedule.recurrence
-        if rule.frequency.value == "WEEKLY" and rule.day_of_week:
-            click.echo(f"Day: {rule.day_of_week.value}")
-            if rule.interval and rule.interval > 1:
-                click.echo(f"Interval: Every {rule.interval} weeks")
-        elif rule.frequency.value == "MONTHLY" and rule.day_of_month:
-            click.echo(f"Day of month: {rule.day_of_month}")
-        elif rule.frequency.value == "YEARLY" and rule.month:
-            click.echo(f"Month: {rule.month}")
-            if rule.day_of_month:
-                click.echo(f"Day: {rule.day_of_month}")
-        elif rule.frequency.value == "BI_MONTHLY" and rule.days_of_month:
-            click.echo(f"Days: {rule.days_of_month}")
-
+        click.echo(f"RRULE: {rule.rrule}")
         click.echo(f"Start date: {rule.start_date}")
         if rule.end_date:
             click.echo(f"End date: {rule.end_date}")
@@ -553,10 +538,15 @@ def amortize(  # noqa: PLR0912, PLR0915, PLR0913
             if schedule.amortization.payment_day_of_month:
                 # Create a temporary schedule with payment_day_of_month as the recurrence day
                 # This ensures the recurrence engine generates dates on actual payment dates
+                import re  # noqa: PLC0415
+
                 amort_schedule = deepcopy(schedule)
-                amort_schedule.recurrence.day_of_month = (
-                    schedule.amortization.payment_day_of_month
+                new_rrule = re.sub(
+                    r"BYMONTHDAY=[-\d,]+",
+                    f"BYMONTHDAY={schedule.amortization.payment_day_of_month}",
+                    amort_schedule.recurrence.rrule,
                 )
+                amort_schedule.recurrence.rrule = new_rrule
                 occurrences = generate_schedule_occurrences(
                     amort_schedule, engine, forecast_start, forecast_end
                 )
@@ -1200,6 +1190,116 @@ def detect(  # noqa: PLR0912, PLR0915, PLR0913
 
 @main.command()
 @click.argument("path", type=click.Path(), required=False, default="schedules")
+@click.option(
+    "--dry-run", is_flag=True, help="Show what would change without writing files."
+)
+def migrate(path: str, dry_run: bool):
+    """Migrate schedule files from legacy format to RRULE recurrence.
+
+    Rewrites any schedule YAML files that use the old frequency/day_of_month
+    format to the new rrule: FREQ=... format.  Comments in migrated files are
+    preserved.  Files already using the new format are skipped.
+    """
+    import re  # noqa: PLC0415
+
+    from beanschedule.schema import _build_rrule_from_legacy  # noqa: PLC0415
+
+    schedules_path = Path(path)
+    if not schedules_path.exists():
+        click.echo(f"Error: path does not exist: {schedules_path}", err=True)
+        sys.exit(1)
+
+    yaml_files = (
+        sorted(schedules_path.glob("*.yaml"))
+        if schedules_path.is_dir()
+        else [schedules_path]
+    )
+    yaml_files = [f for f in yaml_files if f.name != constants.CONFIG_FILENAME]
+
+    migrated = 0
+    skipped = 0
+
+    for yaml_file in yaml_files:
+        content = yaml_file.read_text()
+
+        # Skip files already using new format
+        if re.search(r"^recurrence:\n\s+rrule:", content, re.MULTILINE):
+            skipped += 1
+            continue
+
+        # Check for old-format recurrence block
+        block_match = re.search(
+            r"^(recurrence:\n(?:[ \t]+\S[^\n]*\n)+)", content, re.MULTILINE
+        )
+        if not block_match or "frequency:" not in block_match.group(1):
+            skipped += 1
+            continue
+
+        # Parse fields from the old recurrence block
+        block_text = block_match.group(1)
+        fields: dict = {}
+        for line in block_text.splitlines()[1:]:
+            stripped = line.strip()
+            if ":" in stripped:
+                key, _, val = stripped.partition(":")
+                raw_val = val.strip()
+                if raw_val in ("null", "~", ""):
+                    fields[key.strip()] = None
+                else:
+                    try:
+                        fields[key.strip()] = int(raw_val)
+                    except ValueError:
+                        try:
+                            fields[key.strip()] = float(raw_val)
+                        except ValueError:
+                            if raw_val.startswith("[") and raw_val.endswith("]"):
+                                inner = raw_val[1:-1]
+                                fields[key.strip()] = [
+                                    int(x.strip())
+                                    for x in inner.split(",")
+                                    if x.strip()
+                                ]
+                            else:
+                                fields[key.strip()] = raw_val
+
+        try:
+            rrule = _build_rrule_from_legacy(fields)
+        except ValueError as e:
+            click.echo(f"  Skipping {yaml_file.name}: {e}", err=True)
+            skipped += 1
+            continue
+
+        start_date = fields.get("start_date")
+        end_date = fields.get("end_date")
+
+        new_block = f"recurrence:\n  rrule: {rrule}\n  start_date: {start_date}\n"
+        if end_date:
+            new_block += f"  end_date: {end_date}\n"
+
+        new_content = (
+            content[: block_match.start()] + new_block + content[block_match.end() :]
+        )
+
+        if dry_run:
+            click.echo(f"Would migrate: {yaml_file.name}  ({rrule})")
+        else:
+            yaml_file.write_text(new_content)
+            click.echo(f"Migrated: {yaml_file.name}  ({rrule})")
+
+        migrated += 1
+
+    if dry_run:
+        click.echo(
+            f"\nDry run: {migrated} file(s) would be migrated, {skipped} already up to date."
+        )
+    else:
+        click.echo(
+            f"\nDone: {migrated} file(s) migrated, {skipped} already up to date."
+        )
+
+
+@main.command()
+@click.argument("path", type=click.Path(), required=False, default="schedules")
 def init(path: str):
     """Initialize a new schedules directory with example files.
 
@@ -1249,8 +1349,7 @@ match:
   amount_tolerance: 0.00
   date_window_days: 2
 recurrence:
-  frequency: MONTHLY
-  day_of_month: 1
+  rrule: FREQ=MONTHLY;BYMONTHDAY=1
   start_date: 2024-01-01
 transaction:
   payee: Property Manager

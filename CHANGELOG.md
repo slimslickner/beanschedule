@@ -7,6 +7,49 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.6.0]
+
+### Changed
+
+- **Recurrence rules now use RRULE format (RFC 5545)** — The `recurrence` block in schedule YAML files now uses a single `rrule` string instead of discrete `frequency`, `day_of_month`, `day_of_week`, etc. fields. Examples:
+
+  ```yaml
+  # Before
+  recurrence:
+    frequency: MONTHLY
+    start_date: 2024-01-15
+    day_of_month: 15
+
+  # After
+  recurrence:
+    rrule: FREQ=MONTHLY;BYMONTHDAY=15
+    start_date: 2024-01-15
+  ```
+
+  Common patterns:
+  - Monthly on day 15: `FREQ=MONTHLY;BYMONTHDAY=15`
+  - Biweekly on Friday: `FREQ=WEEKLY;INTERVAL=2;BYDAY=FR`
+  - Quarterly on 1st: `FREQ=MONTHLY;INTERVAL=3;BYMONTHDAY=1`
+  - Yearly (Sep 15): `FREQ=YEARLY;BYMONTH=9;BYMONTHDAY=15`
+  - Last day of month: `FREQ=MONTHLY;BYMONTHDAY=-1`
+  - 2nd Tuesday: `FREQ=MONTHLY;BYDAY=+2TU`
+  - Multiple days (5th & 20th): `FREQ=MONTHLY;BYMONTHDAY=5,20`
+
+  **Old format files continue to load without changes** — the loader migrates them transparently at parse time.
+
+### Added
+
+- **`beanschedule migrate [path]`** — Rewrites schedule YAML files from the old `frequency`/`day_of_month` format to `rrule` in-place. Use `--dry-run` to preview changes without writing.
+
+  ```bash
+  beanschedule migrate schedules/           # migrate all files
+  beanschedule migrate --dry-run schedules/ # preview only
+  ```
+
+### Removed
+
+- `RecurrenceRule` fields `frequency`, `day_of_month`, `month`, `day_of_week`, `interval`, `days_of_month`, `interval_months`, `nth_occurrence` replaced by single `rrule` string. The `FrequencyType` and `DayOfWeek` enums are retained for internal detector use.
+
 ## [1.5.1]
 
 ### Added

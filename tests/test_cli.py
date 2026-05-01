@@ -130,7 +130,7 @@ class TestListCommand:
         )
         assert result.exit_code == 0
         lines = result.output.strip().split("\n")
-        assert lines[0] == "ID,Enabled,Frequency,Payee,Account,Amount"
+        assert lines[0] == "ID,Enabled,RRULE,Payee,Account,Amount"
         assert "rent-payment" in result.output
 
     def test_list_csv_enabled_only(self, cli_runner, schedules_directory):
@@ -195,7 +195,7 @@ class TestGenerateCommand:
                 )
         assert result.exit_code == 0
         assert "Schedule: rent-payment" in result.output
-        assert "Frequency: MONTHLY" in result.output
+        assert "RRULE:" in result.output
         assert "2024-01-06" in result.output
         assert "2024-02-06" in result.output
         assert "2024-03-06" in result.output
@@ -216,7 +216,7 @@ class TestGenerateCommand:
         )
         assert result.exit_code == 0
         assert "Schedule: paycheck-biweekly" in result.output
-        assert "Frequency: WEEKLY" in result.output
+        assert "RRULE:" in result.output
         # Should have some occurrences
         assert "Expected occurrences" in result.output
 
@@ -353,6 +353,132 @@ class TestInitCommand:
         assert "Edit the example schedule file" in result.output
         assert "Validate your schedules" in result.output
         assert "Integrate with beangulp" in result.output
+
+
+class TestMigrateCommand:
+    """Tests for the migrate command."""
+
+    _OLD_YAML = """\
+id: old-schedule
+enabled: true
+match:
+  account: Assets:Checking
+  payee_pattern: "Test"
+  amount: -100.00
+  amount_tolerance: 5.00
+  date_window_days: 3
+recurrence:
+  frequency: MONTHLY
+  start_date: 2024-01-15
+  end_date: null
+  day_of_month: 15
+  month: null
+  day_of_week: null
+  interval: 1
+  days_of_month: null
+  interval_months: null
+transaction:
+  payee: Test
+  narration: Test payment
+  metadata:
+    schedule_id: old-schedule
+missing_transaction:
+  create_placeholder: true
+  flag: '!'
+  narration_prefix: '[MISSING]'
+"""
+
+    def test_migrate_rewrites_legacy_file(self, cli_runner, tmp_path):
+        """Migrate rewrites old-format recurrence to rrule."""
+        f = tmp_path / "old-schedule.yaml"
+        f.write_text(self._OLD_YAML)
+
+        result = cli_runner.invoke(main, ["migrate", str(tmp_path)])
+        assert result.exit_code == 0
+        assert "Migrated: old-schedule.yaml" in result.output
+        assert "FREQ=MONTHLY;BYMONTHDAY=15" in result.output
+
+        new_content = f.read_text()
+        assert "rrule: FREQ=MONTHLY;BYMONTHDAY=15" in new_content
+        assert "frequency:" not in new_content
+
+    def test_migrate_dry_run(self, cli_runner, tmp_path):
+        """Dry run shows changes without writing."""
+        f = tmp_path / "old-schedule.yaml"
+        f.write_text(self._OLD_YAML)
+        original = f.read_text()
+
+        result = cli_runner.invoke(main, ["migrate", "--dry-run", str(tmp_path)])
+        assert result.exit_code == 0
+        assert "Would migrate: old-schedule.yaml" in result.output
+        assert f.read_text() == original  # unchanged
+
+    def test_migrate_skips_new_format(self, cli_runner, tmp_path):
+        """Files already using rrule format are skipped."""
+        new_yaml = """\
+id: new-schedule
+enabled: true
+match:
+  account: Assets:Checking
+  payee_pattern: "Test"
+  amount: -100.00
+  date_window_days: 3
+recurrence:
+  rrule: FREQ=MONTHLY;BYMONTHDAY=15
+  start_date: 2024-01-15
+transaction:
+  payee: Test
+  narration: Test
+  metadata:
+    schedule_id: new-schedule
+missing_transaction:
+  create_placeholder: true
+  flag: '!'
+  narration_prefix: '[MISSING]'
+"""
+        f = tmp_path / "new-schedule.yaml"
+        f.write_text(new_yaml)
+
+        result = cli_runner.invoke(main, ["migrate", str(tmp_path)])
+        assert result.exit_code == 0
+        assert "0 file(s) migrated" in result.output
+
+    def test_migrate_weekly_biweekly(self, cli_runner, tmp_path):
+        """Weekly biweekly schedule migrates correctly."""
+        weekly_yaml = """\
+id: paycheck
+enabled: true
+match:
+  account: Assets:Checking
+  payee_pattern: "Employer"
+  amount: 1000.00
+  date_window_days: 3
+recurrence:
+  frequency: WEEKLY
+  start_date: 2024-01-05
+  end_date: null
+  day_of_month: null
+  day_of_week: FRI
+  interval: 2
+  days_of_month: null
+  interval_months: null
+transaction:
+  payee: Employer
+  narration: Paycheck
+  metadata:
+    schedule_id: paycheck
+missing_transaction:
+  create_placeholder: true
+  flag: '!'
+  narration_prefix: '[MISSING]'
+"""
+        f = tmp_path / "paycheck.yaml"
+        f.write_text(weekly_yaml)
+
+        result = cli_runner.invoke(main, ["migrate", str(tmp_path)])
+        assert result.exit_code == 0
+        assert "FREQ=WEEKLY;INTERVAL=2;BYDAY=FR" in result.output
+        assert "rrule: FREQ=WEEKLY;INTERVAL=2;BYDAY=FR" in f.read_text()
 
 
 class TestVersionFlag:

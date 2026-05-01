@@ -358,13 +358,13 @@ class TestExamplesIntegration:
 
     def test_example_schedules_cover_different_frequencies(self, example_schedule_file):
         """Verify example schedules demonstrate different recurrence patterns."""
-        frequencies = set()
+        rrules = set()
         for schedule in example_schedule_file.schedules:
-            frequencies.add(schedule.recurrence.frequency.value)
+            rrules.add(schedule.recurrence.rrule)
 
-        # Should have multiple frequency types
-        assert len(frequencies) >= 3, (
-            f"should demonstrate multiple frequencies, got: {frequencies}"
+        # Should have multiple distinct rrule patterns
+        assert len(rrules) >= 3, (
+            f"should demonstrate multiple recurrence patterns, got: {rrules}"
         )
 
     def test_example_schedules_cover_different_matching_strategies(
