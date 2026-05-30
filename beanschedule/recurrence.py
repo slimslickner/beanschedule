@@ -26,10 +26,15 @@ class RecurrenceEngine:
             return []
 
         try:
-            dtstart = datetime.combine(effective_start, datetime.min.time())
+            # Anchor dtstart to recurrence.start_date so interval-based rules
+            # (FREQ=WEEKLY;INTERVAL=2, FREQ=MONTHLY;INTERVAL=4, etc.) generate a
+            # consistent date sequence regardless of which query window is used.
+            # between() then filters to the effective_start/effective_end window.
+            dtstart = datetime.combine(recurrence.start_date, datetime.min.time())
+            after = datetime.combine(effective_start, datetime.min.time())
             until = datetime.combine(effective_end, datetime.max.time())
             rule = rrulestr(recurrence.rrule, dtstart=dtstart, ignoretz=True)
-            return sorted({d.date() for d in rule.between(dtstart, until, inc=True)})
+            return sorted({d.date() for d in rule.between(after, until, inc=True)})
         except Exception as e:
             logger.error(
                 "Error generating recurrence for schedule %s: %s", schedule.id, e

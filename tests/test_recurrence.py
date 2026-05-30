@@ -199,6 +199,48 @@ class TestIntervalRecurrence:
         assert date(2024, 5, 10) in dates
 
 
+class TestIntervalStability:
+    """Interval-based rules must produce consistent dates regardless of query window.
+
+    Bug: when dtstart was set to effective_start (clamped to query window), interval-
+    based rules like FREQ=WEEKLY;INTERVAL=2 or FREQ=MONTHLY;INTERVAL=4 generated
+    different date sequences depending on which window you queried, breaking skip
+    marker matching and --select mode.
+    """
+
+    def test_biweekly_dates_stable_across_query_windows(self, sample_schedule):
+        """Biweekly schedule should give same dates whether queried from start or mid-run."""
+        engine = RecurrenceEngine()
+        # 2024-01-03 is a Wednesday
+        schedule = sample_schedule(
+            rrule="FREQ=WEEKLY;INTERVAL=2", start_date=date(2024, 1, 3)
+        )
+        # Full range: captures the correct anchor-based sequence
+        all_dates = engine.generate(schedule, date(2024, 1, 1), date(2026, 3, 31))
+        # Narrow window: should be a strict subset of all_dates
+        window_dates = engine.generate(schedule, date(2026, 1, 1), date(2026, 3, 31))
+        assert all(d in all_dates for d in window_dates)
+        # Verify specific dates anchored to 2024-01-03 (biweekly Wednesdays)
+        assert date(2026, 1, 14) in window_dates  # Wed
+        assert date(2026, 1, 28) in window_dates  # Wed
+        assert date(2026, 2, 11) in window_dates  # Wed
+
+    def test_every_4_months_series_preserved_across_years(self, sample_schedule):
+        """Every-4-month schedule from Feb should stay in Feb/Jun/Oct series in later years."""
+        engine = RecurrenceEngine()
+        # Start Feb 2024 → series: Feb, Jun, Oct, Feb, Jun, Oct...
+        schedule = sample_schedule(
+            rrule="FREQ=MONTHLY;INTERVAL=4;BYMONTHDAY=15", start_date=date(2024, 2, 1)
+        )
+        dates = engine.generate(schedule, date(2026, 1, 1), date(2026, 12, 31))
+        # Must be Feb/Jun/Oct, not Jan/May/Sep (which the bug produced)
+        assert date(2026, 2, 15) in dates
+        assert date(2026, 6, 15) in dates
+        assert date(2026, 10, 15) in dates
+        assert date(2026, 1, 15) not in dates
+        assert date(2026, 5, 15) not in dates
+
+
 class TestNthWeekdayRecurrence:
     """Tests for Nth weekday of month."""
 

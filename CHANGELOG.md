@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.6.1] - 2026-05-30
+
+### Fixed
+
+- **Interval-based RRULE schedules now generate consistent dates regardless of query window** — Rules with `INTERVAL > 1` (e.g. `FREQ=WEEKLY;INTERVAL=2`, `FREQ=MONTHLY;INTERVAL=4`) previously anchored date generation to the query window start instead of `recurrence.start_date`. This caused the generated date sequence to shift each time a different window was queried, so skip markers and matched ledger transactions no longer aligned with expected dates in `skip --select` mode.
+
 ## [1.6.0]
 
 ### Changed
