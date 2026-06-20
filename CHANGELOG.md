@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Date window now enforced as a hard constraint** — Previously, a transaction far outside a schedule's `date_window_days` could still match via high payee+amount scores (payee 40% + amount 40% = 80% even with date score 0%). Now transactions beyond the window are rejected before scoring, preventing cross-month false matches.
+- **Already-matched occurrences excluded from subsequent matches** — When multiple imported transactions could match the same schedule occurrence, the first match now claims the occurrence and later transactions can no longer be incorrectly enriched against it.
+
 ## [1.6.1] - 2026-05-30
 
 ### Fixed

@@ -57,6 +57,13 @@ class TransactionMatcher:
         if not self._account_matches(transaction, schedule):
             return 0.0
 
+        # Hard gate: date must be within window (outside window → no match)
+        window_days = (
+            schedule.match.date_window_days or self.config.default_date_window_days
+        )
+        if abs((transaction.date - expected_date).days) > window_days:
+            return 0.0
+
         # Calculate component scores
         payee_score = self._payee_score(transaction, schedule)
         amount_score = self._amount_score(transaction, schedule)
