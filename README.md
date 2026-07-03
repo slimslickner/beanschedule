@@ -27,8 +27,7 @@ match:
   payee_pattern: "PROPERTY MGR|Property Manager"
   amount: -1500.00
 recurrence:
-  frequency: MONTHLY
-  day_of_month: 1
+  rrule: "FREQ=MONTHLY;BYMONTHDAY=1"
   start_date: 2024-01-01
 transaction:
   payee: Property Manager

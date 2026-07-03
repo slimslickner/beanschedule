@@ -259,7 +259,9 @@ def schedule_hook(
                     )
                     continue
 
-                match_result = _match_transaction(entry, expected_occurrences, matcher)
+                match_result = _match_transaction(
+                    entry, expected_occurrences, matcher, matched_occurrences
+                )
 
                 if match_result:
                     schedule, expected_date, score = match_result
@@ -640,6 +642,7 @@ def _match_transaction(
     transaction: data.Transaction,
     expected_occurrences: dict[str, list[tuple[Schedule, date]]],
     matcher: TransactionMatcher,
+    matched_occurrences: set[tuple[str, date]] | None = None,
 ) -> tuple[Schedule, date, float] | None:
     """
     Match transaction to best matching schedule.
@@ -660,8 +663,20 @@ def _match_transaction(
     # Get main account from first posting
     main_account = transaction.postings[0].account
 
-    # Get candidates for this account
-    candidates = expected_occurrences.get(main_account, [])
+    # Get candidates for this account, excluding already-matched occurrences
+    all_candidates = expected_occurrences.get(main_account, [])
+    if not all_candidates:
+        return None
+
+    candidates = (
+        [
+            (sched, exp_date)
+            for sched, exp_date in all_candidates
+            if (sched.id, exp_date) not in matched_occurrences
+        ]
+        if matched_occurrences is not None
+        else all_candidates
+    )
     if not candidates:
         return None
 

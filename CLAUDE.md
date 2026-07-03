@@ -513,13 +513,16 @@ uv run pytest tests/
    - Don't create helpers for one-time operations
    - Keep solutions simple and focused
 
-## v1.4.0 Status (Current)
+## v1.6.1 Status (Current)
 
-✅ **Completed in v1.4.0**:
+✅ **Completed in v1.6.x**:
 
-- Skip markers for intentionally skipped scheduled transactions
-- Configurable forecast settings (forecast_months, min_forecast_date, include_past_dates)
-- Pending transactions feature (one-time staging, auto-matching, auto-removal)
-- Comprehensive logging for pending transaction processing
+- Recurrence rules replaced with RFC 5545 RRULE strings (`recurrence.rrule`)
+- `beanschedule migrate` command for in-place YAML migration
+- RRULE interval-based sequences anchor to `recurrence.start_date` for stable date generation
+- Date window enforced as hard constraint in matching (transactions outside window never match)
+- Already-matched occurrences excluded from candidates for subsequent imported transactions
+- Loan amortization with automatic principal/interest splits
+- Pattern auto-detection from existing ledgers
 
-See ROADMAP.md for full roadmap and v1.5.0+ planned features.
+See ROADMAP.md for full roadmap and future plans.
