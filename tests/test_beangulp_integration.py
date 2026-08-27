@@ -4,11 +4,13 @@ import os
 from datetime import date
 from decimal import Decimal
 from pathlib import Path
+from unittest.mock import MagicMock
 
 import pytest
 import yaml
 from beancount import loader as beancount_loader
 from beancount.core import amount, data
+from beangulp.importer import Importer
 
 from beanschedule import schedule_hook
 from beanschedule.loader import load_schedules_from_directory
@@ -133,7 +135,12 @@ class TestPerScheduleIntegration:
 
                 # Run hook: synthetic imports + real ledger
                 entries_list = [
-                    ("synthetic.csv", [synthetic_txn], account, "SyntheticImporter")
+                    (
+                        "synthetic.csv",
+                        [synthetic_txn],
+                        account,
+                        MagicMock(spec=Importer),
+                    )
                 ]
                 result = schedule_hook(
                     entries_list, existing_entries=example_ledger_entries
@@ -166,7 +173,9 @@ class TestPerScheduleIntegration:
             )
 
             # Run hook with all schedules and real ledger
-            entries_list = [("test.csv", [], "Assets:Checking", "TestImporter")]
+            entries_list = [
+                ("test.csv", [], "Assets:Checking", MagicMock(spec=Importer))
+            ]
 
             result = schedule_hook(
                 entries_list, existing_entries=example_ledger_entries
@@ -283,7 +292,7 @@ class TestExamplesIntegration:
         try:
             # No imported entries, just checking against existing ledger
             entries_list = [
-                ("example.beancount", [], "Assets:Checking", "ExampleImporter")
+                ("example.beancount", [], "Assets:Checking", MagicMock(spec=Importer))
             ]
 
             result = schedule_hook(
@@ -305,7 +314,7 @@ class TestExamplesIntegration:
 
         try:
             entries_list = [
-                ("example.beancount", [], "Assets:Checking", "ExampleImporter")
+                ("example.beancount", [], "Assets:Checking", MagicMock(spec=Importer))
             ]
             result = schedule_hook(
                 entries_list, existing_entries=example_ledger_entries
@@ -398,7 +407,7 @@ class TestExamplesIntegration:
 
         try:
             entries_list = [
-                ("example.beancount", [], "Assets:Checking", "ExampleImporter")
+                ("example.beancount", [], "Assets:Checking", MagicMock(spec=Importer))
             ]
 
             start = time.time()

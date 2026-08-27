@@ -2,9 +2,11 @@
 
 from datetime import date
 from decimal import Decimal
+from typing import cast
 from unittest.mock import MagicMock, patch
 
 from beancount.core import amount, data
+from beangulp.importer import Importer
 
 from beanschedule.hook import schedule_hook
 from beanschedule.schema import ScheduleFile
@@ -23,12 +25,12 @@ class TestScheduleHook:
         )
 
         extracted_entries = [
-            ("test.csv", [txn], "Assets:Bank:Checking", None),
+            ("test.csv", [txn], "Assets:Bank:Checking", MagicMock(spec=Importer)),
         ]
 
         # Mock schedule loader to return None
         with patch("beanschedule.hook.load_schedules", return_value=None):
-            result = schedule_hook(extracted_entries)
+            result = schedule_hook(extracted_entries, existing_entries=[])
 
         # Should return unchanged
         assert result == extracted_entries
@@ -48,13 +50,13 @@ class TestScheduleHook:
         schedule = sample_schedule(enabled=False)
 
         extracted_entries = [
-            ("test.csv", [txn], "Assets:Bank:Checking", None),
+            ("test.csv", [txn], "Assets:Bank:Checking", MagicMock(spec=Importer)),
         ]
 
         schedule_file = ScheduleFile(schedules=[schedule], config=global_config)
 
         with patch("beanschedule.hook.load_schedules", return_value=schedule_file):
-            result = schedule_hook(extracted_entries)
+            result = schedule_hook(extracted_entries, existing_entries=[])
 
         # Should return unchanged (no enabled schedules)
         assert result == extracted_entries
@@ -67,7 +69,7 @@ class TestScheduleHook:
         extracted_entries = []
 
         with patch("beanschedule.hook.load_schedules", return_value=schedule_file):
-            result = schedule_hook(extracted_entries)
+            result = schedule_hook(extracted_entries, existing_entries=[])
 
         # Should return empty list
         assert result == []
@@ -87,11 +89,16 @@ class TestScheduleHook:
         )
 
         extracted_entries = [
-            ("test.csv", [open_entry], "Assets:Bank:Checking", None),
+            (
+                "test.csv",
+                [open_entry],
+                "Assets:Bank:Checking",
+                MagicMock(spec=Importer),
+            ),
         ]
 
         with patch("beanschedule.hook.load_schedules", return_value=schedule_file):
-            result = schedule_hook(extracted_entries)
+            result = schedule_hook(extracted_entries, existing_entries=[])
 
         # Should return with Open directive unchanged
         assert len(result) == 1
@@ -118,13 +125,13 @@ class TestHookEntryFormats:
         )
 
         extracted_entries = [
-            ("checking.csv", [txn], "Assets:Bank:Checking", MagicMock()),
+            ("checking.csv", [txn], "Assets:Bank:Checking", MagicMock(spec=Importer)),
         ]
 
         schedule_file = ScheduleFile(schedules=[schedule], config=global_config)
 
         with patch("beanschedule.hook.load_schedules", return_value=schedule_file):
-            result = schedule_hook(extracted_entries)
+            result = schedule_hook(extracted_entries, existing_entries=[])
 
         # Should have original entry (4-tuple format maintained)
         assert len(result) == 1
@@ -152,16 +159,16 @@ class TestTransactionMatching:
         )
 
         extracted_entries = [
-            ("checking.csv", [txn], "Assets:Bank:Checking", None),
+            ("checking.csv", [txn], "Assets:Bank:Checking", MagicMock(spec=Importer)),
         ]
 
         schedule_file = ScheduleFile(schedules=[schedule], config=global_config)
 
         with patch("beanschedule.hook.load_schedules", return_value=schedule_file):
-            result = schedule_hook(extracted_entries)
+            result = schedule_hook(extracted_entries, existing_entries=[])
 
         # First entry should have matched transaction with metadata
-        matched_txn = result[0][1][0]
+        matched_txn = cast(data.Transaction, result[0][1][0])
         assert "schedule_id" in matched_txn.meta
         assert matched_txn.meta["schedule_id"] == schedule.id
         assert "schedule_matched_date" in matched_txn.meta
@@ -184,16 +191,16 @@ class TestTransactionMatching:
         )
 
         extracted_entries = [
-            ("checking.csv", [txn], "Assets:Bank:Checking", None),
+            ("checking.csv", [txn], "Assets:Bank:Checking", MagicMock(spec=Importer)),
         ]
 
         schedule_file = ScheduleFile(schedules=[schedule], config=global_config)
 
         with patch("beanschedule.hook.load_schedules", return_value=schedule_file):
-            result = schedule_hook(extracted_entries)
+            result = schedule_hook(extracted_entries, existing_entries=[])
 
         # Transaction should be unchanged
-        unmatched_txn = result[0][1][0]
+        unmatched_txn = cast(data.Transaction, result[0][1][0])
         assert "schedule_id" not in unmatched_txn.meta
 
     def test_hook_links_transaction_with_existing_schedule_id(
@@ -219,16 +226,16 @@ class TestTransactionMatching:
         )
 
         extracted_entries = [
-            ("checking.csv", [txn], "Assets:Bank:Checking", None),
+            ("checking.csv", [txn], "Assets:Bank:Checking", MagicMock(spec=Importer)),
         ]
 
         schedule_file = ScheduleFile(schedules=[schedule], config=global_config)
 
         with patch("beanschedule.hook.load_schedules", return_value=schedule_file):
-            result = schedule_hook(extracted_entries)
+            result = schedule_hook(extracted_entries, existing_entries=[])
 
         # Transaction should be matched to the rent schedule despite payee mismatch
-        matched_txn = result[0][1][0]
+        matched_txn = cast(data.Transaction, result[0][1][0])
         assert matched_txn.meta["schedule_id"] == "rent"
         # Confidence should be 1.0 (perfect) since it used pre-existing schedule_id
         assert matched_txn.meta["schedule_confidence"] == "1.00"
@@ -255,16 +262,16 @@ class TestTransactionMatching:
         )
 
         extracted_entries = [
-            ("checking.csv", [txn], "Assets:Bank:Checking", None),
+            ("checking.csv", [txn], "Assets:Bank:Checking", MagicMock(spec=Importer)),
         ]
 
         schedule_file = ScheduleFile(schedules=[schedule], config=global_config)
 
         with patch("beanschedule.hook.load_schedules", return_value=schedule_file):
-            result = schedule_hook(extracted_entries)
+            result = schedule_hook(extracted_entries, existing_entries=[])
 
         # Transaction should fall back to fuzzy matching and match rent schedule
-        matched_txn = result[0][1][0]
+        matched_txn = cast(data.Transaction, result[0][1][0])
         assert matched_txn.meta["schedule_id"] == "rent"
         # Confidence should be less than 1.0 (fuzzy match, not perfect)
         confidence = float(matched_txn.meta["schedule_confidence"])
@@ -292,15 +299,15 @@ class TestTransactionEnrichment:
         )
 
         extracted_entries = [
-            ("checking.csv", [txn], "Assets:Bank:Checking", None),
+            ("checking.csv", [txn], "Assets:Bank:Checking", MagicMock(spec=Importer)),
         ]
 
         schedule_file = ScheduleFile(schedules=[schedule], config=global_config)
 
         with patch("beanschedule.hook.load_schedules", return_value=schedule_file):
-            result = schedule_hook(extracted_entries)
+            result = schedule_hook(extracted_entries, existing_entries=[])
 
-        matched_txn = result[0][1][0]
+        matched_txn = cast(data.Transaction, result[0][1][0])
         assert matched_txn.meta["schedule_id"] == "rent"
         assert "schedule_matched_date" in matched_txn.meta
         assert matched_txn.meta["schedule_matched_date"] == "2024-01-15"
@@ -325,15 +332,15 @@ class TestTransactionEnrichment:
         schedule.transaction.tags = ["schedule-tag"]
 
         extracted_entries = [
-            ("checking.csv", [txn], "Assets:Bank:Checking", None),
+            ("checking.csv", [txn], "Assets:Bank:Checking", MagicMock(spec=Importer)),
         ]
 
         schedule_file = ScheduleFile(schedules=[schedule], config=global_config)
 
         with patch("beanschedule.hook.load_schedules", return_value=schedule_file):
-            result = schedule_hook(extracted_entries)
+            result = schedule_hook(extracted_entries, existing_entries=[])
 
-        matched_txn = result[0][1][0]
+        matched_txn = cast(data.Transaction, result[0][1][0])
         # Should have both tags
         assert "original" in matched_txn.tags
         assert "schedule-tag" in matched_txn.tags
@@ -356,15 +363,15 @@ class TestTransactionEnrichment:
         schedule.transaction.payee = "Full Landlord Name"
 
         extracted_entries = [
-            ("checking.csv", [txn], "Assets:Bank:Checking", None),
+            ("checking.csv", [txn], "Assets:Bank:Checking", MagicMock(spec=Importer)),
         ]
 
         schedule_file = ScheduleFile(schedules=[schedule], config=global_config)
 
         with patch("beanschedule.hook.load_schedules", return_value=schedule_file):
-            result = schedule_hook(extracted_entries)
+            result = schedule_hook(extracted_entries, existing_entries=[])
 
-        matched_txn = result[0][1][0]
+        matched_txn = cast(data.Transaction, result[0][1][0])
         assert matched_txn.payee == "Full Landlord Name"
 
     def test_enrichment_overrides_narration(
@@ -385,15 +392,15 @@ class TestTransactionEnrichment:
         schedule.transaction.narration = "Monthly Rent Payment"
 
         extracted_entries = [
-            ("checking.csv", [txn], "Assets:Bank:Checking", None),
+            ("checking.csv", [txn], "Assets:Bank:Checking", MagicMock(spec=Importer)),
         ]
 
         schedule_file = ScheduleFile(schedules=[schedule], config=global_config)
 
         with patch("beanschedule.hook.load_schedules", return_value=schedule_file):
-            result = schedule_hook(extracted_entries)
+            result = schedule_hook(extracted_entries, existing_entries=[])
 
-        matched_txn = result[0][1][0]
+        matched_txn = cast(data.Transaction, result[0][1][0])
         assert matched_txn.narration == "Monthly Rent Payment"
 
 
@@ -420,7 +427,7 @@ class TestPlaceholderCreation:
         schedule.missing_transaction.create_placeholder = True
 
         extracted_entries = [
-            ("checking.csv", [txn], "Assets:Bank:Checking", None),
+            ("checking.csv", [txn], "Assets:Bank:Checking", MagicMock(spec=Importer)),
         ]
 
         schedule_file = ScheduleFile(
@@ -428,14 +435,14 @@ class TestPlaceholderCreation:
         )
 
         with patch("beanschedule.hook.load_schedules", return_value=schedule_file):
-            result = schedule_hook(extracted_entries)
+            result = schedule_hook(extracted_entries, existing_entries=[])
 
         # Should have original entry + schedules entry with placeholder
         assert len(result) == 2
         placeholders = result[1][1]
         assert len(placeholders) > 0
 
-        placeholder = placeholders[0]
+        placeholder = cast(data.Transaction, placeholders[0])
         assert placeholder.flag == "!"
         assert placeholder.meta.get("schedule_placeholder") == "true"
 
@@ -456,13 +463,13 @@ class TestPlaceholderCreation:
         )
 
         extracted_entries = [
-            ("checking.csv", [txn], "Assets:Bank:Checking", None),
+            ("checking.csv", [txn], "Assets:Bank:Checking", MagicMock(spec=Importer)),
         ]
 
         schedule_file = ScheduleFile(schedules=[schedule], config=global_config)
 
         with patch("beanschedule.hook.load_schedules", return_value=schedule_file):
-            result = schedule_hook(extracted_entries)
+            result = schedule_hook(extracted_entries, existing_entries=[])
 
         # Should have only original entry, no schedules entry
         assert len(result) == 1
@@ -497,14 +504,14 @@ class TestMultipleFiles:
         )
 
         extracted_entries = [
-            ("checking.csv", [txn1], "Assets:Bank:Checking", None),
-            ("savings.csv", [txn2], "Assets:Bank:Savings", None),
+            ("checking.csv", [txn1], "Assets:Bank:Checking", MagicMock(spec=Importer)),
+            ("savings.csv", [txn2], "Assets:Bank:Savings", MagicMock(spec=Importer)),
         ]
 
         schedule_file = ScheduleFile(schedules=[schedule1], config=global_config)
 
         with patch("beanschedule.hook.load_schedules", return_value=schedule_file):
-            result = schedule_hook(extracted_entries)
+            result = schedule_hook(extracted_entries, existing_entries=[])
 
         # Should have original 2 files
         assert len(result) == 2
@@ -542,20 +549,21 @@ class TestPostingReplacement:
         ]
 
         extracted_entries = [
-            ("checking.csv", [txn], "Assets:Bank:Checking", None),
+            ("checking.csv", [txn], "Assets:Bank:Checking", MagicMock(spec=Importer)),
         ]
 
         schedule_file = ScheduleFile(schedules=[schedule], config=global_config)
 
         with patch("beanschedule.hook.load_schedules", return_value=schedule_file):
-            result = schedule_hook(extracted_entries)
+            result = schedule_hook(extracted_entries, existing_entries=[])
 
-        matched_txn = result[0][1][0]
+        matched_txn = cast(data.Transaction, result[0][1][0])
         # Should have the schedule's postings
         assert len(matched_txn.postings) == 2
         assert matched_txn.postings[0].account == "Assets:Bank:Checking"
         assert matched_txn.postings[1].account == "Expenses:Housing:Rent"
         # First posting should have the imported amount
+        assert matched_txn.postings[0].units is not None
         assert matched_txn.postings[0].units.number == Decimal("-1500.00")
 
 
@@ -729,7 +737,12 @@ class TestLedgerTransactionMatching:
         )
 
         extracted_entries = [
-            ("checking.csv", [imported_txn], "Assets:Bank:Checking", None),
+            (
+                "checking.csv",
+                [imported_txn],
+                "Assets:Bank:Checking",
+                MagicMock(spec=Importer),
+            ),
         ]
 
         schedule_file = ScheduleFile(schedules=[schedule], config=global_config)
@@ -741,7 +754,7 @@ class TestLedgerTransactionMatching:
         # Result will have the modified imported transaction
         assert len(result) == 1
         # The imported transaction should be matched
-        matched_txn = result[0][1][0]
+        matched_txn = cast(data.Transaction, result[0][1][0])
         assert matched_txn.meta["schedule_id"] == "rent"
 
     def test_ledger_transaction_with_schedule_matched_date_outside_entry_window(
@@ -862,7 +875,12 @@ class TestAmortizationEnrichment:
         )
 
         extracted_entries = [
-            ("bank.csv", [imported_txn], "Assets:Bank:Checking", None),
+            (
+                "bank.csv",
+                [imported_txn],
+                "Assets:Bank:Checking",
+                MagicMock(spec=Importer),
+            ),
         ]
 
         schedule_file = ScheduleFile(schedules=[schedule], config=global_config)
@@ -871,7 +889,7 @@ class TestAmortizationEnrichment:
             result = schedule_hook(extracted_entries, existing_entries=[loan_init])
 
         # Find the enriched transaction
-        enriched_txn = result[0][1][0]
+        enriched_txn = cast(data.Transaction, result[0][1][0])
 
         # Verify amortization metadata is present
         assert "amortization_principal" in enriched_txn.meta
@@ -959,7 +977,12 @@ class TestAmortizationEnrichment:
         )
 
         extracted_entries = [
-            ("bank.csv", [imported_txn], "Assets:Bank:Checking", None),
+            (
+                "bank.csv",
+                [imported_txn],
+                "Assets:Bank:Checking",
+                MagicMock(spec=Importer),
+            ),
         ]
 
         schedule_file = ScheduleFile(schedules=[schedule], config=global_config)
@@ -967,7 +990,7 @@ class TestAmortizationEnrichment:
         with patch("beanschedule.hook.load_schedules", return_value=schedule_file):
             result = schedule_hook(extracted_entries, existing_entries=[loan_init])
 
-        enriched_txn = result[0][1][0]
+        enriched_txn = cast(data.Transaction, result[0][1][0])
 
         # Verify escrow posting has explicit amount
         escrow_posting = next(
@@ -979,6 +1002,7 @@ class TestAmortizationEnrichment:
             None,
         )
         assert escrow_posting is not None
+        assert escrow_posting.units is not None
         assert escrow_posting.units.number == Decimal("150")
 
         # Verify P/I postings still have computed amounts
@@ -989,8 +1013,10 @@ class TestAmortizationEnrichment:
             p for p in enriched_txn.postings if p.account == "Liabilities:Mortgage"
         )
 
-        assert interest_posting.units.number > Decimal("0")
-        assert principal_posting.units.number > Decimal("0")
+        assert interest_posting.units is not None
+        assert cast(Decimal, interest_posting.units.number) > Decimal("0")
+        assert principal_posting.units is not None
+        assert cast(Decimal, principal_posting.units.number) > Decimal("0")
 
     def test_no_amortization_unchanged(
         self, sample_transaction, sample_schedule, global_config
@@ -1012,15 +1038,20 @@ class TestAmortizationEnrichment:
         )
 
         extracted_entries = [
-            ("bank.csv", [imported_txn], "Assets:Bank:Checking", None),
+            (
+                "bank.csv",
+                [imported_txn],
+                "Assets:Bank:Checking",
+                MagicMock(spec=Importer),
+            ),
         ]
 
         schedule_file = ScheduleFile(schedules=[schedule], config=global_config)
 
         with patch("beanschedule.hook.load_schedules", return_value=schedule_file):
-            result = schedule_hook(extracted_entries)
+            result = schedule_hook(extracted_entries, existing_entries=[])
 
-        enriched_txn = result[0][1][0]
+        enriched_txn = cast(data.Transaction, result[0][1][0])
 
         # Should NOT have amortization metadata
         assert "amortization_principal" not in enriched_txn.meta
@@ -1062,18 +1093,21 @@ class TestMultiCurrencyPostings:
             Decimal("-3000.00"),
         )
 
-        extracted_entries = [("bank.csv", [txn], "Assets:Bank:Checking", None)]
+        extracted_entries = [
+            ("bank.csv", [txn], "Assets:Bank:Checking", MagicMock(spec=Importer))
+        ]
         schedule_file = ScheduleFile(schedules=[schedule], config=global_config)
 
         with patch("beanschedule.hook.load_schedules", return_value=schedule_file):
-            result = schedule_hook(extracted_entries)
+            result = schedule_hook(extracted_entries, existing_entries=[])
 
-        enriched = result[0][1][0]
+        enriched = cast(data.Transaction, result[0][1][0])
         vacation_posting = next(
             p for p in enriched.postings if p.account == "Income:Vacation"
         )
+        assert vacation_posting.units is not None
         assert vacation_posting.units.currency == "VACDAY"
-        assert vacation_posting.units.number == Decimal("8")
+        assert cast(Decimal, vacation_posting.units.number) == Decimal("8")
 
     def test_mixed_currency_paycheck_all_postings_correct(
         self, sample_transaction, sample_schedule, global_config
@@ -1115,31 +1149,47 @@ class TestMultiCurrencyPostings:
             currency="USD",
         )
 
-        extracted_entries = [("bank.csv", [txn], "Assets:Bank:Checking", None)]
+        extracted_entries = [
+            ("bank.csv", [txn], "Assets:Bank:Checking", MagicMock(spec=Importer))
+        ]
         schedule_file = ScheduleFile(schedules=[schedule], config=global_config)
 
         with patch("beanschedule.hook.load_schedules", return_value=schedule_file):
-            result = schedule_hook(extracted_entries)
+            result = schedule_hook(extracted_entries, existing_entries=[])
 
-        enriched = result[0][1][0]
+        enriched = cast(data.Transaction, result[0][1][0])
         by_account = {p.account: p for p in enriched.postings}
 
         # USD postings inherit the imported transaction's currency
+        assert by_account["Income:Salary"].units is not None
         assert by_account["Income:Salary"].units.currency == "USD"
-        assert by_account["Income:Salary"].units.number == Decimal("-4615.38")
+        assert cast(Decimal, by_account["Income:Salary"].units.number) == Decimal(
+            "-4615.38"
+        )
+        assert by_account["Expenses:Taxes:Federal"].units is not None
         assert by_account["Expenses:Taxes:Federal"].units.currency == "USD"
 
         # VACHR postings use their explicit currency override
+        assert by_account["Assets:Vacation"].units is not None
         assert by_account["Assets:Vacation"].units.currency == "VACHR"
-        assert by_account["Assets:Vacation"].units.number == Decimal("4.00")
+        assert cast(Decimal, by_account["Assets:Vacation"].units.number) == Decimal(
+            "4.00"
+        )
+        assert by_account["Income:Vacation"].units is not None
         assert by_account["Income:Vacation"].units.currency == "VACHR"
-        assert by_account["Income:Vacation"].units.number == Decimal("-4.00")
+        assert cast(Decimal, by_account["Income:Vacation"].units.number) == Decimal(
+            "-4.00"
+        )
 
         # GOOGL postings use their explicit currency override
+        assert by_account["Assets:Vesting"].units is not None
         assert by_account["Assets:Vesting"].units.currency == "GOOGL"
-        assert by_account["Assets:Vesting"].units.number == Decimal("5.00")
+        assert cast(Decimal, by_account["Assets:Vesting"].units.number) == Decimal(
+            "5.00"
+        )
+        assert by_account["Income:RSU"].units is not None
         assert by_account["Income:RSU"].units.currency == "GOOGL"
-        assert by_account["Income:RSU"].units.number == Decimal("-5.00")
+        assert cast(Decimal, by_account["Income:RSU"].units.number) == Decimal("-5.00")
 
     def test_enriched_posting_inherits_txn_currency_when_no_override(
         self, sample_transaction, sample_schedule, global_config
@@ -1167,17 +1217,20 @@ class TestMultiCurrencyPostings:
             currency="EUR",
         )
 
-        extracted_entries = [("bank.csv", [txn], "Assets:Bank:Checking", None)]
+        extracted_entries = [
+            ("bank.csv", [txn], "Assets:Bank:Checking", MagicMock(spec=Importer))
+        ]
         schedule_file = ScheduleFile(schedules=[schedule], config=global_config)
 
         with patch("beanschedule.hook.load_schedules", return_value=schedule_file):
-            result = schedule_hook(extracted_entries)
+            result = schedule_hook(extracted_entries, existing_entries=[])
 
-        enriched = result[0][1][0]
+        enriched = cast(data.Transaction, result[0][1][0])
         expense_posting = next(
             p for p in enriched.postings if p.account == "Expenses:Rent"
         )
         # Should inherit EUR from the imported transaction
+        assert expense_posting.units is not None
         assert expense_posting.units.currency == "EUR"
 
 
@@ -1218,16 +1271,19 @@ class TestOperatingCurrencyDetection:
             currency="EUR",
         )
 
-        extracted_entries = [("bank.csv", [txn], "Assets:Bank:Checking", None)]
+        extracted_entries = [
+            ("bank.csv", [txn], "Assets:Bank:Checking", MagicMock(spec=Importer))
+        ]
         schedule_file = ScheduleFile(schedules=[schedule], config=global_config)
 
         with patch("beanschedule.hook.load_schedules", return_value=schedule_file):
             result = schedule_hook(extracted_entries, existing_entries=[existing_txn])
 
-        enriched = result[0][1][0]
+        enriched = cast(data.Transaction, result[0][1][0])
         expense_posting = next(
             p for p in enriched.postings if p.account == "Expenses:Rent"
         )
+        assert expense_posting.units is not None
         assert expense_posting.units.currency == "EUR"
 
     def test_detect_currency_falls_back_to_usd_when_no_entries(
@@ -1255,16 +1311,19 @@ class TestOperatingCurrencyDetection:
             Decimal("-50.00"),
         )
 
-        extracted_entries = [("bank.csv", [txn], "Assets:Bank:Checking", None)]
+        extracted_entries = [
+            ("bank.csv", [txn], "Assets:Bank:Checking", MagicMock(spec=Importer))
+        ]
         schedule_file = ScheduleFile(schedules=[schedule], config=global_config)
 
         with patch("beanschedule.hook.load_schedules", return_value=schedule_file):
-            result = schedule_hook(extracted_entries, existing_entries=None)
+            result = schedule_hook(extracted_entries, existing_entries=[])
 
-        enriched = result[0][1][0]
+        enriched = cast(data.Transaction, result[0][1][0])
         expense_posting = next(
             p for p in enriched.postings if p.account == "Expenses:Food"
         )
+        assert expense_posting.units is not None
         assert expense_posting.units.currency == "USD"
 
     def test_explicit_config_currency_used_for_placeholders(
@@ -1303,3 +1362,50 @@ class TestOperatingCurrencyDetection:
         # Placeholder should use the explicitly configured currency
         assert expense_posting.units is not None
         assert expense_posting.units.currency == "GBP"
+
+
+class TestHookAnnotations:
+    """Regression tests for the beangulp/fava contract on schedule_hook annotations.
+
+    Fava (fava/core/ingest.py:461) inspects schedule_hook's annotations to decide
+    whether to pass a 4-tuple (filename, entries, account, importer) or a 2-tuple
+    (filename, entries). It checks `any("Importer" in a for a in annotations.values())`,
+    which only works if all annotations are strings. If any annotation evaluates to a
+    type object (e.g. <class 'list'>), the substring check raises
+    `TypeError: argument of type 'type' is not iterable`.
+
+    To keep annotations as strings, hook.py uses `from __future__ import annotations`
+    (PEP 563). These tests guard that against accidental removal.
+    """
+
+    def test_annotations_are_strings_not_evaluated_types(self):
+        """Annotations must be strings (PEP 563), not evaluated type objects.
+
+        Regression test for https://github.com/slimslickner/beanschedule/issues/11
+        """
+        from inspect import get_annotations
+
+        annotations = get_annotations(schedule_hook)
+        assert annotations, "schedule_hook should have annotations"
+        for name, value in annotations.items():
+            assert isinstance(value, str), (
+                f"Annotation {name!r} must be a string for fava compatibility, "
+                f"got {type(value).__name__}: {value!r}. "
+                "Add `from __future__ import annotations` to beanschedule/hook.py."
+            )
+
+    def test_annotations_mention_importer_for_fava_4tuple_contract(self):
+        """Annotations must contain 'Importer' as a substring so fava passes 4-tuples.
+
+        Fava's ingest logic uses substring matching: any annotation containing
+        'Importer' triggers the 4-tuple (filename, entries, account, importer) format.
+        Without this, fava passes only a 2-tuple and the importer info is lost.
+        """
+        from inspect import get_annotations
+
+        annotations = get_annotations(schedule_hook)
+        assert any("Importer" in v for v in annotations.values()), (
+            "No annotation mentions 'Importer'; fava will pass schedule_hook a "
+            "2-tuple instead of the expected 4-tuple. Update the signature to "
+            "include `Importer` (e.g. list[tuple[..., Importer]])."
+        )

@@ -1,11 +1,14 @@
 """Beangulp hook for scheduled transaction matching and enrichment."""
 
+from __future__ import annotations
+
 import logging
 from collections import defaultdict
 from datetime import date, timedelta
 from decimal import Decimal
 
 from beancount.core import amount, data
+from beangulp.importer import Importer
 
 from . import constants
 from .amortization import (
@@ -53,9 +56,9 @@ def _detect_operating_currency(
 
 
 def schedule_hook(
-    extracted_entries_list: list,
-    existing_entries: list[data.Directive] | None = None,
-) -> list:
+    extracted_entries_list: list[tuple[str, data.Directives, data.Account, Importer]],
+    existing_entries: data.Directives,
+) -> list[tuple[str, data.Directives, data.Account, Importer]]:
     """
     Beangulp hook for scheduled transaction matching and enrichment.
 
@@ -205,7 +208,9 @@ def schedule_hook(
 
     # Step 4 & 5: Match and enrich transactions
     matcher = TransactionMatcher(schedule_file.config)
-    modified_entries_list = []
+    modified_entries_list: list[
+        tuple[str, data.Directives, data.Account, Importer]
+    ] = []
     matched_occurrences = set()
     matched_details = []  # Track matched transactions for summary
 
@@ -341,10 +346,11 @@ def schedule_hook(
     )
 
     if placeholders:
-        # Add placeholders to a synthetic "schedules" file entry
-        # Always use 4-element format (beangulp standard)
+        # Add placeholders to a synthetic "schedules" file entry.
+        # Account and importer are sentinel None values; downstream consumers
+        # (beangulp, fava) only read filepath and entries from this synthetic entry.
         modified_entries_list.append(
-            (constants.SYNTHETIC_SCHEDULES_SOURCE, placeholders, None, None)
+            (constants.SYNTHETIC_SCHEDULES_SOURCE, placeholders, None, None),  # type: ignore[arg-type]
         )
 
         # Log prominent warning about missing scheduled transactions
