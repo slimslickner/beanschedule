@@ -272,6 +272,20 @@ def make_schedule_file(
 
 
 @pytest.fixture
+def mock_importer():
+    """Fixture providing a MagicMock that satisfies the beangulp Importer protocol.
+
+    Used as the 4th element of beangulp (filepath, entries, account, importer) tuples
+    passed to schedule_hook, where the actual importer logic isn't under test.
+    """
+    from unittest.mock import MagicMock
+
+    from beangulp.importer import Importer
+
+    return MagicMock(spec=Importer)
+
+
+@pytest.fixture
 def sample_transaction():
     """Fixture providing a transaction builder function."""
     return make_transaction

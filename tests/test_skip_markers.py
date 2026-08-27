@@ -2,6 +2,9 @@
 
 from datetime import date
 from decimal import Decimal
+from unittest.mock import MagicMock
+
+from beangulp.importer import Importer
 
 from beanschedule.constants import META_SCHEDULE_ID, META_SCHEDULE_SKIPPED
 from beanschedule.hook import _is_skip_marker, schedule_hook
@@ -111,7 +114,7 @@ class TestSkipMarkerPreventsPlaceholder:
         # But Feb 1 skip marker should prevent placeholder
 
         extracted_entries = [
-            ("test.csv", [skip_marker], "Assets:Checking", None),
+            ("test.csv", [skip_marker], "Assets:Checking", MagicMock(spec=Importer)),
         ]
 
         from unittest.mock import patch
@@ -139,7 +142,12 @@ class TestSkipMarkerPreventsPlaceholder:
         )
 
         extracted_entries = [
-            ("test.csv", [skip_marker], schedule.match.account, None),
+            (
+                "test.csv",
+                [skip_marker],
+                schedule.match.account,
+                MagicMock(spec=Importer),
+            ),
         ]
 
         from unittest.mock import patch
