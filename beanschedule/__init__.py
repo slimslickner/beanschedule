@@ -11,4 +11,4 @@ Main export:
 from .hook import schedule_hook
 
 __all__ = ["schedule_hook"]
-__version__ = "1.6.2"
+__version__ = "1.6.3"
