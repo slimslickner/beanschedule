@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.6.3] - 2026-09-06
+
+### Fixed
+
+- **`schedule_hook` annotations now match the beangulp importer-hook contract** — The hook signature was annotated with partial types (`list`, `list[data.Directive] | None`) that did not match the actual beangulp 4-tuple `(filepath, entries, account, importer)` consumers pass in. Fava's hook discovery introspects these annotations and rejected the hook, preventing scheduled-transaction matching from running inside Fava. Annotations are now precise, and the synthetic placeholder entry's sentinel `account`/`importer` values are explicitly typed.
+
 ## [1.6.2] - 2026-07-03
 
 ### Fixed
