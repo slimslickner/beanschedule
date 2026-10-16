@@ -320,8 +320,29 @@ def schedules(entries, options_map, config=None):
 
     from beanschedule.amortization import build_liability_balance_index
 
+    # This plugin runs *before* beancount's built-in ``beancount.ops.pad``
+    # post-plugin, so a liability whose opening balance is established with a
+    # ``pad`` directive is not yet materialised in ``entries``.  Applying
+    # padding to a local copy lets the balance calculation see those
+    # pad-synthesised transactions (flag ``P``) while the original ``entries``
+    # are returned unchanged, so the loader still runs its own pad pass exactly
+    # once and no duplicate padding is emitted.
+    balance_entries = entries
+    if stateful_accounts:
+        from beancount.ops import pad as pad_ops
+
+        try:
+            balance_entries, _pad_errors = pad_ops.pad(entries, options_map)
+        except Exception as exc:  # pragma: no cover - defensive fallback
+            logger.debug(
+                "Could not apply padding for balance calculation, "
+                "falling back to raw entries: %s",
+                exc,
+            )
+            balance_entries = entries
+
     liability_balances = (
-        build_liability_balance_index(entries, stateful_accounts)
+        build_liability_balance_index(balance_entries, stateful_accounts)
         if stateful_accounts
         else {}
     )

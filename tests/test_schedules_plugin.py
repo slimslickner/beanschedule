@@ -945,6 +945,76 @@ class TestStatefulAmortization:
             entries.extend(extra_entries)
         return entries
 
+    def _make_padded_ledger_entries(self, extra_entries=None):
+        """Return a ledger whose opening balance is established via ``pad``.
+
+        Mirrors real-world ledgers (and the reported bug) where the mortgage
+        principal is set with an opening ``pad`` directive plus a ``balance``
+        assertion instead of an explicit origination transaction.  The plugin
+        runs before ``beancount.ops.pad``, so it must pad a local copy itself.
+        """
+        entries = [
+            data.Pad(
+                meta={"filename": "test", "lineno": 1},
+                date=date(2025, 9, 30),
+                account=self.LIABILITY_ACCOUNT,
+                source_account="Equity:Opening-Balances",
+            ),
+            data.Balance(
+                meta={"filename": "test", "lineno": 2},
+                date=date(2025, 10, 1),
+                account=self.LIABILITY_ACCOUNT,
+                amount=amount.Amount(-self.ORIGINATION, "USD"),
+                tolerance=None,
+                diff_amount=None,
+            ),
+        ]
+
+        # Monthly payments (same as _make_ledger_entries, minus origination)
+        for pmt_date, principal in self.PAYMENTS:
+            interest_amt = self.PAYMENT - principal
+            entries.append(
+                data.Transaction(
+                    meta={"filename": "test", "lineno": 3},
+                    date=pmt_date,
+                    flag="*",
+                    payee="Loan Company",
+                    narration="Payment",
+                    tags=frozenset(),
+                    links=frozenset(),
+                    postings=[
+                        data.Posting(
+                            "Assets:Checking",
+                            amount.Amount(-self.PAYMENT, "USD"),
+                            None,
+                            None,
+                            None,
+                            None,
+                        ),
+                        data.Posting(
+                            "Expenses:Interest",
+                            amount.Amount(interest_amt, "USD"),
+                            None,
+                            None,
+                            None,
+                            None,
+                        ),
+                        data.Posting(
+                            self.LIABILITY_ACCOUNT,
+                            amount.Amount(principal, "USD"),
+                            None,
+                            None,
+                            None,
+                            None,
+                        ),
+                    ],
+                )
+            )
+
+        if extra_entries:
+            entries.extend(extra_entries)
+        return entries
+
     def _schedule_yaml(self, tmp_path, compounding="MONTHLY", extra_principal=None):
         """Build a schedules directory for the test loan and return the directory path."""
         schedule_dir = tmp_path / "schedules"
@@ -1240,6 +1310,56 @@ class TestStatefulAmortization:
             and e.meta.get("schedule_id") == "test-loan"
         ]
         assert len(new_forecasts) == 0
+
+    def test_stateful_balance_from_pad_directive(self, tmp_path, monkeypatch):
+        """Regression: a pad-established opening balance must still be seen.
+
+        The forecast plugin runs before ``beancount.ops.pad``, so a liability
+        whose opening balance comes from a ``pad`` directive used to be invisible
+        (net-positive from payments alone) and the schedule was skipped. The
+        plugin now pads a local copy for the balance calculation.
+        """
+        from datetime import date as dt_date
+
+        mock_today_value = dt_date(2026, 1, 15)
+
+        class MockDate:
+            @staticmethod
+            def today():
+                return mock_today_value
+
+            def __new__(cls, year, month, day):
+                return dt_date(year, month, day)
+
+        monkeypatch.setattr("beanschedule.plugins.schedules.date", MockDate)
+
+        schedule_dir = self._schedule_yaml(tmp_path, "MONTHLY")
+        monkeypatch.chdir(tmp_path)
+
+        # Realistic options_map (pad reads ``tolerance_multiplier``)
+        options_map = {
+            "filename": str(tmp_path / "main.bean"),
+            "tolerance_multiplier": Decimal("0.5"),
+        }
+        result_entries, errors = schedules(
+            self._make_padded_ledger_entries(), options_map, config=str(schedule_dir)
+        )
+
+        assert len(errors) == 0
+        forecasts = [
+            e
+            for e in result_entries
+            if isinstance(e, data.Transaction) and e.flag == "#"
+        ]
+        assert len(forecasts) > 0
+
+        first = forecasts[0]
+        assert first.date == date(2026, 2, 4)
+        postings = {p.account: p.units.number for p in first.postings}
+        # Same split as the explicit-origination test: balance 9547.75
+        assert postings["Expenses:Interest"] == Decimal("47.74")
+        assert postings[self.LIABILITY_ACCOUNT] == Decimal("152.26")
+        assert first.meta["amortization_balance_after"] == "9395.49"
 
 
 class TestShadowAccountForecasting:
