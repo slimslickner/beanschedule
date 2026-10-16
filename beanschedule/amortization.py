@@ -382,10 +382,16 @@ def build_liability_balance_index(
     """Compute (remaining_balance, most_recent_date) for each tracked liability account.
 
     Uses beancount's realization engine to correctly compute account balances,
-    which respects pad directives, balances, and all internal beancount mechanisms.
-    Only cleared (``*``) transactions are considered — forecast (``#``) and
+    which respects balances and all internal beancount mechanisms.  Cleared
+    (``*``) and pending (``P``) transactions are included; forecast (``#``) and
     placeholder (``!``) entries are ignored so the plugin does not count its
-    own predictions as actuals.
+    own predictions as actuals.  Entries containing auto-balancing postings
+    (``units is None``) are skipped in full.
+
+    Note: ``pad``-synthesised transactions are only present if the caller passes
+    an entry set that has already been padded.  Callers that run *before*
+    ``beancount.ops.pad`` (such as the forecast plugin) must pad a local copy of
+    the entries first, otherwise a pad-established opening balance is invisible.
 
     The beancount balance for a liability is negative (credit-normal).  We
     negate it so the returned ``remaining_balance`` is the positive amount
@@ -429,8 +435,10 @@ def build_liability_balance_index(
             f"that cannot be realized. Only already-loaded ledger entries are used for balance calculation."
         )
 
-    # Use beancount's realization engine to get correct balances
-    # This handles pad directives, balance assertions, and all beancount internals
+    # Use beancount's realization engine to get correct balances.
+    # This respects balance assertions and beancount internals; it also reflects
+    # pad-synthesised postings (flag "P") *if* the supplied entries have already
+    # been padded (see the docstring note above).
     real_root = realization.realize(filtered_entries)
 
     result: dict[str, tuple[Decimal, date]] = {}
