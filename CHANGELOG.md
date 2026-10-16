@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Stateful amortization forecasts now work with `pad`-based opening balances** — The forecast plugin runs during ledger load *before* beancount's built-in `beancount.ops.pad` pass, so a liability whose opening balance is established with a `pad` directive (e.g. the starting mortgage principal) was invisible to `balance_from_ledger` amortization. The balance was computed from payments alone, producing a net-positive liability and triggering the "liability balance is zero or negative, skipping forecasts" path that dropped every forecast for the schedule (`beanschedule amortize` and the import hook were unaffected because they already operate on fully-loaded entries). The plugin now applies padding to a local copy of the entries for the balance calculation only, while returning the original entries unchanged so the loader still runs its own `pad` pass exactly once.
+
 ## [1.6.3] - 2026-09-06
 
 ### Fixed

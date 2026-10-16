@@ -153,6 +153,8 @@ transaction:
 
 **Important:** Stateful mode only counts cleared (`*`) and pending (`P`) transactions when computing balance. Forecast (`#`) and placeholder (`!`) entries are excluded so the plugin doesn't double-count its own predictions.
 
+**Pad-based opening balances:** If the liability's starting balance is established with a `pad` directive (e.g. the opening mortgage principal), the forecast plugin still works. During ledger load the plugin runs before beancount's built-in `pad` pass, so it applies padding to a local copy of the entries for the balance calculation only; the loader then runs its own `pad` pass on the unchanged entries, so no duplicate padding is produced.
+
 **Staleness warning:** If the most recent cleared posting to the liability account is more than 60 days old, the plugin logs a warning. This may indicate missing payments that could make forecasts inaccurate.
 
 ### Compounding Modes
