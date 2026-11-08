@@ -1,0 +1,80 @@
+{% set view = extension.view() %}
+{% set base = request.path if request.path.endswith('/') else request.path ~ '/' %}
+<div class="schedule-report">
+  <h2>Schedules</h2>
+  {% if view.errors %}
+    <ul class="schedule-errors">
+      {% for error in view.errors %}<li><strong>{{ error.code }}</strong> {{ error.message }}</li>{% endfor %}
+    </ul>
+  {% endif %}
+  {% if not view.schedules %}
+    <p>No schedules are declared. Add a <code>custom "schedule" "new"</code> directive.</p>
+  {% endif %}
+  {% for schedule in view.schedules %}
+    <section class="schedule">
+      <h3>{{ schedule.id }} <small>{{ schedule.rule.match_account }}</small></h3>
+      <p>
+        next <strong>{{ schedule.next or '—' }}</strong>
+        {% if schedule.overdue %}
+          · overdue
+          {% for day in schedule.overdue %}<span class="schedule-overdue">{{ day }}</span>{% endfor %}
+        {% endif %}
+      </p>
+      <table class="schedule-occurrences">
+        <thead><tr><th>Nominal</th><th>Status</th><th>Effective</th><th class="num">Amount</th><th>Payee</th></tr></thead>
+        <tbody>
+          {% for line in schedule.lines %}
+            <tr>
+              <td>{{ line.nominal }}</td>
+              <td>{{ line.status }}</td>
+              <td>{{ line.effective }}</td>
+              <td class="num">{{ extension.money(line.amount) }}</td>
+              <td>{{ line.payee or '' }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% if extension.writable %}
+        <form method="post" action="{{ base ~ 'commit' }}" class="schedule-skip">
+          <input type="hidden" name="action" value="skip">
+          <input type="hidden" name="id" value="{{ schedule.id }}">
+          <label>Skip <input type="date" name="date"></label>
+          <button type="submit">Skip</button>
+        </form>
+        <form method="post" action="{{ base ~ 'commit' }}" class="schedule-move">
+          <input type="hidden" name="action" value="move">
+          <input type="hidden" name="id" value="{{ schedule.id }}">
+          <label>From <input type="date" name="date"></label>
+          <label>To <input type="date" name="new_date"></label>
+          <button type="submit">Move</button>
+        </form>
+        {% if schedule.rule.entry %}
+          <form method="post" action="{{ base ~ 'commit' }}" class="schedule-edit">
+            <input type="hidden" name="action" value="edit">
+            <input type="hidden" name="id" value="{{ schedule.id }}">
+            <label>Amount <input name="amount" size="10" value="{{ schedule.rule.match_amount or '' }}"></label>
+            <button type="submit">Save</button>
+          </form>
+        {% endif %}
+      {% endif %}
+    </section>
+  {% endfor %}
+  {% if extension.writable %}
+    <section class="schedule-create">
+      <h3>Create a schedule</h3>
+      <form method="post" action="{{ base ~ 'commit' }}">
+        <input type="hidden" name="action" value="create">
+        <label>Id <input name="id"></label>
+        <label>RRULE <input name="rrule" value="FREQ=MONTHLY;BYMONTHDAY=1"></label>
+        <label>Start <input type="date" name="start"></label>
+        <label>Match account <input name="account"></label>
+        <label>Postings <textarea name="postings" rows="2" placeholder="Expenses:Taxes:Federal 600.00&#10;Expenses:Savings 2400.00"></textarea></label>
+        <label>Payee <input name="payee"></label>
+        <label>Amount <input name="amount" size="10"></label>
+        <button type="submit">Create</button>
+      </form>
+    </section>
+  {% else %}
+    <p class="schedule-readonly">This report is read-only. Configure a <code>write</code> file to edit schedules.</p>
+  {% endif %}
+</div>

@@ -1,231 +1,79 @@
 # Changelog
 
-All notable changes to this project will be documented in this file.
+## 2.0.0
 
-The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
-and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
-
-## [Unreleased]
-
-### Fixed
-
-- **Stateful amortization forecasts now work with `pad`-based opening balances** — The forecast plugin runs during ledger load *before* beancount's built-in `beancount.ops.pad` pass, so a liability whose opening balance is established with a `pad` directive (e.g. the starting mortgage principal) was invisible to `balance_from_ledger` amortization. The balance was computed from payments alone, producing a net-positive liability and triggering the "liability balance is zero or negative, skipping forecasts" path that dropped every forecast for the schedule (`beanschedule amortize` and the import hook were unaffected because they already operate on fully-loaded entries). The plugin now applies padding to a local copy of the entries for the balance calculation only, while returning the original entries unchanged so the loader still runs its own `pad` pass exactly once.
-
-## [1.6.3] - 2026-09-06
-
-### Fixed
-
-- **`schedule_hook` annotations now match the beangulp importer-hook contract** — The hook signature was annotated with partial types (`list`, `list[data.Directive] | None`) that did not match the actual beangulp 4-tuple `(filepath, entries, account, importer)` consumers pass in. Fava's hook discovery introspects these annotations and rejected the hook, preventing scheduled-transaction matching from running inside Fava. Annotations are now precise, and the synthetic placeholder entry's sentinel `account`/`importer` values are explicitly typed.
-
-## [1.6.2] - 2026-07-03
-
-### Fixed
-
-- **Date window now enforced as a hard constraint** — Previously, a transaction far outside a schedule's `date_window_days` could still match via high payee+amount scores (payee 40% + amount 40% = 80% even with date score 0%). Now transactions beyond the window are rejected before scoring, preventing cross-month false matches.
-- **Already-matched occurrences excluded from subsequent matches** — When multiple imported transactions could match the same schedule occurrence, the first match now claims the occurrence and later transactions can no longer be incorrectly enriched against it.
-
-## [1.6.1] - 2026-05-30
-
-### Fixed
-
-- **Interval-based RRULE schedules now generate consistent dates regardless of query window** — Rules with `INTERVAL > 1` (e.g. `FREQ=WEEKLY;INTERVAL=2`, `FREQ=MONTHLY;INTERVAL=4`) previously anchored date generation to the query window start instead of `recurrence.start_date`. This caused the generated date sequence to shift each time a different window was queried, so skip markers and matched ledger transactions no longer aligned with expected dates in `skip --select` mode.
-
-## [1.6.0]
-
-### Changed
-
-- **Recurrence rules now use RRULE format (RFC 5545)** — The `recurrence` block in schedule YAML files now uses a single `rrule` string instead of discrete `frequency`, `day_of_month`, `day_of_week`, etc. fields. Examples:
-
-  ```yaml
-  # Before
-  recurrence:
-    frequency: MONTHLY
-    start_date: 2024-01-15
-    day_of_month: 15
-
-  # After
-  recurrence:
-    rrule: FREQ=MONTHLY;BYMONTHDAY=15
-    start_date: 2024-01-15
-  ```
-
-  Common patterns:
-  - Monthly on day 15: `FREQ=MONTHLY;BYMONTHDAY=15`
-  - Biweekly on Friday: `FREQ=WEEKLY;INTERVAL=2;BYDAY=FR`
-  - Quarterly on 1st: `FREQ=MONTHLY;INTERVAL=3;BYMONTHDAY=1`
-  - Yearly (Sep 15): `FREQ=YEARLY;BYMONTH=9;BYMONTHDAY=15`
-  - Last day of month: `FREQ=MONTHLY;BYMONTHDAY=-1`
-  - 2nd Tuesday: `FREQ=MONTHLY;BYDAY=+2TU`
-  - Multiple days (5th & 20th): `FREQ=MONTHLY;BYMONTHDAY=5,20`
-
-  **Old format files continue to load without changes** — the loader migrates them transparently at parse time.
+Beanschedule is rewritten to be **ledger-native**. Schedules are now
+`custom "schedule"` directives in the ledger rather than YAML files, and one pure
+core drives the beangulp hook, the Beancount plugin, the CLI and the Fava report.
 
 ### Added
 
-- **`beanschedule migrate [path]`** — Rewrites schedule YAML files from the old `frequency`/`day_of_month` format to `rrule` in-place. Use `--dry-run` to preview changes without writing.
+- `custom "schedule"` directives: `new` (a rule), `posting` (an other-side
+  posting, with its own `amount` and arbitrary metadata such as `narration` or
+  `contribution-year`), `skip` (an EXDATE) and `move` (a RECURRENCE-ID), with a
+  registry that generates `docs/schema.md` and `docs/errors.md`.
+- A pure core (`beanschedule.core`) that parses rules, derives nominal
+  occurrences, resolves posted links, skips and moves, and computes
+  balance-from-ledger and static amortization splits.
+- Greedy chronological matching with the ½-gap consumption rule.
+- A shared, read-only report view (`beanschedule.report`) used by both the CLI
+  and the Fava report.
+- A deterministic, opt-in writer (`beanschedule.writer`) and directive builders
+  (`beanschedule.actions`).
+- A detector that proposes schedules from a ledger, feeding `create`.
+- `migrate`, a YAML reader in its own module (`beanschedule.migrate`) that
+  converts `schedules/*.yaml` to directives idempotently, checks the migrated
+  postings balance against `match-amount`, and reports the legacy fields the
+  directive model cannot express.
+- Opt-in forecast injection through the Beancount plugin; both the plugin and
+  the Fava extension take a Python-literal config string, e.g.
+  `plugin "beanschedule.plugin" "{'forecast': True, 'months': 3}"`.
+- `hatch-vcs` versioning, a CI gate, conventional commits and generated release
+  notes.
 
-  ```bash
-  beanschedule migrate schedules/           # migrate all files
-  beanschedule migrate --dry-run schedules/ # preview only
-  ```
+### Changed
+
+- Matching at import stays, but the historical tracking trail is removed: no
+  stored actual/nominal dates, no confidence scores, no placeholder
+  transactions, no amortization metadata trail.
+- Overdue is always a computed view, never a persisted record.
+- The command line moves from Click to `argparse` + `argcomplete`.
+- Stacks use frozen slotted dataclasses and `Decimal` instead of Pydantic.
+- The hook finds its files from `BEANSCHEDULE_SCHEDULES` and
+  `BEANSCHEDULE_PENDING`; the pending file is standardised on the `.bean`
+  suffix (`pending.bean`).
+- `beangulp` and `pyyaml` move to optional extras (`[beangulp]`, `[migrate]`).
 
 ### Removed
 
-- `RecurrenceRule` fields `frequency`, `day_of_month`, `month`, `day_of_week`, `interval`, `days_of_month`, `interval_months`, `nth_occurrence` replaced by single `rrule` string. The `FrequencyType` and `DayOfWeek` enums are retained for internal detector use.
-
-## [1.5.1]
-
-### Added
-
-- **`beanschedule pending fix` command** — Converts deprecated `;;` posting comments to proper `narration:` metadata. Run this command before importing to fix deprecated comment syntax in `pending.beancount` files:
-
-  ```bash
-  # Preview changes
-  beanschedule pending fix --dry-run
-
-  # Apply fixes
-  beanschedule pending fix
-  ```
-
-  Transforms:
-  ```beancount
-  Expenses:Shopping  50.00 USD  ;; Item description
-  ```
-  Into:
-  ```beancount
-  Expenses:Shopping  50.00 USD
-    narration: "Item description"
-  ```
-
-- **`beanschedule list --format match`** — New output format showing each schedule's ID, match account, and expected amount (exact ± tolerance, range, or `(any)`). Useful for quickly auditing match criteria without the full schedule table.
-
-- **`beanschedule show --postings`** — New flag to display a schedule's transaction postings as a table. Columns: account, amount, currency, role, and one column per unique metadata key (pivoted across all postings).
-
-- Missing scheduled transaction warnings now include the expected amount and account on each line, making it easier to identify which transactions are overdue at a glance.
-
-### Fixed
-
-- **Plugin duplicate forecast when posting date exceeds `date_window_days`** — `filter_occurrences_by_existing_transactions` now reads `schedule_matched_date` metadata (written by the hook at enrich time) as the anchor for the covered-date window, falling back to `txn.date` when absent. Fixes the case where the bank posts outside the schedule's window (e.g., expected 2026-02-28, posted 2026-03-04) and the occurrence was incorrectly treated as uncovered, generating a spurious overdue forecast.
-
-- **`_detect_operating_currency` now uses frequency counting** — Previously returned the currency of the first posting found. Commodity currencies (e.g., `VEHICLE.2014SUBARU`) appearing early in the ledger could shadow the true operating currency (e.g., `USD`). Now counts occurrences across all postings and returns the most frequent.
-
-- **Pending enrichment now preserves tags and links** — Tags and links from `pending.beancount` entries are merged onto the enriched transaction. The `#pending` tag is stripped from the result.
+- YAML schedule files (use `migrate`), Pydantic and Click.
+- The v1 `BEANSCHEDULE_DIR` variable and the cwd/parent file hunting; a
+  multi-currency or placeholder-only v1 schedule has no directive equivalent and
+  is reported by `migrate` rather than silently dropped.
 
 ### Performance
 
-- **`filter_occurrences_by_existing_transactions` O(n×m) → O(n+m)** — Replaced nested loops with upfront covered-dates set construction: iterate transactions once to build the set, then filter occurrences with O(1) lookups. Eliminates quadratic behavior for large ledgers with many schedules and a long forecast window.
-
-## [1.5.0]
-
-### Breaking Changes
-
-- **`include_past_dates` now defaults to `true`.** Previously, scheduled transactions with expected dates in the past were silently skipped unless `include_past_dates: true` was set explicitly. The new default surfaces overdue transactions as placeholders and warnings. Users who prefer the old behavior can opt out:
-
-  ```yaml
-  # _config.yaml
-  include_past_dates: false
-  ```
-
-- **`GlobalConfig.default_currency` now defaults to `null` (auto-detected) instead of `"USD"`.** The hook infers the currency from existing ledger entries; the plugin reads it from the ledger's `option "operating_currency"` directive. Set explicitly in `_config.yaml` to override:
-
-  ```yaml
-  # _config.yaml
-  default_currency: EUR
-  ```
-
-### Added
-
-- **Multi-currency postings** — individual postings in a schedule can now specify a `currency` field, allowing mixed-unit transactions such as a paycheck that accrues vacation hours (`VACHR`) and vests shares (`GOOGL`) alongside standard USD postings:
-
-  ```yaml
-  postings:
-    - account: Assets:Bank:Checking
-      amount: null                      # uses imported bank amount (USD)
-    - account: Income:Salary
-      amount: -4615.38                  # USD (inherits default)
-    - account: Assets:Vacation
-      amount: 4.00
-      currency: VACHR                   # explicit non-default currency
-    - account: Assets:Vesting
-      amount: 5.00
-      currency: GOOGL                   # explicit non-default currency
-  ```
-
-- **Auto-detect `operating_currency`** — when `default_currency` is not set in `_config.yaml`, the hook scans existing ledger entries to infer the operating currency, and the forecast plugin reads `option "operating_currency"` from the ledger options map. Falls back to `USD` if neither source is available.
-
-## [1.4.2]
-
-### Changed
-
-- **`#pending` tag is no longer required in `pending.beancount`.** All transactions in the file are treated as pending automatically. The tag is still added by `beanschedule pending create` as a visual marker but is not enforced.
-- **`beanschedule pending create` now places `#pending` inline** on the transaction header line (standard beancount tag syntax) rather than as a separate indented line.
-
-## [1.4.1]
+- The occurrence horizon is a fixed span from the reference date, never the
+  ledger's latest directive. A far-future `open`/`custom` previously expanded
+  every rule across millennia (a 43-schedule ledger went from ~4.1M occurrences
+  to ~9.7k; the 43-schedule scan dropped from 22.7s to under 0.1s).
+- Posted transactions are resolved against each rule's precomputed nominal list
+  by bisect, instead of re-expanding the rule around every date; a 2,000-tagged
+  ledger dropped from ~0.8s to ~0.05s.
+- Static amortization enumerates each series once (no per-date re-derivation),
+  and liability balances are gathered for all amortized schedules in one pass.
 
 ### Fixed
 
-- **Ledger matching now uses `schedule_matched_date` for date window comparison.** Previously, when checking existing ledger transactions to avoid false "missing" warnings, the hook compared `entry.date` (the actual bank posting date) against the expected schedule date. If the bank's posting date fell outside `date_window_days` of the scheduled occurrence — which is common — the occurrence was incorrectly flagged as missing again on re-import. The hook now uses `schedule_matched_date` metadata (written at enrich time) as the authoritative comparison date, falling back to `entry.date` when the metadata is absent.
-
-## [1.4.0]
-
-### Breaking Changes
-
-- **`match.amount` is now the authoritative source for amount matching.** Posting amounts are for enrichment only and play no role in matching. Set `match.amount` explicitly to enable amount-based scoring.
-- **`match.amount_tolerance` requires `match.amount`.** Previously silently ignored if `amount` was unset; now raises a validation error.
-- **`match.amount` and `match.amount_min`/`amount_max` are mutually exclusive.** Setting both raises a validation error. `amount_min`/`amount_max` must also be set together.
-- **The `match.account` posting always uses the imported bank amount.** A non-null posting amount on the match account no longer overrides the actual imported value.
-- **`narration` field removed from the `Posting` model.** Use `metadata.narration` instead. Does not affect `transaction.narration` or `missing_transaction.narration_prefix`.
-- **Skip marker flag `S` removed.** Reserved by Beancount itself; no longer recognized. Use the `#skipped` tag or `schedule_skipped` metadata instead.
-- **Schedule loading is directory-only.** File-mode loading removed; schedules must be in a directory.
-
-### Added
-
-- **Skip markers** — mark scheduled occurrences as intentionally skipped using the `#skipped` tag or `schedule_skipped` metadata. CLI: `beanschedule skip <id> <date>`
-- **Configurable forecasting** — `forecast_months`, `min_forecast_date`, and `include_past_dates` settings in global config
-- **Pending transactions** — stage one-time transactions in `pending.beancount` that auto-match and enrich on import. CLI: `beanschedule pending`
-- **Shadow account forecasting** (plugin) — redirect forecast postings to configurable shadow equity accounts (`shadow_upcoming_account`, `shadow_overdue_account`) so balance assertions on real accounts are never affected
-- **`filing_account` metadata** (plugin) — all plugin-generated transactions carry the original `match.account` before any shadow redirect
-- **`#scheduled` tag** (plugin) — all plugin-generated transactions are tagged `#scheduled`
-- **`forecast_flag`** (plugin) — customize the Beancount flag on plugin-generated transactions (default `#`)
-- **Auto-open shadow accounts** (plugin) — `Open` directives for shadow accounts are generated automatically
-- **`autobean.narration` compatibility** — `filename` and `lineno` metadata now set on plugin-generated transactions
-- **Auto-accounts on pending** — pending transaction matching auto-creates missing `Open` directives
-- Posting-level `metadata` dict supports arbitrary key/value pairs (not just `narration`)
-- Pending transactions capture all transaction-level and posting-level metadata from `.beancount` files
-
-### Fixed
-
-- **Duplicate forecast detection** (plugin) — `filter_occurrences_by_existing_transactions()` now uses date-window matching, suppressing forecasts when an actual transaction falls within `date_window_days` rather than requiring an exact date match
-- Skip entries with auto-balancing postings no longer cause errors in amortization
-
-## [1.3.0]
-
-### Added
-
-- Loan amortization with automatic principal/interest splits (`amortization:` config)
-- Stateful amortization mode reading live balance from ledger (`balance_from_ledger: true`)
-- `beanschedule amortize` CLI command for forecast and schedule inspection
-
-## [1.2.0]
-
-### Added
-
-- `beanschedule detect` command for auto-detecting schedules from existing ledgers
-- `beanschedule create` interactive schedule builder
-
-## [1.1.0]
-
-### Added
-
-- Forecast plugin (`beanschedule.plugins.schedules`) for generating future transactions
-- `beanschedule generate` CLI command
-
-## [1.0.0]
-
-### Added
-
-- Core matching and enrichment hook (`schedule_hook`)
-- YAML schedule definitions with `match`, `recurrence`, and `transaction` sections
-- Fuzzy matching with weighted scoring (payee 40%, amount 40%, date 20%)
-- Missing transaction placeholders
-- `beanschedule validate`, `list`, `init` CLI commands
+- The `beanschedule/plugins/schedules.py` header declared GPLv2 under an MIT
+  project; the licence is MIT.
+- Date arithmetic is clamped to the representable range, so a ledger carrying a
+  far-future directive no longer raises `OverflowError` when deriving the
+  occurrence window.
+- Forecast and enrichment never emit a posting with no amount. The one posting
+  allowed to omit its amount is now filled explicitly so the transaction
+  balances; a schedule with more than one amount-less posting is reported
+  (`E014`) rather than crashing Beancount's balance check.
+- The shared-account diagnostic was removed. Several schedules on one account is
+  normal, and the engine resolves any real competition deterministically by
+  declaration order, so there was nothing actionable to warn about.

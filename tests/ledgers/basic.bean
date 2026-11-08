@@ -1,0 +1,24 @@
+option "operating_currency" "USD"
+
+2020-01-01 open Assets:Bank
+2020-01-01 open Expenses:Tax
+2020-01-01 open Equity:Opening-Balances
+
+2025-12-31 * "Opening"
+  Assets:Bank                 5000.00 USD
+  Equity:Opening-Balances    -5000.00 USD
+
+; A monthly paycheck, matched to the nominal date by the transaction's schedule
+; metadata. January is posted; the rest are outstanding.
+2026-01-01 custom "schedule" "new" "paycheck"
+  rrule: "FREQ=MONTHLY;BYMONTHDAY=15"
+  start: 2026-01-15
+  match-account: "Assets:Bank"
+  match-payee: "Acme"
+  amount-mode: "any"
+  payee: "Acme Payroll"
+
+2026-01-16 * "Acme" "January pay"
+  schedule: "paycheck"
+  Assets:Bank    -1000.00 USD
+  Expenses:Tax    1000.00 USD

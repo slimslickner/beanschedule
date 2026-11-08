@@ -1,0 +1,28 @@
+; The schedules live in one balance-neutral file. It is included in the general
+; ledger (`main.bean`) and excluded from the import ledger
+; (`main_no_plugins.bean`), so the hook loads it directly and forecast entries
+; never look like existing ones.
+;
+; A rule's other-side postings are declared with `custom "schedule" "posting"`,
+; each carrying its own `amount` and any further metadata (here `narration`).
+
+2026-01-01 custom "schedule" "new" "paycheck"
+  rrule: "FREQ=MONTHLY;BYMONTHDAY=15"
+  start: 2026-01-15
+  payee: "Acme"
+  narration: "Paycheck"
+  match-account: "Assets:Bank:Checking"
+  match-payee: "Acme"
+  match-amount: -3000.00
+  amount-mode: "approx"
+  amount-tolerance: 7.50
+
+2026-01-01 custom "schedule" "posting" "paycheck" "Expenses:Taxes:Federal"
+  amount: 600.00
+  narration: "Federal withholding"
+
+2026-01-01 custom "schedule" "posting" "paycheck" "Expenses:Savings"
+  amount: 2400.00
+  narration: "Savings transfer"
+
+2026-12-15 custom "schedule" "skip" "paycheck"

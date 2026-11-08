@@ -1,0 +1,9 @@
+; The general ledger: Fava opens this one. It includes the journal, the
+; schedules, and the plugin (for diagnostics and, if you pass "forecast",
+; opt-in forecast injection).
+option "operating_currency" "USD"
+
+include "journal.bean"
+include "Schedules.bean"
+
+plugin "beanschedule.plugin"

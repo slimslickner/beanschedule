@@ -1,0 +1,8 @@
+; The import ledger: beangulp loads this one. It includes the journal — so the
+; hook sees the tagged transactions that resolve occurrences — but excludes
+; Schedules.bean and the plugin, so injected forecast entries never appear to the
+; hook as existing ones. Point the hook at Schedules.bean directly with
+; BEANSCHEDULE_SCHEDULES, or with BEANSCHEDULE_DIR holding it.
+option "operating_currency" "USD"
+
+include "journal.bean"

@@ -1,0 +1,26 @@
+option "operating_currency" "USD"
+
+2020-01-01 open Assets:Bank
+2020-01-01 open Liabilities:Loan
+2020-01-01 open Expenses:Interest
+2020-01-01 open Equity:Opening-Balances
+
+2025-12-31 * "Opening"
+  Assets:Bank                 100000.00 USD
+  Equity:Opening-Balances    -100000.00 USD
+
+2025-12-31 * "Loan drawdown"
+  Assets:Bank                 100000.00 USD
+  Liabilities:Loan           -100000.00 USD
+
+2026-01-01 custom "schedule" "new" "loan"
+  rrule: "FREQ=MONTHLY;BYMONTHDAY=1"
+  start: 2026-01-01
+  match-account: "Assets:Bank"
+  match-amount: -1000.00
+  amount-mode: "exact"
+  method: "static"
+  rate: 0.06
+  term: 360
+  principal-account: "Liabilities:Loan"
+  interest-account: "Expenses:Interest"
