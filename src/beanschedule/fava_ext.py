@@ -15,6 +15,12 @@ refused. Writes go through Fava's own file API (its lock, watcher and printer),
 so Fava's editor and this report stay consistent; the transactions themselves
 come from :mod:`beanschedule.actions` and :mod:`beanschedule.reconcile`, the same
 modules the CLI uses. The extension is the only module that imports Fava.
+
+The report has three tabs, selected by the ``view`` query parameter: an
+**Overview** of every schedule, an **Upcoming** ledger of all outstanding
+occurrences across schedules, and a per-schedule **drill-down** that projects an
+amortized loan's remaining payments and, when writing is configured, edits the
+schedule's own Beancount source in place.
 """
 
 from __future__ import annotations
@@ -35,7 +41,13 @@ from beanschedule.config import parse_config
 from beanschedule.core import ScheduleResult, compute
 from beanschedule.pending import load_pending_transactions
 from beanschedule.plugin import load_schedules
-from beanschedule.report import ScheduleViewResult, build_view
+from beanschedule.report import (
+    AmortizationView,
+    ScheduleView,
+    ScheduleViewResult,
+    UpcomingLine,
+    build_view,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -80,6 +92,7 @@ class Schedules(FavaExtensionBase):
         self.result: ScheduleResult | None = None
         self._schedules: list[Directive] | None = None
         self._pending: list[PendingTransaction] | None = None
+        self._view: ScheduleViewResult | None = None
         try:
             plugin = _plugin_config(self.ledger.options)
             self.default_schedules = _string(
@@ -124,6 +137,7 @@ class Schedules(FavaExtensionBase):
         self.result = None
         self._schedules = None
         self._pending = None
+        self._view = None
 
     def _entries(self) -> list[Directive]:
         """Return the ledger's entries as Beancount directives.
@@ -191,18 +205,20 @@ class Schedules(FavaExtensionBase):
         return self.result
 
     def view(self) -> ScheduleViewResult:
-        """Build the report view.
+        """Build the report view, caching it for the request.
 
         Returns:
             The :class:`~beanschedule.report.ScheduleViewResult`.
         """
-        return build_view(
-            self._result(),
-            self._entries(),
-            self.ledger.options,
-            today=date.today(),  # noqa: DTZ011 - the reference date is wall-clock
-            forecast_months=self.default_months,
-        )
+        if self._view is None:
+            self._view = build_view(
+                self._result(),
+                self._entries(),
+                self.ledger.options,
+                today=date.today(),  # noqa: DTZ011 - the reference date is wall-clock
+                forecast_months=self.default_months,
+            )
+        return self._view
 
     def money(self, value: Decimal | None) -> str:
         """Format an amount for the page.
@@ -215,6 +231,99 @@ class Schedules(FavaExtensionBase):
         """
         currency = self.view().currency
         return "-" if value is None else f"{value:.2f} {currency}".strip()
+
+    def schedule(self, schedule_id: str | None) -> ScheduleView | None:
+        """Return one schedule's view, for the drill-down.
+
+        Args:
+            schedule_id: The schedule to show, or ``None`` for the first.
+
+        Returns:
+            The :class:`~beanschedule.report.ScheduleView`, or ``None`` when
+            there are no schedules or the id is unknown.
+        """
+        view = self.view()
+        if schedule_id is None:
+            return view.schedules[0] if view.schedules else None
+        return view.schedule(schedule_id)
+
+    def schedule_ids(self) -> tuple[str, ...]:
+        """Return every schedule's id, in declaration order.
+
+        Returns:
+            The schedule ids.
+        """
+        return tuple(view.id for view in self.view().schedules)
+
+    def amortization(self, schedule_id: str | None) -> AmortizationView | None:
+        """Return a schedule's amortization projection, if it amortizes.
+
+        Args:
+            schedule_id: The schedule to show, or ``None`` for the first.
+
+        Returns:
+            The :class:`~beanschedule.report.AmortizationView`, or ``None``.
+        """
+        schedule = self.schedule(schedule_id)
+        return schedule.amortization if schedule is not None else None
+
+    def upcoming(self, *, pending_only: bool = True) -> tuple[UpcomingLine, ...]:
+        """Return the cross-schedule upcoming ledger.
+
+        Args:
+            pending_only: When ``True``, show only the unresolved occurrences.
+
+        Returns:
+            The :class:`~beanschedule.report.UpcomingLine` rows, date-ordered.
+        """
+        return self.view().ledger(pending_only=pending_only)
+
+    def schedule_source(self, schedule_id: str | None) -> str:
+        """Render a schedule's directive, to seed the edit form.
+
+        Args:
+            schedule_id: The schedule to render, or ``None`` for the first.
+
+        Returns:
+            The Beancount text, or ``""`` when the schedule cannot be found.
+        """
+        result = self._result()
+        sid = schedule_id
+        if sid is None:
+            sid = result.rules[0].id if result.rules else None
+        if sid is None:
+            return ""
+        rule = result.rule(sid)
+        if rule is None or rule.entry is None:
+            return ""
+        return actions.render(rule.entry)
+
+    def schedule_diagnostics(
+        self, schedule_id: str | None
+    ) -> tuple[tuple[str, str], ...]:
+        """Return the diagnostics that refer to one schedule.
+
+        Args:
+            schedule_id: The schedule id, or ``None`` for the first.
+
+        Returns:
+            ``(code, message)`` pairs for the schedule's errors and warnings.
+        """
+        result = self._result()
+        sid = schedule_id
+        if sid is None:
+            sid = result.rules[0].id if result.rules else None
+        if sid is None:
+            return ()
+        rule = result.rule(sid)
+        if rule is None:
+            return ()
+        view = self.view()
+        return tuple(
+            (diagnostic.code, diagnostic.message)
+            for diagnostic in (*view.errors, *view.warnings)
+            if _refers_to(diagnostic.entry, rule.entry)
+        )
 
     def _plan(self) -> reconcile.Plan:
         """Build the reconciliation plan for the current ledger.
@@ -262,10 +371,69 @@ class Schedules(FavaExtensionBase):
             return [entry]
         if action == "reconcile":
             return self._reconcile()
+        if action == "save":
+            return self._save(params)
         if action in ("skip", "move", "edit", "delete"):
             return self._edit_schedule(action, params)
         message = f"unknown action: {action}"
         raise ValueError(message)
+
+    def _save(self, params: Mapping[str, str]) -> list[Directive]:
+        """Replace a schedule with an edited Beancount source, or append it.
+
+        The submitted ``source`` is parsed as a single schedule transaction and
+        spliced back in place at the original schedule's line; when the schedule
+        is new (or has no source location) it is appended instead. This gives the
+        edit form every field — rrule, rate, escrow, term, method, payee and
+        postings — without a bespoke field per key.
+
+        Args:
+            params: The submitted fields: ``source`` (the Beancount text) and an
+                optional ``id`` naming the schedule being replaced.
+
+        Returns:
+            The transaction that was written.
+
+        Raises:
+            ValueError: If the source is malformed or not a single schedule.
+        """
+        from beancount.parser import parser  # noqa: PLC0415 - narrow local import
+
+        if self.write_target is None:
+            message = "writing is not configured for this report"
+            raise RuntimeError(message)
+        source = params.get("source", "")
+        entries, errors, _options = parser.parse_string(source)
+        if errors:
+            message = "; ".join(
+                str(getattr(error, "message", error)) for error in errors
+            )
+            raise ValueError(message)
+        transactions = [
+            entry for entry in entries if isinstance(entry, data.Transaction)
+        ]
+        if len(transactions) != 1:
+            message = "the source must hold exactly one transaction"
+            raise ValueError(message)
+        entry = transactions[0]
+        if not (entry.meta or {}).get("id"):
+            message = "the schedule needs an `id` metadata key"
+            raise ValueError(message)
+        schedule_id = params.get("id")
+        rule = self._result().rule(schedule_id) if schedule_id else None
+        if rule is None or rule.entry is None:
+            self._write(self.write_target, entry)
+            return [entry]
+        lineno = _lineno(rule.entry)
+        filename = (rule.entry.meta or {}).get("filename")
+        if lineno is None or filename is None:
+            self._write(self.write_target, entry)
+            return [entry]
+        base = Path(self.ledger.beancount_file_path).parent
+        target = writer.resolve_target(Path(str(filename)), base)
+        _rewrite_source(self.ledger, target, [(lineno, entry)])
+        self.after_load_file()
+        return [entry]
 
     def _reconcile(self) -> list[Directive]:
         """Apply the reconciliation plan, batching the edits per file.
@@ -465,6 +633,31 @@ def _lineno(entry: Directive | None) -> int | None:
     meta = getattr(entry, "meta", None) or {}
     line = meta.get("lineno")
     return int(line) if line is not None else None
+
+
+def _refers_to(candidate: Directive | None, entry: Directive | None) -> bool:
+    """Report whether a diagnostic's directive is the given schedule.
+
+    A diagnostic is attached to a directive, so identity is the reliable link;
+    where the engine attached none, the source location is compared instead.
+
+    Args:
+        candidate: The diagnostic's directive, if any.
+        entry: The schedule's directive, if any.
+
+    Returns:
+        ``True`` when the diagnostic refers to the schedule.
+    """
+    if candidate is None or entry is None:
+        return False
+    if candidate is entry:
+        return True
+    left = getattr(candidate, "meta", None) or {}
+    right = getattr(entry, "meta", None) or {}
+    return (left.get("filename"), left.get("lineno")) == (
+        right.get("filename"),
+        right.get("lineno"),
+    )
 
 
 def _first_amount(entry: Transaction) -> Decimal | None:

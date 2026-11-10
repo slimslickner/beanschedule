@@ -35,8 +35,11 @@ beanschedule reconcile examples/main.bean --today 2026-02-01 --write schedules.b
 beanschedule detect examples/main.bean
 ```
 
-In Fava, load `main.bean`; the **Schedules** tab shows the schedules and, with
-`write` configured, offers a **Reconcile** button.
+In Fava, load `main.bean`; the **Schedules** report has three tabs — an
+**Overview** of every schedule, an **Upcoming** ledger of outstanding
+occurrences, and a per-schedule **Schedule** drill-down. With `write` configured
+it offers a **Reconcile** button and lets the drill-down edit a schedule in
+place.
 
 ## `legacy/`
 

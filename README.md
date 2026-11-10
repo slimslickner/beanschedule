@@ -74,6 +74,11 @@ amounts are placeholders the engine recomputes per occurrence:
 `method: "balance-from-ledger"` walks forward from the `principal` leg's ledger
 balance instead of the static term.
 
+The matched posting is the whole cash payment. When the schedule carries an
+`escrow` amount, it is that portion of the payment, so the principal/interest
+split is computed from the remainder (the P+I payment) and the escrow is added
+back on top; the three legs always sum to the matched amount.
+
 ## Installation
 
 ```bash
@@ -120,8 +125,10 @@ paths from the plugin; only Fava-specific settings live here:
 
 ```bash
 beanschedule check     LEDGER                 # validate the schedules
-beanschedule report    LEDGER                 # next, overdue, resolved, upcoming
-beanschedule list      LEDGER                 # schedules with next and overdue
+beanschedule report    LEDGER [--json]        # next, overdue, resolved, upcoming
+beanschedule list      LEDGER [--json]        # schedules with next and overdue
+beanschedule upcoming  LEDGER [--all] [--json]  # one ledger of outstanding occurrences
+beanschedule amortize  LEDGER [--id ID] [--json]  # loan amortization to payoff
 beanschedule reconcile LEDGER [--write]       # match imported transactions (dry run by default)
 beanschedule detect    LEDGER                 # propose schedules for recurring payments
 beanschedule migrate   schedules/             # convert schedules/*.yaml to transactions
@@ -137,6 +144,25 @@ beanschedule docs [--check]                   # schema.md, errors.md, cli.md
 schedule in `schedules.bean`. It is a dry run until `--write` is passed; in Fava
 it is the **Reconcile** button. The mutating commands write **opt-in only**,
 through `writer.py`, inside the ledger directory.
+
+## The Fava report
+
+The extension renders three tabs:
+
+- **Overview** — every schedule as a row (account, payee, recurrence, next,
+  overdue and due counts, amount), with the Reconcile button and a create form.
+- **Upcoming** — one date-ordered ledger of every schedule's outstanding
+  occurrences, each marked **overdue**, **due** (within the schedule's match
+  window), or **upcoming**.
+- **Schedule** — a per-schedule drill-down: the rule's details, its
+  diagnostics, and, for an amortized loan, the projected amortization schedule
+  (remaining payments and principal, interest, escrow and payoff date). With
+  `write` configured, the drill-down edits the schedule's own Beancount source
+  in place, alongside quick skip / move / delete actions.
+
+Schedules are read from `schedules.bean` **without** Beancount's interpolation
+and validation, so an amortized schedule's amount-less leg postings are kept
+rather than dropped; the engine reports its own diagnostics for anything wrong.
 
 ## The topology
 
@@ -169,15 +195,15 @@ src/beanschedule/
   recurrence.py pure RRULE date generation
   reconcile.py  pure: match imported transactions, advance frontiers
   actions.py    build and render schedule transactions (CLI + Fava emit identical text)
-  report.py     shared view model (next, overdue, history, per-schedule ledger)
+  report.py     shared view model (next, overdue, due, upcoming ledger, amortization)
   config.py     parse the config strings plugins and Fava carry
   writer.py     deterministic opt-in ledger edits
   plugin.py     beancount: relabel pending; validate the schedules file
   detector.py   ledger -> proposed schedule transactions
   migrate.py    legacy schedules/*.yaml -> transactions
   migrate_ledger.py  strip v1 tracking metadata and placeholders from a ledger
-  cli.py        check / report / list / reconcile / detect / migrate / migrate-ledger / skip / move / create / edit
-  fava_ext.py   read-only report, opt-in reconcile + writes   [only module importing Fava]
+  cli.py        check / report / list / upcoming / amortize / reconcile / detect / migrate / migrate-ledger / skip / move / create / edit
+  fava_ext.py   tabbed report, opt-in reconcile + edits   [only module importing Fava]
   templates/    Fava report template
 ```
 

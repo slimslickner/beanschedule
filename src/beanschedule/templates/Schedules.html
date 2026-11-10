@@ -1,84 +1,422 @@
 {% set view = extension.view() %}
 {% set base = request.path if request.path.endswith('/') else request.path ~ '/' %}
+{% set mode = request.args.get('view') or 'overview' %}
+{% set upcoming_mode = mode == 'upcoming' %}
+{% set schedule_mode = mode == 'schedule' %}
+{% set current = extension.schedule(request.args.get('id')) if schedule_mode else none %}
+{% set amortization = extension.amortization(request.args.get('id')) if schedule_mode else none %}
+{% macro status_badge(line) -%}
+  {%- if line.due -%}<span class="schedule-badge schedule-due">due</span>
+  {%- elif line.status == 'overdue' -%}<span class="schedule-badge schedule-overdue-badge">overdue</span>
+  {%- elif line.status == 'posted' -%}<span class="schedule-badge schedule-posted">posted</span>
+  {%- elif line.status in ('skipped', 'moved') -%}<span class="schedule-badge schedule-resolved">{{ line.status }}</span>
+  {%- else -%}<span class="schedule-badge schedule-upcoming">upcoming</span>{%- endif -%}
+{%- endmacro %}
 <div class="schedule-report">
-  <h2>Schedules</h2>
+  <style>
+    .schedule-report {
+      --schedule-border: rgba(128, 128, 128, 0.5);
+      --schedule-rule: rgba(128, 128, 128, 0.35);
+    }
+    .schedule-report .schedule-nav {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      margin: 0.25rem 0 0.75rem;
+      padding-bottom: 0.4rem;
+      border-bottom: 1px solid var(--schedule-border);
+    }
+    .schedule-report .schedule-tabs {
+      display: flex;
+      gap: 0.5rem;
+      margin-left: auto;
+    }
+    .schedule-report .schedule-tab {
+      padding: 0.2rem 0.75rem;
+      border: 1px solid var(--schedule-border);
+      border-radius: 0.25rem;
+      text-decoration: none;
+      white-space: nowrap;
+    }
+    .schedule-report .schedule-tab-active {
+      background: var(--table-header-background, rgba(128, 128, 128, 0.15));
+      font-weight: 600;
+    }
+    .schedule-report table {
+      border-collapse: collapse;
+      width: auto;
+    }
+    .schedule-report th,
+    .schedule-report td {
+      padding: 0.25rem 0.75rem;
+      border-bottom: 1px solid var(--schedule-rule);
+      text-align: left;
+      font-variant-numeric: tabular-nums;
+      white-space: nowrap;
+    }
+    .schedule-report th.num,
+    .schedule-report td.num {
+      text-align: right;
+    }
+    .schedule-report td a {
+      color: inherit;
+    }
+    .schedule-report tbody tr:hover {
+      background: var(--table-header-background, rgba(128, 128, 128, 0.08));
+    }
+    .schedule-report .schedule-errors {
+      margin: 0 0 0.75rem;
+      padding: 0.4rem 0.6rem;
+      border: 1px solid var(--color-error, #973535);
+      border-radius: 4px;
+      list-style: none;
+    }
+    .schedule-report .schedule-errors li.error code {
+      color: var(--diff-negative, #973535);
+      font-weight: 600;
+    }
+    .schedule-report .schedule-errors li.warning code {
+      color: var(--warning, #edd431);
+      font-weight: 600;
+    }
+    .schedule-report .schedule-badge {
+      display: inline-block;
+      padding: 0 0.4em;
+      border-radius: 3px;
+      font-size: 0.85em;
+      border: 1px solid var(--schedule-border);
+    }
+    .schedule-report .schedule-due {
+      color: light-dark(#7d6100, #edd431);
+      border-color: currentColor;
+      font-weight: 600;
+    }
+    .schedule-report .schedule-overdue-badge {
+      color: var(--diff-negative, #973535);
+      border-color: currentColor;
+      font-weight: 600;
+    }
+    .schedule-report .schedule-posted {
+      color: var(--diff-positive, #35973d);
+    }
+    .schedule-report .schedule-resolved,
+    .schedule-report .schedule-upcoming {
+      color: rgba(128, 128, 128, 1);
+    }
+    .schedule-report .schedule-scroll {
+      overflow: auto;
+      max-height: min(70vh, calc(100vh - 12rem));
+      border: 1px solid var(--schedule-border);
+      border-radius: 4px;
+    }
+    .schedule-report .schedule-scroll thead th {
+      position: sticky;
+      top: 0;
+      background: var(--table-header-background, var(--background, #fff));
+      z-index: 1;
+    }
+    .schedule-report .schedule-summary {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.4rem 1.5rem;
+      margin: 0.5rem 0 0.75rem;
+    }
+    .schedule-report .schedule-summary div {
+      display: flex;
+      gap: 0.4rem;
+    }
+    .schedule-report .schedule-summary dt {
+      color: rgba(128, 128, 128, 1);
+      margin: 0;
+    }
+    .schedule-report .schedule-summary dd {
+      margin: 0;
+      font-weight: 600;
+      font-variant-numeric: tabular-nums;
+    }
+    .schedule-report .schedule-form {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+      align-items: center;
+      margin: 0 0 0.75rem;
+    }
+    .schedule-report .schedule-form label {
+      display: flex;
+      gap: 0.3rem;
+      align-items: center;
+    }
+    .schedule-report .schedule-form input,
+    .schedule-report .schedule-form textarea,
+    .schedule-report .schedule-form select {
+      font: inherit;
+    }
+    .schedule-report .schedule-edit {
+      display: flex;
+      flex-direction: column;
+      gap: 0.4rem;
+      align-items: flex-start;
+      margin-top: 1rem;
+    }
+    .schedule-report .schedule-edit textarea {
+      width: min(100%, 60rem);
+      min-height: 12rem;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      white-space: pre;
+      overflow-wrap: normal;
+    }
+    .schedule-report .schedule-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+      align-items: center;
+      margin: 0.75rem 0;
+    }
+    .schedule-report .schedule-actions form {
+      display: flex;
+      gap: 0.3rem;
+      align-items: center;
+      margin: 0;
+      padding: 0.3rem 0.5rem;
+      border: 1px solid var(--schedule-rule);
+      border-radius: 4px;
+    }
+    .schedule-report .schedule-readonly {
+      color: rgba(128, 128, 128, 1);
+    }
+    .schedule-report .schedule-empty {
+      color: rgba(128, 128, 128, 1);
+    }
+  </style>
+
+  <h2>Schedules {% if view.currency %}<small>in {{ view.currency }}</small>{% endif %}</h2>
+
+  <div class="schedule-nav">
+    <span class="schedule-tabs">
+      <a class="schedule-tab{{ ' schedule-tab-active' if mode == 'overview' else '' }}" href="?">Overview</a>
+      <a class="schedule-tab{{ ' schedule-tab-active' if upcoming_mode else '' }}" href="?view=upcoming">Upcoming</a>
+      <a class="schedule-tab{{ ' schedule-tab-active' if schedule_mode else '' }}" href="?view=schedule">Schedule</a>
+    </span>
+  </div>
+
   {% if view.errors %}
     <ul class="schedule-errors">
-      {% for error in view.errors %}<li><strong>{{ error.code }}</strong> {{ error.message }}</li>{% endfor %}
+      {% for error in view.errors %}<li class="error"><code>{{ error.code }}</code> {{ error.message }}</li>{% endfor %}
+      {% for warning in view.warnings %}<li class="warning"><code>{{ warning.code }}</code> {{ warning.message }}</li>{% endfor %}
+    </ul>
+  {% elif view.warnings %}
+    <ul class="schedule-errors">
+      {% for warning in view.warnings %}<li class="warning"><code>{{ warning.code }}</code> {{ warning.message }}</li>{% endfor %}
     </ul>
   {% endif %}
+
   {% if not view.schedules %}
     <p>No schedules are declared. Add a schedule transaction to the schedules file.</p>
   {% endif %}
-  {% if extension.writable %}
-    <form method="post" action="{{ base ~ 'commit' }}" class="schedule-reconcile">
-      <input type="hidden" name="action" value="reconcile">
-      <button type="submit">Reconcile ({{ extension.reconcile_count() }} match(es))</button>
-    </form>
-  {% endif %}
-  {% for schedule in view.schedules %}
-    <section class="schedule">
-      <h3>{{ schedule.id }} <small>{{ schedule.rule.match_account }}</small></h3>
-      <p>
-        next <strong>{{ schedule.next or '—' }}</strong>
-        {% if schedule.overdue %}
-          · overdue
-          {% for day in schedule.overdue %}<span class="schedule-overdue">{{ day }}</span>{% endfor %}
-        {% endif %}
-      </p>
-      <table class="schedule-occurrences">
-        <thead><tr><th>Nominal</th><th>Status</th><th>Effective</th><th class="num">Amount</th><th>Payee</th></tr></thead>
+
+  {% if mode == 'overview' %}
+    <div class="schedule-overview">
+      {% if extension.writable %}
+        <form method="post" action="{{ base ~ 'commit' }}" class="schedule-form">
+          <input type="hidden" name="action" value="reconcile">
+          <button type="submit">Reconcile ({{ extension.reconcile_count() }} match(es))</button>
+        </form>
+      {% endif %}
+      <table class="table">
+        <thead>
+          <tr>
+            <th>Schedule</th>
+            <th>Account</th>
+            <th>Payee</th>
+            <th>Recurrence</th>
+            <th>Next</th>
+            <th class="num">Overdue</th>
+            <th class="num">Due</th>
+            <th class="num">Amount</th>
+          </tr>
+        </thead>
         <tbody>
-          {% for line in schedule.lines %}
+          {% for schedule in view.schedules %}
             <tr>
-              <td>{{ line.nominal }}</td>
-              <td>{{ line.status }}</td>
-              <td>{{ line.effective }}</td>
-              <td class="num">{{ extension.money(line.amount) }}</td>
-              <td>{{ line.payee or '' }}</td>
+              <td><a href="?view=schedule&amp;id={{ schedule.id | urlencode }}">{{ schedule.id }}</a></td>
+              <td>{{ schedule.rule.match_account }}</td>
+              <td>{{ schedule.rule.payee or '' }}</td>
+              <td>{{ schedule.rule.rrule }}</td>
+              <td>{{ schedule.next or '—' }}</td>
+              <td class="num">{% if schedule.overdue %}<span class="schedule-badge schedule-overdue-badge">{{ schedule.overdue | length }}</span>{% endif %}</td>
+              <td class="num">{% if schedule.due %}<span class="schedule-badge schedule-due">{{ schedule.due | length }}</span>{% endif %}</td>
+              <td class="num">{{ extension.money(schedule.rule.match_amount) }}</td>
             </tr>
           {% endfor %}
         </tbody>
       </table>
+
       {% if extension.writable %}
-        <form method="post" action="{{ base ~ 'commit' }}" class="schedule-skip">
-          <input type="hidden" name="action" value="skip">
-          <input type="hidden" name="id" value="{{ schedule.id }}">
-          <button type="submit">Skip next</button>
-        </form>
-        <form method="post" action="{{ base ~ 'commit' }}" class="schedule-move">
-          <input type="hidden" name="action" value="move">
-          <input type="hidden" name="id" value="{{ schedule.id }}">
-          <label>Move next to <input type="date" name="new_date"></label>
-          <button type="submit">Move</button>
-        </form>
-        {% if schedule.rule.entry %}
+        <section class="schedule-create">
+          <h3>Create a schedule</h3>
           <form method="post" action="{{ base ~ 'commit' }}" class="schedule-edit">
-            <input type="hidden" name="action" value="edit">
-            <input type="hidden" name="id" value="{{ schedule.id }}">
-            <label>Amount <input name="amount" size="10" value="{{ schedule.rule.match_amount or '' }}"></label>
-            <button type="submit">Save</button>
+            <input type="hidden" name="action" value="create">
+            <label>Id <input name="id"></label>
+            <label>RRULE <input name="rrule" value="FREQ=MONTHLY;BYMONTHDAY=1"></label>
+            <label>Start <input type="date" name="start"></label>
+            <label>Match account <input name="account"></label>
+            <label>Postings <textarea name="postings" rows="2" placeholder="Expenses:Taxes:Federal 600.00&#10;Expenses:Savings 2400.00"></textarea></label>
+            <label>Payee <input name="payee"></label>
+            <label>Amount <input name="amount" size="10"></label>
+            <button type="submit">Create</button>
           </form>
+        </section>
+      {% else %}
+        <p class="schedule-readonly">This report is read-only. Configure a <code>write</code> file to edit schedules.</p>
+      {% endif %}
+    </div>
+  {% elif upcoming_mode %}
+    {% set rows = extension.upcoming() %}
+    <div class="schedule-upcoming">
+      {% if not rows %}
+        <p class="schedule-empty">Nothing outstanding — every occurrence is resolved.</p>
+      {% else %}
+        <div class="schedule-scroll">
+          <table class="table">
+            <thead>
+              <tr>
+                <th>Date</th>
+                <th>Status</th>
+                <th>Schedule</th>
+                <th>Payee / narration</th>
+                <th class="num">Amount</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for row in rows %}
+                <tr>
+                  <td>{{ row.line.nominal }}</td>
+                  <td>{{ status_badge(row.line) }}</td>
+                  <td><a href="?view=schedule&amp;id={{ row.schedule_id | urlencode }}">{{ row.schedule_id }}</a></td>
+                  <td>{{ row.line.payee or row.line.narration or row.rule.narration or '' }}</td>
+                  <td class="num">{{ extension.money(row.line.amount) }}</td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      {% endif %}
+    </div>
+  {% elif schedule_mode %}
+    <div class="schedule-detail">
+      <form method="get" class="schedule-form">
+        <input type="hidden" name="view" value="schedule">
+        <label>Schedule
+          <select name="id">
+            {% for id in extension.schedule_ids() %}
+              <option value="{{ id }}"{{ ' selected' if current and id == current.id else '' }}>{{ id }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <button type="submit">Show</button>
+      </form>
+
+      {% if current is none %}
+        <p class="schedule-empty">No such schedule.</p>
+      {% else %}
+        {% set diagnostics = extension.schedule_diagnostics(current.id) %}
+        {% if diagnostics %}
+          <ul class="schedule-errors">
+            {% for code, message in diagnostics %}<li class="{{ 'error' if code.startswith('E') else 'warning' }}"><code>{{ code }}</code> {{ message }}</li>{% endfor %}
+          </ul>
+        {% endif %}
+
+        <table class="table schedule-detail-rule">
+          <tbody>
+            <tr><th>Account</th><td>{{ current.rule.match_account }}</td></tr>
+            <tr><th>Payee</th><td>{{ current.rule.payee or '' }}</td></tr>
+            <tr><th>Narration</th><td>{{ current.rule.narration or '' }}</td></tr>
+            <tr><th>Recurrence</th><td>{{ current.rule.rrule }}{% if current.rule.end %} until {{ current.rule.end }}{% endif %}</td></tr>
+            <tr><th>Next</th><td>{{ current.next or '—' }}{% if current.overdue %} · <span class="schedule-badge schedule-overdue-badge">{{ current.overdue | length }} overdue</span>{% endif %}</td></tr>
+            <tr><th>Amount</th><td>{{ extension.money(current.rule.match_amount) }}</td></tr>
+            {% if current.rule.tags %}<tr><th>Tags</th><td>{% for tag in current.rule.tags %}#{{ tag }} {% endfor %}</td></tr>{% endif %}
+          </tbody>
+        </table>
+
+        {% if amortization %}
+          <h3>Amortization</h3>
+          {% if not amortization.has_lines %}
+            <p class="schedule-empty">No remaining payments — either the loan is repaid or its balance cannot be found in the ledger.</p>
+          {% else %}
+            <dl class="schedule-summary">
+              <div><dt>Method</dt><dd>{{ amortization.method }}</dd></div>
+              <div><dt>Rate</dt><dd>{{ '%.4f' % amortization.rate }}</dd></div>
+              <div><dt>Remaining payments</dt><dd>{{ amortization.remaining_payments }}</dd></div>
+              <div><dt>Remaining principal</dt><dd>{{ extension.money(amortization.remaining_principal) }}</dd></div>
+              <div><dt>Remaining interest</dt><dd>{{ extension.money(amortization.remaining_interest) }}</dd></div>
+              <div><dt>Remaining escrow</dt><dd>{{ extension.money(amortization.remaining_escrow) }}</dd></div>
+              <div><dt>Remaining total</dt><dd>{{ extension.money(amortization.remaining_total) }}</dd></div>
+              <div><dt>Payoff</dt><dd>{{ amortization.payoff_date or '—' }}</dd></div>
+            </dl>
+            <div class="schedule-scroll">
+              <table class="table">
+                <thead>
+                  <tr>
+                    <th class="num">#</th>
+                    <th>Date</th>
+                    <th class="num">Payment</th>
+                    <th class="num">Principal</th>
+                    <th class="num">Interest</th>
+                    <th class="num">Escrow</th>
+                    <th class="num">Total</th>
+                    <th class="num">Balance</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {% for line in amortization.lines %}
+                    <tr>
+                      <td class="num">{{ line.payment_number or '' }}</td>
+                      <td>{{ line.date }}</td>
+                      <td class="num">{{ extension.money(line.payment) }}</td>
+                      <td class="num">{{ extension.money(line.principal) }}</td>
+                      <td class="num">{{ extension.money(line.interest) }}</td>
+                      <td class="num">{{ extension.money(line.escrow) }}</td>
+                      <td class="num">{{ extension.money(line.total) }}</td>
+                      <td class="num">{{ extension.money(line.balance_after) }}</td>
+                    </tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+            </div>
+          {% endif %}
+        {% endif %}
+
+        {% if extension.writable %}
+          <div class="schedule-actions">
+            <form method="post" action="{{ base ~ 'commit' }}">
+              <input type="hidden" name="action" value="skip">
+              <input type="hidden" name="id" value="{{ current.id }}">
+              <button type="submit">Skip next</button>
+            </form>
+            <form method="post" action="{{ base ~ 'commit' }}">
+              <input type="hidden" name="action" value="move">
+              <input type="hidden" name="id" value="{{ current.id }}">
+              <label>Move next to <input type="date" name="new_date"></label>
+              <button type="submit">Move</button>
+            </form>
+            <form method="post" action="{{ base ~ 'commit' }}">
+              <input type="hidden" name="action" value="delete">
+              <input type="hidden" name="id" value="{{ current.id }}">
+              <button type="submit">Delete</button>
+            </form>
+          </div>
+
+          <h3>Edit</h3>
+          <form method="post" action="{{ base ~ 'commit' }}" class="schedule-edit">
+            <input type="hidden" name="action" value="save">
+            <input type="hidden" name="id" value="{{ current.id }}">
+            <textarea name="source" spellcheck="false" aria-label="Schedule source">{{ extension.schedule_source(current.id) }}</textarea>
+            <button type="submit">Save schedule</button>
+          </form>
+        {% else %}
+          <p class="schedule-readonly">This report is read-only. Configure a <code>write</code> file to edit schedules.</p>
         {% endif %}
       {% endif %}
-    </section>
-  {% endfor %}
-  {% if extension.writable %}
-    <section class="schedule-create">
-      <h3>Create a schedule</h3>
-      <form method="post" action="{{ base ~ 'commit' }}">
-        <input type="hidden" name="action" value="create">
-        <label>Id <input name="id"></label>
-        <label>RRULE <input name="rrule" value="FREQ=MONTHLY;BYMONTHDAY=1"></label>
-        <label>Start <input type="date" name="start"></label>
-        <label>Match account <input name="account"></label>
-        <label>Postings <textarea name="postings" rows="2" placeholder="Expenses:Taxes:Federal 600.00&#10;Expenses:Savings 2400.00"></textarea></label>
-        <label>Payee <input name="payee"></label>
-        <label>Amount <input name="amount" size="10"></label>
-        <button type="submit">Create</button>
-      </form>
-    </section>
-  {% else %}
-    <p class="schedule-readonly">This report is read-only. Configure a <code>write</code> file to edit schedules.</p>
+    </div>
   {% endif %}
 </div>

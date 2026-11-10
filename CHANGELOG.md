@@ -12,6 +12,19 @@ plugin and the Fava report.
 
 ### Added
 
+- A tabbed Fava report: an **Overview** of every schedule, an **Upcoming**
+  ledger of all outstanding occurrences (overdue, due and upcoming), and a
+  per-schedule **drill-down** that projects an amortized loan's remaining
+  payments (principal, interest, escrow and payoff) and, with `write` configured,
+  edits the schedule's own Beancount source in place.
+- `beanschedule upcoming` (one ledger of outstanding occurrences) and
+  `beanschedule amortize` (each loan's amortization to payoff), with `--json` on
+  the read-only reporting commands.
+- An amortization projection in the shared view model, and a `due` flag on an
+  occurrence (the reference date is within the schedule's match window).
+- Diagnostics: `E015` (amortized but no matched amount), `W002` (no `interest`
+  leg), `W003` (`escrow` and its leg disagree) and `W004` (`amount-tolerance`
+  without a matched amount).
 - Reconciliation (`beanschedule.reconcile`): a pure plan that links imported
   transactions to a schedule's outstanding occurrences (greedily and
   chronologically, with the ½-gap consumption rule), enriches them with the
@@ -45,6 +58,12 @@ plugin and the Fava report.
 - A schedule's date **is** its next occurrence; `skip` and `move` are date edits.
 - The Fava extension loads the schedules file by path and grows a reconcile
   action.
+- The schedules file is parsed without Beancount's interpolation and validation,
+  so an amortized schedule's amount-less leg postings are kept and the engine's
+  own diagnostics are the ones reported.
+- Amortization treats `escrow` as the escrow portion of the matched payment, so
+  the principal/interest split is computed from the P+I remainder and the legs
+  always sum to the matched amount.
 
 ### Removed
 
@@ -66,3 +85,7 @@ plugin and the Fava report.
 
 - Date arithmetic is clamped to the representable range.
 - Forecast and enrichment never emit a posting with no amount.
+- An amortized schedule whose leg postings omit their amounts is no longer
+  dropped when the schedules file is loaded.
+- Amortization no longer counts escrow twice, so an enriched payment's legs sum
+  to the matched amount.
