@@ -65,6 +65,29 @@ def test_plugin_loads_when_schedules_absent(tmp_path: Path) -> None:
     assert not errors
 
 
+def test_load_schedules_keeps_amount_less_amortization_legs(tmp_path: Path) -> None:
+    # A schedule with two amount-less legs must survive loading; the strict
+    # Beancount loader would drop it ("more than one auto-posting").
+    path = tmp_path / "schedules.bean"
+    path.write_text(
+        '2026-01-01 * "Chase" "Loan"\n'
+        '  id: "loan"\n'
+        '  rrule: "FREQ=MONTHLY;BYMONTHDAY=1"\n'
+        '  method: "static"\n'
+        "  rate: 0.06\n"
+        "  term: 12\n"
+        "  Assets:Bank  -1200.00 USD\n"
+        "  Liabilities:Loan\n"
+        '    schedule-leg: "principal"\n'
+        "  Expenses:X\n"
+        '    schedule-leg: "interest"\n',
+        encoding="utf-8",
+    )
+    schedules = plugin.load_schedules(path)
+    assert len(schedules) == 1
+    assert schedules[0].meta["id"] == "loan"
+
+
 def test_plugin_config_keys(tmp_path: Path) -> None:
     main = tmp_path / "main.bean"
     main.touch()

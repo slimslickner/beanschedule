@@ -3,10 +3,11 @@
 
 A thin ``argparse`` front end over :mod:`beanschedule.core` and
 :mod:`beanschedule.reconcile`. The read-only commands — ``check``, ``report``,
-``list`` and ``detect`` — never touch the ledger. ``reconcile`` matches imported
-transactions to schedules and, with ``--write``, tags the matches and advances
-the frontiers. ``skip``, ``move``, ``create`` and ``edit`` change a schedule.
-``docs`` renders the generated documentation and gates it with ``--check``.
+``list``, ``upcoming``, ``amortize`` and ``detect`` — never touch the ledger.
+``reconcile`` matches imported transactions to schedules and, with ``--write``,
+tags the matches and advances the frontiers. ``skip``, ``move``, ``create`` and
+``edit`` change a schedule. ``docs`` renders the generated documentation and
+gates it with ``--check``.
 """
 
 from __future__ import annotations
@@ -23,6 +24,7 @@ from typing import TYPE_CHECKING
 
 import argcomplete
 from beancount import loader
+from beancount.parser import parser
 
 from beanschedule import (
     __version__,
@@ -48,12 +50,233 @@ if TYPE_CHECKING:
 
     from beancount.core.data import Directive
 
+    from beanschedule.report import ScheduleView, ScheduleViewResult, UpcomingLine
+
 __all__ = ["build_parser", "cli_markdown", "main", "render_docs"]
 
 _GENERATED_FILES = ("cli.md", "schema.md", "errors.md")
 
 _DEFAULT_SCHEDULES_FILE = "schedules.bean"
 _DEFAULT_PENDING_FILE = "pending.bean"
+
+#: The occurrence table's leading text columns are left-aligned; the amount is
+#: right-aligned.
+_OCCURRENCE_HEADERS = ("Nominal", "Status", "Effective", "Amount", "Payee")
+_OCCURRENCE_TEXT_COLUMNS = 3
+
+#: The schedule list's leading text columns.
+_LIST_HEADERS = ("Schedule", "Next", "Overdue", "Due", "Account")
+_LIST_TEXT_COLUMNS = 1
+
+#: The upcoming ledger's leading text columns.
+_UPCOMING_HEADERS = ("Date", "Status", "Schedule", "Amount", "Payee / narration")
+_UPCOMING_TEXT_COLUMNS = 3
+
+#: The amortization table's leading text columns.
+_AMORTIZATION_HEADERS = (
+    "#",
+    "Date",
+    "Payment",
+    "Principal",
+    "Interest",
+    "Escrow",
+    "Total",
+    "Balance",
+)
+_AMORTIZATION_TEXT_COLUMNS = 2
+
+
+# --- Rendering -----------------------------------------------------------------
+
+
+def _format_table(
+    headers: tuple[str, ...], rows: Sequence[tuple[str, ...]], text_columns: int
+) -> str:
+    """Render an aligned plain-text table.
+
+    The first ``text_columns`` columns are left-aligned and the rest are
+    right-aligned, so figures line up and text reads naturally.
+
+    Args:
+        headers: The column headings.
+        rows: The rows, each with one cell per heading.
+        text_columns: How many leading columns are text.
+
+    Returns:
+        The rendered table, without a trailing newline.
+    """
+    widths = [len(header) for header in headers]
+    for row in rows:
+        widths = [
+            max(width, len(cell)) for width, cell in zip(widths, row, strict=True)
+        ]
+    rules = "  ".join("-" * width for width in widths)
+
+    def render(cells: Sequence[str]) -> str:
+        return "  ".join(
+            cell.ljust(widths[index])
+            if index < text_columns
+            else cell.rjust(widths[index])
+            for index, cell in enumerate(cells)
+        )
+
+    return "\n".join([render(headers), rules, *(render(row) for row in rows)])
+
+
+def _indent(text: str, prefix: str) -> str:
+    """Indent every line of a block.
+
+    Args:
+        text: The block.
+        prefix: The prefix to add to each line.
+
+    Returns:
+        The indented block.
+    """
+    return "\n".join(f"{prefix}{line}" for line in text.split("\n"))
+
+
+def _money(value: object) -> str | None:
+    """Format an optional money amount for JSON.
+
+    Args:
+        value: A decimal, or ``None``.
+
+    Returns:
+        The amount as a string, or ``None``.
+    """
+    return None if value is None else f"{value:.2f}"
+
+
+def _report_json(view: ScheduleViewResult) -> list[dict[str, object]]:
+    """Render the report view as JSON-serialisable data.
+
+    Args:
+        view: The report view.
+
+    Returns:
+        One mapping per schedule.
+    """
+    return [
+        {
+            "id": schedule.id,
+            "account": schedule.rule.match_account,
+            "payee": schedule.rule.payee,
+            "next": schedule.next.isoformat() if schedule.next else None,
+            "overdue": [day.isoformat() for day in schedule.overdue],
+            "lines": [
+                {
+                    "nominal": line.nominal.isoformat(),
+                    "effective": line.effective.isoformat(),
+                    "status": "due" if line.due else line.status,
+                    "due": line.due,
+                    "amount": _money(line.amount),
+                    "payee": line.payee,
+                    "narration": line.narration,
+                }
+                for line in (*schedule.resolved, *schedule.upcoming)
+            ],
+        }
+        for schedule in view.schedules
+    ]
+
+
+def _list_json(view: ScheduleViewResult) -> list[dict[str, object]]:
+    """Render the schedule list as JSON-serialisable data.
+
+    Args:
+        view: The report view.
+
+    Returns:
+        One mapping per schedule.
+    """
+    return [
+        {
+            "id": schedule.id,
+            "account": schedule.rule.match_account,
+            "next": schedule.next.isoformat() if schedule.next else None,
+            "overdue": [day.isoformat() for day in schedule.overdue],
+            "due": [line.nominal.isoformat() for line in schedule.due],
+            "amount": _money(schedule.rule.match_amount),
+        }
+        for schedule in view.schedules
+    ]
+
+
+def _upcoming_json(rows: Sequence[UpcomingLine]) -> list[dict[str, object]]:
+    """Render the upcoming ledger as JSON-serialisable data.
+
+    Args:
+        rows: The ledger rows.
+
+    Returns:
+        One mapping per occurrence.
+    """
+    return [
+        {
+            "schedule": row.schedule_id,
+            "nominal": row.line.nominal.isoformat(),
+            "effective": row.line.effective.isoformat(),
+            "status": "due" if row.line.due else row.line.status,
+            "due": row.line.due,
+            "amount": _money(row.line.amount),
+            "payee": row.line.payee,
+            "narration": row.line.narration,
+        }
+        for row in rows
+    ]
+
+
+def _amortize_json(
+    schedules: Sequence[ScheduleView], currency: str
+) -> list[dict[str, object]]:
+    """Render the amortization projections as JSON-serialisable data.
+
+    Args:
+        schedules: The amortized schedule views.
+        currency: The operating currency.
+
+    Returns:
+        One mapping per schedule.
+    """
+    rendered: list[dict[str, object]] = []
+    for schedule in schedules:
+        amortization = schedule.amortization
+        if amortization is None:
+            continue
+        rendered.append(
+            {
+                "id": schedule.id,
+                "account": schedule.rule.match_account,
+                "currency": currency,
+                "method": amortization.method,
+                "rate": str(amortization.rate),
+                "remaining_payments": amortization.remaining_payments,
+                "remaining_principal": _money(amortization.remaining_principal),
+                "remaining_interest": _money(amortization.remaining_interest),
+                "remaining_escrow": _money(amortization.remaining_escrow),
+                "remaining_total": _money(amortization.remaining_total),
+                "payoff": (
+                    amortization.payoff_date.isoformat()
+                    if amortization.payoff_date
+                    else None
+                ),
+                "lines": [
+                    {
+                        "payment_number": line.payment_number,
+                        "date": line.date.isoformat(),
+                        "payment": _money(line.payment),
+                        "principal": _money(line.principal),
+                        "interest": _money(line.interest),
+                        "escrow": _money(line.escrow),
+                        "total": _money(line.total),
+                        "balance_after": _money(line.balance_after),
+                    }
+                    for line in amortization.lines
+                ],
+            }
+        )
+    return rendered
 
 
 # --- Loading -------------------------------------------------------------------
@@ -76,7 +299,10 @@ def _load_schedules(path: Path) -> list[Directive]:
     """Load the schedules file.
 
     The whole file is schedules, so every transaction is returned — even one
-    missing its ``id``, so validation can report it.
+    missing its ``id``, so validation can report it. The file is parsed without
+    Beancount's interpolation: an amortized schedule's leg postings are
+    amount-less placeholders, and the full loader would drop a transaction with
+    more than one of them. The engine reports its own diagnostics instead.
 
     Args:
         path: The schedules file.
@@ -86,7 +312,7 @@ def _load_schedules(path: Path) -> list[Directive]:
     """
     if not path.is_file():
         return []
-    entries, _errors, _options = loader.load_file(str(path))
+    entries, _errors, _options = parser.parse_file(str(path))
     from beancount.core.data import Transaction  # noqa: PLC0415 - narrow the type
 
     return [entry for entry in entries if isinstance(entry, Transaction)]
@@ -174,6 +400,9 @@ def cmd_report(args: argparse.Namespace) -> int:
     schedules = _load_schedules(_schedules_path(args, ledger))
     result = compute(entries, options, schedules=schedules, today=_today(args))
     view = build_view(result, entries, options, today=_today(args))
+    if args.json:
+        print(json.dumps(_report_json(view), indent=2))
+        return 0
     for schedule in view.schedules:
         print(f"{schedule.id}  ({schedule.rule.match_account})")
         print(f"  next:    {schedule.next or '-'}")
@@ -181,15 +410,19 @@ def cmd_report(args: argparse.Namespace) -> int:
             print(
                 f"  overdue: {', '.join(day.isoformat() for day in schedule.overdue)}"
             )
-        for line in schedule.resolved:
-            amount = format_money(line.amount, view.currency)
-            print(
-                f"  {line.nominal}  {line.status:<8} "
-                f"{line.effective}  {amount:>14}  {line.payee or ''}"
+        rows = [
+            (
+                line.nominal.isoformat(),
+                "due" if line.due else line.status,
+                line.effective.isoformat(),
+                format_money(line.amount, view.currency),
+                line.payee or "",
             )
-        for line in schedule.upcoming:
-            amount = format_money(line.amount, view.currency)
-            print(f"  {line.nominal}  {line.status:<8} {'':10}  {amount:>14}")
+            for line in (*schedule.resolved, *schedule.upcoming)
+        ]
+        table = _format_table(_OCCURRENCE_HEADERS, rows, _OCCURRENCE_TEXT_COLUMNS)
+        print(_indent(table, "  "))
+        print()
     return 0
 
 
@@ -206,11 +439,120 @@ def cmd_list(args: argparse.Namespace) -> int:
     entries, options = _load(ledger)
     schedules = _load_schedules(_schedules_path(args, ledger))
     result = compute(entries, options, schedules=schedules, today=_today(args))
-    for report in result.reports:
-        overdue = len(report.overdue)
-        flag = f"  {overdue} overdue" if overdue else ""
-        nxt = report.next.isoformat() if report.next else "-"
-        print(f"{report.id:<32} next {nxt:<12}{flag}")
+    view = build_view(result, entries, options, today=_today(args))
+    if args.json:
+        print(json.dumps(_list_json(view), indent=2))
+        return 0
+    rows = [
+        (
+            schedule.id,
+            (schedule.next.isoformat() if schedule.next else "-"),
+            str(len(schedule.overdue)),
+            str(len(schedule.due)),
+            schedule.rule.match_account,
+        )
+        for schedule in view.schedules
+    ]
+    print(_format_table(_LIST_HEADERS, rows, _LIST_TEXT_COLUMNS))
+    return 0
+
+
+def cmd_upcoming(args: argparse.Namespace) -> int:
+    """Show one ledger of every schedule's outstanding occurrences.
+
+    Args:
+        args: The parsed arguments.
+
+    Returns:
+        The process exit code.
+    """
+    ledger = Path(args.ledger)
+    entries, options = _load(ledger)
+    schedules = _load_schedules(_schedules_path(args, ledger))
+    result = compute(entries, options, schedules=schedules, today=_today(args))
+    view = build_view(result, entries, options, today=_today(args))
+    rows = view.ledger(pending_only=not args.all)
+    if args.json:
+        print(json.dumps(_upcoming_json(rows), indent=2))
+        return 0
+    if not rows:
+        print("nothing outstanding")
+        return 0
+    table_rows = [
+        (
+            row.line.nominal.isoformat(),
+            "due" if row.line.due else row.line.status,
+            row.schedule_id,
+            format_money(row.line.amount, view.currency),
+            row.line.payee or row.line.narration or row.rule.narration or "",
+        )
+        for row in rows
+    ]
+    print(_format_table(_UPCOMING_HEADERS, table_rows, _UPCOMING_TEXT_COLUMNS))
+    return 0
+
+
+def cmd_amortize(args: argparse.Namespace) -> int:
+    """Show each loan's remaining amortization schedule.
+
+    Args:
+        args: The parsed arguments.
+
+    Returns:
+        The process exit code.
+    """
+    ledger = Path(args.ledger)
+    entries, options = _load(ledger)
+    schedules = _load_schedules(_schedules_path(args, ledger))
+    result = compute(entries, options, schedules=schedules, today=_today(args))
+    view = build_view(result, entries, options, today=_today(args))
+    targets = [
+        schedule
+        for schedule in view.schedules
+        if schedule.amortization is not None
+        and (args.id is None or schedule.id == args.id)
+    ]
+    if args.json:
+        print(json.dumps(_amortize_json(targets, view.currency), indent=2))
+        return 0
+    if not targets:
+        print("no amortized schedules")
+        return 0
+    for schedule in targets:
+        amortization = schedule.amortization
+        assert amortization is not None  # noqa: S101 - filtered above
+        print(f"{schedule.id}  ({schedule.rule.match_account})")
+        if not amortization.has_lines:
+            print("  no remaining payments")
+            print()
+            continue
+        print(
+            f"  {amortization.method}  rate {amortization.rate}  "
+            f"payoff {amortization.payoff_date}"
+        )
+        print(
+            f"  remaining: {amortization.remaining_payments} payments  "
+            f"principal {format_money(amortization.remaining_principal, view.currency)}  "
+            f"interest {format_money(amortization.remaining_interest, view.currency)}  "
+            f"escrow {format_money(amortization.remaining_escrow, view.currency)}  "
+            f"total {format_money(amortization.remaining_total, view.currency)}"
+        )
+        rows = [
+            (
+                str(line.payment_number or ""),
+                line.date.isoformat(),
+                format_money(line.payment, view.currency),
+                format_money(line.principal, view.currency),
+                format_money(line.interest, view.currency),
+                format_money(line.escrow, view.currency),
+                format_money(line.total, view.currency),
+                format_money(line.balance_after, view.currency),
+            )
+            for line in amortization.lines
+        ]
+        table = _format_table(_AMORTIZATION_HEADERS, rows, _AMORTIZATION_TEXT_COLUMNS)
+        print(_indent(table, "  "))
+        print()
     return 0
 
 
@@ -723,7 +1065,7 @@ def _today(args: argparse.Namespace) -> date:
     return date.today()  # noqa: DTZ011 - the reference date is wall-clock
 
 
-def build_parser() -> argparse.ArgumentParser:
+def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915 - one wiring block
     """Build the command-line parser.
 
     Returns:
@@ -734,8 +1076,36 @@ def build_parser() -> argparse.ArgumentParser:
     sub = parser.add_subparsers(dest="command", required=True)
 
     _add_ledger(sub, "check", "Validate the schedules across a ledger", cmd_check)
-    _add_ledger(sub, "report", "Show each schedule's occurrences", cmd_report)
-    _add_ledger(sub, "list", "List schedules with next and overdue", cmd_list)
+    report = _add_ledger(sub, "report", "Show each schedule's occurrences", cmd_report)
+    report.add_argument(
+        "--json", action="store_true", help="Emit machine-readable JSON"
+    )
+    listing = _add_ledger(sub, "list", "List schedules with next and overdue", cmd_list)
+    listing.add_argument(
+        "--json", action="store_true", help="Emit machine-readable JSON"
+    )
+    upcoming = _add_ledger(
+        sub,
+        "upcoming",
+        "Show one ledger of every outstanding occurrence",
+        cmd_upcoming,
+    )
+    upcoming.add_argument(
+        "--all", action="store_true", help="Include resolved occurrences too"
+    )
+    upcoming.add_argument(
+        "--json", action="store_true", help="Emit machine-readable JSON"
+    )
+    amortize = _add_ledger(
+        sub,
+        "amortize",
+        "Show each loan's remaining amortization schedule",
+        cmd_amortize,
+    )
+    amortize.add_argument("--id", help="Show only this schedule id")
+    amortize.add_argument(
+        "--json", action="store_true", help="Emit machine-readable JSON"
+    )
 
     detect = _add_ledger(
         sub, "detect", "Propose schedules for recurring payments", cmd_detect

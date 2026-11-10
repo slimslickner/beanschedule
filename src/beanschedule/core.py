@@ -472,16 +472,21 @@ def _sorted(diagnostics: list[Diagnostic]) -> list[Diagnostic]:
     return sorted(diagnostics, key=_sort_key)
 
 
-def _amount_number(units: Amount | None) -> Decimal | None:
+def _amount_number(units: object) -> Decimal | None:
     """Return the numeric part of an amount, when present.
 
+    A schedule file is parsed without Beancount's interpolation, so an
+    amount-less posting carries the ``MISSING`` sentinel rather than ``None``;
+    both are treated as "no amount".
+
     Args:
-        units: A posting's units, or ``None``.
+        units: A posting's units, an :class:`~beancount.core.amount.Amount`, or
+            ``None``/``MISSING``.
 
     Returns:
         The number, or ``None`` when there is no amount or no number.
     """
-    if units is None or units.number is None:
+    if not isinstance(units, Amount) or units.number is None:
         return None
     return units.number
 
@@ -994,7 +999,9 @@ def static_split(
         return None
     if not 1 <= payment_number <= amort.term:
         return None
-    payment = abs(rule.match_amount)
+    # The matched posting is the whole cash payment, which includes escrow; the
+    # principal/interest split works from the P+I part alone.
+    payment = abs(rule.match_amount) - escrow
     monthly = _monthly_rate(amort.rate)
     balance = _present_value(payment, monthly, amort.term)
     if monthly == 0:
@@ -1150,7 +1157,9 @@ def walk_balance(
     """
     if rule.match_amount is None or rule.amortization is None:
         return {}
-    payment = abs(rule.match_amount)
+    # The matched posting is the whole cash payment, which includes escrow; the
+    # principal/interest split works from the P+I part alone.
+    payment = abs(rule.match_amount) - escrow
     monthly = _monthly_rate(rule.amortization.rate)
     running = balance
     splits: dict[date, Split] = {}
@@ -1440,7 +1449,7 @@ def _amounts_in_currency(
         return True
     for posting in entry.postings:
         units = posting.units
-        if units is not None and units.currency != operating_currency:
+        if isinstance(units, Amount) and units.currency != operating_currency:
             diagnostics.append(
                 _diag(
                     "E008",
@@ -1454,11 +1463,12 @@ def _amounts_in_currency(
     return True
 
 
-def _parse_amortization(
+def _parse_amortization(  # noqa: C901 - one branch per validation
     entry: Transaction,
     schedule_id: str,
     meta: Mapping[str, object],
     diagnostics: list[Diagnostic],
+    match_amount: Decimal | None = None,
 ) -> Amortization | None:
     """Parse a schedule's amortization configuration, if any.
 
@@ -1471,6 +1481,7 @@ def _parse_amortization(
         schedule_id: The schedule id, for diagnostics.
         meta: The transaction's metadata.
         diagnostics: The list to append diagnostics to.
+        match_amount: The matched posting's amount, for validation.
 
     Returns:
         The :class:`Amortization`, or ``None`` when the schedule is not
@@ -1499,17 +1510,41 @@ def _parse_amortization(
     if principal is None:
         diagnostics.append(_diag("E012", entry=entry, id=schedule_id))
         return None
+    if match_amount is None:
+        diagnostics.append(_diag("E015", entry=entry, id=schedule_id))
     if method == "static" and _as_int(meta.get("term")) is None:
         diagnostics.append(_diag("E001", entry=entry, id=schedule_id, key="term"))
         return None
+    escrow = _as_decimal(meta.get("escrow"))
+    escrow_account = legs.get("escrow")
+    if legs.get("interest") is None:
+        diagnostics.append(_diag("W002", entry=entry, id=schedule_id))
+    if escrow is not None and escrow_account is None:
+        diagnostics.append(
+            _diag(
+                "W003",
+                entry=entry,
+                id=schedule_id,
+                detail='`escrow` is set but no posting carries schedule-leg "escrow"',
+            )
+        )
+    elif escrow is None and escrow_account is not None:
+        diagnostics.append(
+            _diag(
+                "W003",
+                entry=entry,
+                id=schedule_id,
+                detail='a posting carries schedule-leg "escrow" but `escrow` is unset',
+            )
+        )
     return Amortization(
         method=method,
         rate=rate,
         term=_as_int(meta.get("term")),
-        escrow=_as_decimal(meta.get("escrow")),
+        escrow=escrow,
         principal_account=principal,
         interest_account=legs.get("interest"),
-        escrow_account=legs.get("escrow"),
+        escrow_account=escrow_account,
     )
 
 
@@ -1560,7 +1595,7 @@ def _validate_postings(
             )
 
 
-def parse_schedule(  # noqa: PLR0911
+def parse_schedule(  # noqa: PLR0911, C901 - one branch per validation
     entry: Transaction,
     diagnostics: list[Diagnostic],
     operating_currency: str = "",
@@ -1663,7 +1698,11 @@ def parse_schedule(  # noqa: PLR0911
         mode = "exact"
     else:
         mode = "any"
-    amortization = _parse_amortization(entry, schedule_id, meta, diagnostics)
+    if tolerance is not None and match_amount is None:
+        diagnostics.append(_diag("W004", entry=entry, id=schedule_id))
+    amortization = _parse_amortization(
+        entry, schedule_id, meta, diagnostics, match_amount
+    )
     _validate_postings(
         entry,
         schedule_id,

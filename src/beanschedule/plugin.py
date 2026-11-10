@@ -26,9 +26,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, NamedTuple
 
-from beancount import loader as bc_loader
 from beancount.core import data
 from beancount.ops import pad as pad_ops
+from beancount.parser import parser
 
 from beanschedule.config import parse_config
 from beanschedule.core import Diagnostic, compute
@@ -168,7 +168,11 @@ def load_schedules(path: Path) -> list[Directive]:
     """Load the schedule transactions from a file.
 
     The whole file is schedules, so every transaction is returned — even one
-    missing its ``id``, so the engine can report it.
+    missing its ``id``, so the engine can report it. The file is parsed without
+    Beancount's interpolation and validation: a schedule's amortization legs are
+    legitimately amount-less placeholders, and the full loader would reject a
+    transaction with more than one of them and drop it entirely. The engine
+    reports its own diagnostics instead.
 
     Args:
         path: The schedules file.
@@ -178,7 +182,7 @@ def load_schedules(path: Path) -> list[Directive]:
     """
     if not path.is_file():
         return []
-    entries, _errors, _options = bc_loader.load_file(str(path))
+    entries, _errors, _options = parser.parse_file(str(path))
     return [entry for entry in entries if isinstance(entry, data.Transaction)]
 
 

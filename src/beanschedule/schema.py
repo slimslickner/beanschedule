@@ -387,6 +387,46 @@ DIAGNOSTIC_CODES: tuple[DiagnosticCode, ...] = (
             "the missing transactions, reconcile, or skip the occurrence."
         ),
     ),
+    DiagnosticCode(
+        code="E015",
+        severity=Severity.ERROR,
+        summary="Schedule {id} is amortized but its matched posting has no amount.",
+        explanation=(
+            "An amortized schedule needs the matched amount to compute each "
+            "payment's principal and interest. Give the matched account's posting "
+            "an explicit amount."
+        ),
+    ),
+    DiagnosticCode(
+        code="W002",
+        severity=Severity.WARNING,
+        summary="Schedule {id} is amortized but has no `interest` leg.",
+        explanation=(
+            "Interest cannot be allocated without a posting marked "
+            '`schedule-leg: "interest"`. Without it the enriched transaction omits '
+            "the interest component."
+        ),
+    ),
+    DiagnosticCode(
+        code="W003",
+        severity=Severity.WARNING,
+        summary="Schedule {id} has an escrow configuration that does not match its leg: {detail}.",
+        explanation=(
+            "The `escrow` metadata must agree with the posting marked "
+            '`schedule-leg: "escrow"`: set one only when the other is present, so '
+            "the escrow component can be split from the payment."
+        ),
+    ),
+    DiagnosticCode(
+        code="W004",
+        severity=Severity.WARNING,
+        summary="Schedule {id} sets `amount-tolerance` but has no matched amount.",
+        explanation=(
+            "Approximate matching measures the matched posting against the "
+            "reference amount, so without one no transaction can ever match. Give "
+            "the matched posting an amount, or drop `amount-tolerance`."
+        ),
+    ),
 )
 
 _DIAGNOSTICS_BY_CODE: dict[str, DiagnosticCode] = {

@@ -419,6 +419,98 @@ def test_ledger_balance_untracked() -> None:
     assert ledger_balance(entries, "Liabilities:None") is None
 
 
+def test_walk_balance_subtracts_escrow_from_payment() -> None:
+    # The matched posting is the whole cash payment; escrow is split off it.
+    rule = _rule(
+        match_amount=D("-1200.00"),
+        amount_mode="exact",
+        amortization=Amortization(
+            method="balance-from-ledger",
+            rate=D("0.06"),
+            escrow=D("200.00"),
+            principal_account="Liabilities:Loan",
+        ),
+    )
+    split = walk_balance(
+        rule, D("10000.00"), date(2025, 12, 31), [date(2026, 1, 1)], D("200.00")
+    )[date(2026, 1, 1)]
+    assert split.interest == D("50.00")
+    assert split.principal == D("950.00")
+    assert split.escrow == D("200.00")
+    assert split.total == D("1200.00")
+    assert split.balance_after == D("9050.00")
+
+
+def _amortized(text: str) -> list[str]:
+    entries, _errors, options = parser.parse_string(text)
+    return _codes(compute(entries, options, today=date(2026, 1, 1)))
+
+
+_AMORT_HEAD = (
+    'option "operating_currency" "USD"\n'
+    "2020-01-01 open Assets:Bank\n"
+    "2020-01-01 open Liabilities:Loan\n"
+    "2020-01-01 open Expenses:X\n"
+    '2026-01-01 * "Chase" "Loan"\n'
+    '  id: "loan"\n'
+    '  rrule: "FREQ=MONTHLY;BYMONTHDAY=1"\n'
+    '  method: "static"\n'
+    "  rate: 0.06\n"
+    "  term: 12\n"
+)
+
+
+def test_amortized_schedule_without_a_match_amount_warns() -> None:
+    codes = _amortized(
+        _AMORT_HEAD
+        + "  Assets:Bank\n"
+        + "  Liabilities:Loan  1000.00 USD\n"
+        + '    schedule-leg: "principal"\n'
+        + "  Expenses:X         200.00 USD\n"
+        + '    schedule-leg: "interest"\n'
+    )
+    assert "E015" in codes
+
+
+def test_amortized_schedule_without_interest_leg_warns() -> None:
+    codes = _amortized(
+        _AMORT_HEAD
+        + "  Assets:Bank  -1200.00 USD\n"
+        + "  Liabilities:Loan  1000.00 USD\n"
+        + '    schedule-leg: "principal"\n'
+        + "  Expenses:X         200.00 USD\n"
+    )
+    assert "W002" in codes
+
+
+def test_amortized_schedule_with_escrow_metadata_but_no_leg_warns() -> None:
+    codes = _amortized(
+        _AMORT_HEAD
+        + "  escrow: 200.00\n"
+        + "  Assets:Bank  -1200.00 USD\n"
+        + "  Liabilities:Loan  1000.00 USD\n"
+        + '    schedule-leg: "principal"\n'
+        + "  Expenses:X         200.00 USD\n"
+        + '    schedule-leg: "interest"\n'
+    )
+    assert "W003" in codes
+
+
+def test_amount_tolerance_without_a_match_amount_warns() -> None:
+    codes = _amortized(
+        'option "operating_currency" "USD"\n'
+        "2020-01-01 open Assets:Bank\n"
+        "2020-01-01 open Expenses:X\n"
+        '2026-01-01 * "Landlord" "Rent"\n'
+        '  id: "rent"\n'
+        '  rrule: "FREQ=MONTHLY;BYMONTHDAY=1"\n'
+        "  amount-tolerance: 5.00\n"
+        "  Assets:Bank\n"
+        "  Expenses:X  1.00 USD\n"
+    )
+    assert "W004" in codes
+
+
 # --- Declared postings ---------------------------------------------------------
 
 

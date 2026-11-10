@@ -14,6 +14,10 @@
 | `E012` | error | Schedule {id} is amortized but has no `principal` leg. |
 | `E014` | error | Schedule {id} leaves more than one posting without an amount. |
 | `W001` | warning | Schedule {id} has {count} unresolved occurrence(s) past due, the oldest {date}. |
+| `E015` | error | Schedule {id} is amortized but its matched posting has no amount. |
+| `W002` | warning | Schedule {id} is amortized but has no `interest` leg. |
+| `W003` | warning | Schedule {id} has an escrow configuration that does not match its leg: {detail}. |
+| `W004` | warning | Schedule {id} sets `amount-tolerance` but has no matched amount. |
 
 
 ## E001
@@ -84,3 +88,31 @@ Beancount can balance a transaction with at most one posting whose amount is mis
 **Warning:** Schedule {id} has {count} unresolved occurrence(s) past due, the oldest {date}.
 
 A nominal occurrence has passed with no matching transaction. Import the missing transactions, reconcile, or skip the occurrence.
+
+
+## E015
+
+**Error:** Schedule {id} is amortized but its matched posting has no amount.
+
+An amortized schedule needs the matched amount to compute each payment's principal and interest. Give the matched account's posting an explicit amount.
+
+
+## W002
+
+**Warning:** Schedule {id} is amortized but has no `interest` leg.
+
+Interest cannot be allocated without a posting marked `schedule-leg: "interest"`. Without it the enriched transaction omits the interest component.
+
+
+## W003
+
+**Warning:** Schedule {id} has an escrow configuration that does not match its leg: {detail}.
+
+The `escrow` metadata must agree with the posting marked `schedule-leg: "escrow"`: set one only when the other is present, so the escrow component can be split from the payment.
+
+
+## W004
+
+**Warning:** Schedule {id} sets `amount-tolerance` but has no matched amount.
+
+Approximate matching measures the matched posting against the reference amount, so without one no transaction can ever match. Give the matched posting an amount, or drop `amount-tolerance`.

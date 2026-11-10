@@ -8,10 +8,11 @@ The ``beanschedule`` command line interface.
 
 A thin ``argparse`` front end over :mod:`beanschedule.core` and
 :mod:`beanschedule.reconcile`. The read-only commands — ``check``, ``report``,
-``list`` and ``detect`` — never touch the ledger. ``reconcile`` matches imported
-transactions to schedules and, with ``--write``, tags the matches and advances
-the frontiers. ``skip``, ``move``, ``create`` and ``edit`` change a schedule.
-``docs`` renders the generated documentation and gates it with ``--check``.
+``list``, ``upcoming``, ``amortize`` and ``detect`` — never touch the ledger.
+``reconcile`` matches imported transactions to schedules and, with ``--write``,
+tags the matches and advances the frontiers. ``skip``, ``move``, ``create`` and
+``edit`` change a schedule. ``docs`` renders the generated documentation and
+gates it with ``--check``.
 .
 
 | Argument | Required | Help |
@@ -37,6 +38,7 @@ Show each schedule's occurrences.
 | `ledger` | yes | The ledger file |
 | `--schedules` | no | The schedules file |
 | `--today` | no | The reference date (YYYY-MM-DD) |
+| `--json` | no | Emit machine-readable JSON |
 
 ## `beanschedule list`
 
@@ -47,6 +49,31 @@ List schedules with next and overdue.
 | `ledger` | yes | The ledger file |
 | `--schedules` | no | The schedules file |
 | `--today` | no | The reference date (YYYY-MM-DD) |
+| `--json` | no | Emit machine-readable JSON |
+
+## `beanschedule upcoming`
+
+Show one ledger of every outstanding occurrence.
+
+| Argument | Required | Help |
+| --- | --- | --- |
+| `ledger` | yes | The ledger file |
+| `--schedules` | no | The schedules file |
+| `--today` | no | The reference date (YYYY-MM-DD) |
+| `--all` | no | Include resolved occurrences too |
+| `--json` | no | Emit machine-readable JSON |
+
+## `beanschedule amortize`
+
+Show each loan's remaining amortization schedule.
+
+| Argument | Required | Help |
+| --- | --- | --- |
+| `ledger` | yes | The ledger file |
+| `--schedules` | no | The schedules file |
+| `--today` | no | The reference date (YYYY-MM-DD) |
+| `--id` | no | Show only this schedule id |
+| `--json` | no | Emit machine-readable JSON |
 
 ## `beanschedule detect`
 

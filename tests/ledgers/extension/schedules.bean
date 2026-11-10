@@ -1,0 +1,30 @@
+; Schedules for the Fava-extension tests. The mortgage carries two amount-less
+; amortization legs, which the strict Beancount loader would drop.
+
+2026-01-15 * "Acme" "Paycheck" #payroll
+  id: "paycheck"
+  rrule: "FREQ=MONTHLY;BYMONTHDAY=15"
+  match-payee: "Acme"
+  amount-tolerance: 7.50
+  Assets:Bank:Checking       -3000.00 USD
+  Expenses:Taxes:Federal       600.00 USD
+  Expenses:Savings            2400.00 USD
+
+2024-01-01 * "CrossCountry Mortgage" "Mortgage Payment" #mortgage
+  id: "loan-mortgage"
+  rrule: "FREQ=MONTHLY;BYMONTHDAY=4"
+  match-account: "Assets:Bank:Checking"
+  match-payee: "CrossCountry Mortgage"
+  amount-tolerance: 1.00
+  window-before: 5
+  window-after: 5
+  method: "balance-from-ledger"
+  rate: 0.04875
+  escrow: 368.52
+  Assets:Bank:Checking  -2505.20 USD
+  Expenses:House:Escrow       368.52 USD
+    schedule-leg: "escrow"
+  Expenses:House:Interest
+    schedule-leg: "interest"
+  Liabilities:Loans:Mortgage
+    schedule-leg: "principal"
