@@ -13,14 +13,16 @@ option "operating_currency" "USD"
   Assets:Bank                 100000.00 USD
   Liabilities:Loan           -100000.00 USD
 
-2026-01-01 custom "schedule" "new" "loan"
+; An amortized schedule. The leg postings name the accounts; their amounts are
+; placeholders the engine recomputes per occurrence.
+2026-01-01 * "Chase" "Mortgage"
+  id: "loan"
   rrule: "FREQ=MONTHLY;BYMONTHDAY=1"
-  start: 2026-01-01
-  match-account: "Assets:Bank"
-  match-amount: -1000.00
-  amount-mode: "exact"
   method: "static"
   rate: 0.06
   term: 360
-  principal-account: "Liabilities:Loan"
-  interest-account: "Expenses:Interest"
+  Assets:Bank                -1000.00 USD
+  Liabilities:Loan             900.00 USD
+    schedule-leg: "principal"
+  Expenses:Interest            100.00 USD
+    schedule-leg: "interest"

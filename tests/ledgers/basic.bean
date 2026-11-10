@@ -8,17 +8,17 @@ option "operating_currency" "USD"
   Assets:Bank                 5000.00 USD
   Equity:Opening-Balances    -5000.00 USD
 
-; A monthly paycheck, matched to the nominal date by the transaction's schedule
-; metadata. January is posted; the rest are outstanding.
-2026-01-01 custom "schedule" "new" "paycheck"
+; The schedule transaction. Its date is the next occurrence (February); every
+; earlier occurrence is a resolved historical transaction.
+2026-02-15 * "Acme" "Paycheck"
+  id: "paycheck"
   rrule: "FREQ=MONTHLY;BYMONTHDAY=15"
-  start: 2026-01-15
-  match-account: "Assets:Bank"
   match-payee: "Acme"
-  amount-mode: "any"
-  payee: "Acme Payroll"
+  Assets:Bank                -3000.00 USD
+  Expenses:Tax                3000.00 USD
 
+; January's occurrence, resolved by its schedule metadata.
 2026-01-16 * "Acme" "January pay"
   schedule: "paycheck"
-  Assets:Bank    -1000.00 USD
-  Expenses:Tax    1000.00 USD
+  Assets:Bank                -3000.00 USD
+  Expenses:Tax                3000.00 USD

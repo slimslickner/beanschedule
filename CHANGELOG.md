@@ -2,78 +2,67 @@
 
 ## 2.0.0
 
-Beanschedule is rewritten to be **ledger-native**. Schedules are now
-`custom "schedule"` directives in the ledger rather than YAML files, and one pure
-core drives the beangulp hook, the Beancount plugin, the CLI and the Fava report.
+Beanschedule is rewritten to be **reconciliation-native**. A schedule is a real
+Beancount transaction carrying an `id` and an `rrule`; there is no beangulp
+import hook and no `custom "schedule"` directive vocabulary. Import runs
+normally, then reconciliation — `beanschedule reconcile` or the Fava report —
+matches imported transactions to schedules, tags them, and advances each
+schedule to its next occurrence. One pure core drives the CLI, the Beancount
+plugin and the Fava report.
 
 ### Added
 
-- `custom "schedule"` directives: `new` (a rule), `posting` (an other-side
-  posting, with its own `amount` and arbitrary metadata such as `narration` or
-  `contribution-year`), `skip` (an EXDATE) and `move` (a RECURRENCE-ID), with a
-  registry that generates `docs/schema.md` and `docs/errors.md`.
-- A pure core (`beanschedule.core`) that parses rules, derives nominal
-  occurrences, resolves posted links, skips and moves, and computes
-  balance-from-ledger and static amortization splits.
-- Greedy chronological matching with the ½-gap consumption rule.
-- A shared, read-only report view (`beanschedule.report`) used by both the CLI
-  and the Fava report.
-- A deterministic, opt-in writer (`beanschedule.writer`) and directive builders
-  (`beanschedule.actions`).
-- A detector that proposes schedules from a ledger, feeding `create`.
-- `migrate`, a YAML reader in its own module (`beanschedule.migrate`) that
-  converts `schedules/*.yaml` to directives idempotently, checks the migrated
-  postings balance against `match-amount`, and reports the legacy fields the
-  directive model cannot express.
-- Opt-in forecast injection through the Beancount plugin; both the plugin and
-  the Fava extension take a Python-literal config string, e.g.
-  `plugin "beanschedule.plugin" "{'forecast': True, 'months': 3}"`.
-- `hatch-vcs` versioning, a CI gate, conventional commits and generated release
-  notes.
+- Reconciliation (`beanschedule.reconcile`): a pure plan that links imported
+  transactions to a schedule's outstanding occurrences (greedily and
+  chronologically, with the ½-gap consumption rule), enriches them with the
+  schedule's postings, and advances each schedule's frontier. Applied
+  opt-in only, and idempotent.
+- Schedules as transactions: a real `Transaction` with `id`, `rrule`, optional
+  matching hints and its split as postings. The first balance-sheet posting (or
+  `match-account`) is the matched account.
+- Amortization via posting legs (`schedule-leg: "principal" | "interest" |
+  "escrow"`), whose amounts the engine recomputes; `static` (from `rate`/`term`)
+  or `balance-from-ledger`.
+- A schedule or pending transaction's tags, links and user metadata — on the
+  transaction and on its postings — are carried onto the transaction it
+  reconciles, and survive a frontier advance.
+- A Fava **Reconcile** action alongside create / skip / move / edit / delete.
+- The Beancount plugin relabels pending transactions (tag + flag, config-driven)
+  and validates the schedules file by path, reporting the engine's diagnostics
+  as ordinary Beancount errors.
+- `beanschedule migrate-ledger` rewrites a v1 ledger for the new model: rename
+  `schedule_id` to `schedule`, remove the v1 tracking metadata, and delete
+  placeholder transactions, in place and dry-run by default.
+- The Fava extension reads `schedules_file`/`pending_file` from the plugin's
+  config; its own config is reduced to a `write` opt-in (`true`, or a path) and
+  `months`.
 
 ### Changed
 
-- Matching at import stays, but the historical tracking trail is removed: no
-  stored actual/nominal dates, no confidence scores, no placeholder
-  transactions, no amortization metadata trail.
-- Overdue is always a computed view, never a persisted record.
-- The command line moves from Click to `argparse` + `argcomplete`.
-- Stacks use frozen slotted dataclasses and `Decimal` instead of Pydantic.
-- The hook finds its files from `BEANSCHEDULE_SCHEDULES` and
-  `BEANSCHEDULE_PENDING`; the pending file is standardised on the `.bean`
-  suffix (`pending.bean`).
-- `beangulp` and `pyyaml` move to optional extras (`[beangulp]`, `[migrate]`).
+- Matching moves from import time to a post-import reconciliation step; the two
+  ledger topology (`main.bean` vs `main_no_plugins.bean`) is gone, and schedules
+  are simply a file the ledger does not include.
+- A schedule's date **is** its next occurrence; `skip` and `move` are date edits.
+- The Fava extension loads the schedules file by path and grows a reconcile
+  action.
 
 ### Removed
 
-- YAML schedule files (use `migrate`), Pydantic and Click.
-- The v1 `BEANSCHEDULE_DIR` variable and the cwd/parent file hunting; a
-  multi-currency or placeholder-only v1 schedule has no directive equivalent and
-  is reported by `migrate` rather than silently dropped.
+- The beangulp import hook (`hook.py`) and the plugin's forecast injection.
+- The `custom "schedule"` verbs (`new`, `posting`, `skip`, `move`) and the
+  verb registry; the schema is now a metadata-key registry.
+- `BEANSCHEDULE_SCHEDULES` / `BEANSCHEDULE_PENDING`; the plugin config string is
+  the single source of truth.
 
 ### Performance
 
 - The occurrence horizon is a fixed span from the reference date, never the
-  ledger's latest directive. A far-future `open`/`custom` previously expanded
-  every rule across millennia (a 43-schedule ledger went from ~4.1M occurrences
-  to ~9.7k; the 43-schedule scan dropped from 22.7s to under 0.1s).
-- Posted transactions are resolved against each rule's precomputed nominal list
-  by bisect, instead of re-expanding the rule around every date; a 2,000-tagged
-  ledger dropped from ~0.8s to ~0.05s.
-- Static amortization enumerates each series once (no per-date re-derivation),
-  and liability balances are gathered for all amortized schedules in one pass.
+  ledger's latest directive, so a far-future directive cannot expand a series
+  across millennia.
+- Posted transactions are resolved against a rule's precomputed nominal list by
+  bisect, and amortization enumerates each series once.
 
 ### Fixed
 
-- The `beanschedule/plugins/schedules.py` header declared GPLv2 under an MIT
-  project; the licence is MIT.
-- Date arithmetic is clamped to the representable range, so a ledger carrying a
-  far-future directive no longer raises `OverflowError` when deriving the
-  occurrence window.
-- Forecast and enrichment never emit a posting with no amount. The one posting
-  allowed to omit its amount is now filled explicitly so the transaction
-  balances; a schedule with more than one amount-less posting is reported
-  (`E014`) rather than crashing Beancount's balance check.
-- The shared-account diagnostic was removed. Several schedules on one account is
-  normal, and the engine resolves any real competition deterministically by
-  declaration order, so there was nothing actionable to warn about.
+- Date arithmetic is clamped to the representable range.
+- Forecast and enrichment never emit a posting with no amount.

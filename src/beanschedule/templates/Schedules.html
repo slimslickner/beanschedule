@@ -8,7 +8,13 @@
     </ul>
   {% endif %}
   {% if not view.schedules %}
-    <p>No schedules are declared. Add a <code>custom "schedule" "new"</code> directive.</p>
+    <p>No schedules are declared. Add a schedule transaction to the schedules file.</p>
+  {% endif %}
+  {% if extension.writable %}
+    <form method="post" action="{{ base ~ 'commit' }}" class="schedule-reconcile">
+      <input type="hidden" name="action" value="reconcile">
+      <button type="submit">Reconcile ({{ extension.reconcile_count() }} match(es))</button>
+    </form>
   {% endif %}
   {% for schedule in view.schedules %}
     <section class="schedule">
@@ -38,14 +44,12 @@
         <form method="post" action="{{ base ~ 'commit' }}" class="schedule-skip">
           <input type="hidden" name="action" value="skip">
           <input type="hidden" name="id" value="{{ schedule.id }}">
-          <label>Skip <input type="date" name="date"></label>
-          <button type="submit">Skip</button>
+          <button type="submit">Skip next</button>
         </form>
         <form method="post" action="{{ base ~ 'commit' }}" class="schedule-move">
           <input type="hidden" name="action" value="move">
           <input type="hidden" name="id" value="{{ schedule.id }}">
-          <label>From <input type="date" name="date"></label>
-          <label>To <input type="date" name="new_date"></label>
+          <label>Move next to <input type="date" name="new_date"></label>
           <button type="submit">Move</button>
         </form>
         {% if schedule.rule.entry %}

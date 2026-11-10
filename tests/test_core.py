@@ -5,6 +5,8 @@ from __future__ import annotations
 from datetime import date
 from decimal import Decimal
 
+from beancount.core import data as bc_data
+from beancount.core.amount import Amount
 from beancount.parser import parser
 
 from beanschedule.core import (
@@ -13,7 +15,9 @@ from beanschedule.core import (
     amortization_splits,
     assign,
     compute,
+    is_schedule,
     ledger_balance,
+    parse_schedule,
     resolve_nominal,
     walk_balance,
 )
@@ -71,6 +75,16 @@ def _txn(text: str):
     return entries[0]
 
 
+def _schedule(
+    body: str,
+    day: str = "2026-01-01",
+    rrule: str = "FREQ=MONTHLY;BYMONTHDAY=1",
+) -> str:
+    return (
+        BASE + f'{day} * "Landlord" "Rent"\n  id: "rent"\n  rrule: "{rrule}"\n' + body
+    )
+
+
 # --- Fixture ledgers -----------------------------------------------------------
 
 
@@ -81,21 +95,21 @@ def test_basic_posts_and_next(load_result) -> None:
     assert report is not None
     assert report.next == date(2026, 2, 15)
     assert report.overdue == ()
-    january = report.occurrence(date(2026, 1, 15))
-    assert january is not None
-    assert january.resolved
-    assert january.posted is not None
+    assert [txn.date for txn in report.history] == [date(2026, 1, 16)]
 
 
-def test_overdue_and_outcomes(load_result) -> None:
+def test_overdue_and_next(load_result) -> None:
     result = load_result("stale.bean", today=date(2026, 4, 15))
     assert "W001" in _codes(result)
     report = result.report("rent")
     assert report is not None
-    assert report.overdue == (date(2026, 1, 1), date(2026, 4, 1))
     assert report.next == date(2026, 1, 1)
-    assert report.occurrence(date(2026, 2, 1)).skipped
-    assert report.occurrence(date(2026, 3, 1)).moved_to == date(2026, 3, 20)
+    assert report.overdue == (
+        date(2026, 1, 1),
+        date(2026, 2, 1),
+        date(2026, 3, 1),
+        date(2026, 4, 1),
+    )
 
 
 def test_no_today_skips_overdue(load_result) -> None:
@@ -107,74 +121,61 @@ def test_no_today_skips_overdue(load_result) -> None:
 # --- Diagnostics ---------------------------------------------------------------
 
 
-def test_missing_metadata(compute_string) -> None:
+def test_missing_id() -> None:
+    txn = _txn('2026-01-01 * "Landlord" "Rent"\n  rrule: "FREQ=MONTHLY"\n')
+    diagnostics: list = []
+    assert parse_schedule(txn, diagnostics) is None
+    assert [diagnostic.code for diagnostic in diagnostics] == ["E001"]
+
+
+def test_missing_rrule(compute_string) -> None:
+    result = compute_string(BASE + '2026-01-01 * "Landlord" "Rent"\n  id: "rent"\n')
+    assert "E001" in _codes(result)
+
+
+def test_no_balance_sheet_posting(compute_string) -> None:
     result = compute_string(
-        BASE + '2026-01-01 custom "schedule" "new" "rent"\n  start: 2026-01-01\n'
+        BASE + '2026-01-01 * "Nobody" "Thing"\n'
+        '  id: "x"\n  rrule: "FREQ=MONTHLY"\n'
+        "  Expenses:X  1.00 USD\n"
+        "  Equity:Opening  -1.00 USD\n"
     )
-    assert set(_codes(result)) == {"E001"}
-    assert len(result.rules) == 0
+    assert "E001" in _codes(result)
 
 
 def test_invalid_rrule(compute_string) -> None:
-    result = compute_string(
-        BASE + '2026-01-01 custom "schedule" "new" "rent"\n'
-        '  rrule: "EVERY DAY"\n  start: 2026-01-01\n'
-        '  match-account: "Assets:Bank"\n'
-    )
+    result = compute_string(_schedule("", rrule="EVERY DAY"))
     assert _codes(result) == ["E002"]
 
 
 def test_duplicate_id(compute_string) -> None:
     rule = (
-        'custom "schedule" "new" "rent"\n'
-        '  rrule: "FREQ=MONTHLY"\n  start: 2026-01-01\n'
-        '  match-account: "Assets:Bank"\n'
+        '2026-01-01 * "Landlord" "Rent"\n'
+        '  id: "rent"\n  rrule: "FREQ=MONTHLY"\n'
+        "  Assets:Bank  -1.00 USD\n  Expenses:X  1.00 USD\n"
     )
-    result = compute_string(BASE + "2026-01-01 " + rule + "2026-02-01 " + rule)
+    result = compute_string(BASE + rule + rule)
     assert "E003" in _codes(result)
     assert len(result.rules) == 1
 
 
-def test_unknown_skip(compute_string) -> None:
-    result = compute_string(BASE + '2026-01-01 custom "schedule" "skip" "nope"')
-    assert _codes(result) == ["E004"]
+def test_end_before_start(compute_string) -> None:
+    result = compute_string(_schedule("  end: 2025-12-01\n"))
+    assert "E009" in _codes(result)
 
 
-def test_skip_off_sequence(compute_string) -> None:
+def test_currency_mismatch(compute_string) -> None:
     result = compute_string(
-        BASE + '2026-01-01 custom "schedule" "new" "rent"\n'
-        '  rrule: "FREQ=MONTHLY;BYMONTHDAY=1"\n  start: 2026-01-01\n'
-        '  match-account: "Assets:Bank"\n'
-        + '2026-01-02 custom "schedule" "skip" "rent"'
+        _schedule("  Assets:Bank  -100.00 EUR\n  Expenses:X  100.00 EUR\n")
     )
-    assert "E005" in _codes(result)
-
-
-def test_outside_window_skip(compute_string) -> None:
-    result = compute_string(
-        BASE + '2026-01-01 custom "schedule" "new" "rent"\n'
-        '  rrule: "FREQ=MONTHLY;BYMONTHDAY=1"\n  start: 2026-01-01\n'
-        "  end: 2026-03-01\n"
-        '  match-account: "Assets:Bank"\n'
-        + '2026-06-01 custom "schedule" "skip" "rent"'
-    )
-    assert "W002" in _codes(result)
-
-
-def test_bad_amount_mode(compute_string) -> None:
-    result = compute_string(
-        BASE + '2026-01-01 custom "schedule" "new" "rent"\n'
-        '  rrule: "FREQ=MONTHLY"\n  start: 2026-01-01\n'
-        '  match-account: "Assets:Bank"\n  amount-mode: "fuzzy"\n'
-    )
-    assert "E006" in _codes(result)
+    assert "E008" in _codes(result)
 
 
 def test_far_future_date_does_not_overflow(compute_string) -> None:
     result = compute_string(
-        BASE + '9999-12-01 custom "schedule" "new" "rent"\n'
-        '  rrule: "FREQ=MONTHLY"\n  start: 9999-12-01\n'
-        '  match-account: "Assets:Bank"\n'
+        BASE + '9999-12-01 * "Landlord" "Rent"\n'
+        '  id: "rent"\n  rrule: "FREQ=MONTHLY"\n'
+        "  Assets:Bank  -1.00 USD\n  Expenses:X  1.00 USD\n"
     )
     assert result.rule("rent") is not None
 
@@ -183,43 +184,73 @@ def test_far_future_directive_does_not_inflate_the_horizon(compute_string) -> No
     result = compute_string(
         BASE
         + '9998-01-01 custom "note" "a far-future directive"\n'
-        + '2013-01-01 custom "schedule" "new" "rent"\n'
-        '  rrule: "FREQ=MONTHLY;BYMONTHDAY=15"\n  start: 2013-01-15\n'
-        '  match-account: "Assets:Bank"\n  amount-mode: "any"\n'
+        + '2013-01-15 * "Landlord" "Rent"\n'
+        '  id: "rent"\n  rrule: "FREQ=MONTHLY;BYMONTHDAY=15"\n'
+        "  Assets:Bank  -1.00 USD\n  Expenses:X  1.00 USD\n"
     )
     report = result.report("rent")
     assert report is not None
-    # The horizon is a fixed span from the reference date, not the ledger's max
-    # date, so a far-future directive cannot expand the series (it was ~95,000
-    # occurrences per rule before).
     assert len(report.occurrences) < 1000
 
 
-def test_end_before_start(compute_string) -> None:
-    result = compute_string(
-        BASE + '2026-01-01 custom "schedule" "new" "rent"\n'
-        '  rrule: "FREQ=MONTHLY"\n  start: 2026-05-01\n  end: 2026-01-01\n'
-        '  match-account: "Assets:Bank"\n'
+# --- Parsing -------------------------------------------------------------------
+
+
+def test_default_match_account_from_balance_sheet() -> None:
+    txn = _txn(
+        '2026-01-15 * "Acme" "Paycheck"\n'
+        '  id: "paycheck"\n'
+        '  rrule: "FREQ=MONTHLY;BYMONTHDAY=15"\n'
+        "  Assets:Bank   -1000.00 USD\n"
+        "  Expenses:Tax   1000.00 USD\n"
     )
-    assert "E009" in _codes(result)
+    assert is_schedule(txn)
+    rule = parse_schedule(txn, [])
+    assert rule is not None
+    assert rule.match_account == "Assets:Bank"
+    assert rule.match_amount == D("-1000.00")
+    assert rule.amount_mode == "exact"
+    assert [spec.account for spec in rule.postings] == ["Expenses:Tax"]
 
 
-def test_currency_mismatch(compute_string) -> None:
-    result = compute_string(
-        BASE + '2026-01-01 custom "schedule" "new" "rent"\n'
-        '  rrule: "FREQ=MONTHLY"\n  start: 2026-01-01\n'
-        '  match-account: "Assets:Bank"\n  match-amount: 100.00 EUR\n'
+def test_amount_tolerance_selects_approx() -> None:
+    txn = _txn(
+        '2026-01-15 * "Acme" "Paycheck"\n'
+        '  id: "paycheck"\n'
+        '  rrule: "FREQ=MONTHLY;BYMONTHDAY=15"\n'
+        "  amount-tolerance: 7.50\n"
+        "  Assets:Bank   -1000.00 USD\n"
+        "  Expenses:Tax   1000.00 USD\n"
     )
-    assert "E008" in _codes(result)
+    rule = parse_schedule(txn, [])
+    assert rule is not None
+    assert rule.amount_mode == "approx"
+    assert rule.amount_tolerance == D("7.50")
 
 
-def test_malformed_amortization(compute_string) -> None:
-    result = compute_string(
-        BASE + '2026-01-01 custom "schedule" "new" "loan"\n'
-        '  rrule: "FREQ=MONTHLY"\n  start: 2026-01-01\n'
-        '  match-account: "Assets:Bank"\n  method: "static"\n  rate: 0.05\n'
+def test_non_schedule_transaction_is_not_a_schedule() -> None:
+    txn = _txn(
+        '2026-01-15 * "Acme" "Paycheck"\n'
+        "  Assets:Bank   -1000.00 USD\n"
+        "  Expenses:Tax   1000.00 USD\n"
     )
-    assert "E001" in _codes(result)
+    assert not is_schedule(txn)
+
+
+def test_parse_schedule_captures_tags_links_and_metadata() -> None:
+    txn = _txn(
+        '2026-01-15 * "Acme" "Paycheck" #salary ^payroll-2026\n'
+        '  id: "paycheck"\n'
+        '  rrule: "FREQ=MONTHLY;BYMONTHDAY=15"\n'
+        '  category: "income"\n'
+        "  Assets:Bank   -1000.00 USD\n"
+        "  Expenses:Tax   1000.00 USD\n"
+    )
+    rule = parse_schedule(txn, [])
+    assert rule is not None
+    assert rule.tags == frozenset({"salary"})
+    assert rule.links == frozenset({"payroll-2026"})
+    assert dict(rule.metadata) == {"category": "income"}
 
 
 # --- Matching ------------------------------------------------------------------
@@ -273,8 +304,6 @@ def test_assign_amount_modes() -> None:
         amount_tolerance=D("5.00"),
     )
     assert assign(approx, [date(2026, 2, 1)], [txn])
-    ranged = _rule(amount_mode="range", amount_min=D("-1100"), amount_max=D("-900"))
-    assert assign(ranged, [date(2026, 2, 1)], [txn])
     miss = _rule(match_amount=D("-500.00"), amount_mode="exact")
     assert assign(miss, [date(2026, 2, 1)], [txn]) == ()
 
@@ -331,6 +360,30 @@ def test_static_amortization_of_a_subset(load_ledger) -> None:
     assert splits[subset[1]].payment_number == 5
 
 
+def test_malformed_amortization_missing_principal(compute_string) -> None:
+    result = compute_string(
+        _schedule(
+            '  method: "static"\n  rate: 0.05\n  term: 12\n'
+            "  Assets:Bank  -100.00 USD\n"
+            "  Expenses:X    100.00 USD\n"
+            '    schedule-leg: "interest"\n'
+        )
+    )
+    assert "E012" in _codes(result)
+
+
+def test_malformed_amortization_missing_rate(compute_string) -> None:
+    result = compute_string(
+        _schedule(
+            '  method: "static"\n  term: 12\n'
+            "  Assets:Bank  -100.00 USD\n"
+            "  Expenses:X    100.00 USD\n"
+            '    schedule-leg: "principal"\n'
+        )
+    )
+    assert "E001" in _codes(result)
+
+
 def test_ledger_balance_and_walk() -> None:
     ledger = """option "operating_currency" "USD"
 2020-01-01 open Assets:Bank
@@ -369,86 +422,58 @@ def test_ledger_balance_untracked() -> None:
 # --- Declared postings ---------------------------------------------------------
 
 
-def _paycheck_rule(*postings: str) -> str:
-    return (
-        BASE + '2026-01-01 custom "schedule" "new" "paycheck"\n'
-        '  rrule: "FREQ=MONTHLY"\n'
-        "  start: 2026-01-01\n"
-        '  match-account: "Assets:Bank"\n'
-        "  match-amount: -3000.00\n"
-        '  amount-mode: "exact"\n' + "".join(postings)
+def _posting(account: str, number: str | None = None):
+    units = None if number is None else Amount(D(number), "USD")
+    return bc_data.Posting(account, units, None, None, None, None)
+
+
+def _schedule_txn(postings, *, day: date = date(2026, 1, 15)):
+    meta = {
+        "filename": "<test>",
+        "lineno": 1,
+        "id": "paycheck",
+        "rrule": "FREQ=MONTHLY",
+    }
+    return bc_data.Transaction(
+        meta, day, "*", "Acme", "Pay", frozenset(), frozenset(), postings
     )
 
 
-def test_valid_posting_split(compute_string) -> None:
-    result = compute_string(
-        _paycheck_rule(
-            '2026-01-01 custom "schedule" "posting" "paycheck" "Expenses:Taxes"\n'
-            "  amount: 600.00\n"
-            "  contribution-year: 2026\n",
-            '2026-01-01 custom "schedule" "posting" "paycheck" "Expenses:Savings"\n'
-            "  amount: 2400.00\n",
-        )
+def _compute_schedules(txn):
+    return compute([txn], {"operating_currency": "USD"}, schedules=[txn])
+
+
+def test_valid_posting_split() -> None:
+    txn = _schedule_txn(
+        [
+            _posting("Assets:Bank", "-3000.00"),
+            _posting("Expenses:Taxes", "600.00"),
+            _posting("Expenses:Savings", "2400.00"),
+        ]
     )
+    result = _compute_schedules(txn)
     assert result.diagnostics == ()
     rule = result.rule("paycheck")
     assert rule is not None
     assert rule.accounts == ("Expenses:Taxes", "Expenses:Savings")
-    assert rule.postings[0].as_dict() == {"contribution-year": Decimal(2026)}
 
 
-def test_orphan_posting(compute_string) -> None:
-    result = compute_string(
-        BASE + '2026-01-01 custom "schedule" "posting" "ghost" "Expenses:X"\n'
-        "  amount: 1.00\n"
+def test_posting_sum_mismatch() -> None:
+    txn = _schedule_txn(
+        [
+            _posting("Assets:Bank", "-3000.00"),
+            _posting("Expenses:Taxes", "500.00"),
+        ]
     )
-    assert _codes(result) == ["E010"]
+    assert "E011" in _codes(_compute_schedules(txn))
 
 
-def test_posting_to_matched_account(compute_string) -> None:
-    result = compute_string(
-        _paycheck_rule(
-            '2026-01-01 custom "schedule" "posting" "paycheck" "Assets:Bank"\n'
-            "  amount: 3000.00\n"
-        )
+def test_multiple_amountless_postings() -> None:
+    txn = _schedule_txn(
+        [
+            _posting("Assets:Bank", "-3000.00"),
+            _posting("Expenses:Taxes"),
+            _posting("Expenses:Savings"),
+        ]
     )
-    assert "E013" in _codes(result)
-
-
-def test_posting_sum_mismatch(compute_string) -> None:
-    result = compute_string(
-        _paycheck_rule(
-            '2026-01-01 custom "schedule" "posting" "paycheck" "Expenses:Taxes"\n'
-            "  amount: 500.00\n",
-            '2026-01-01 custom "schedule" "posting" "paycheck" "Expenses:Savings"\n'
-            "  amount: 2400.00\n",
-        )
-    )
-    assert "E011" in _codes(result)
-
-
-def test_multiple_amountless_postings(compute_string) -> None:
-    result = compute_string(
-        _paycheck_rule(
-            '2026-01-01 custom "schedule" "posting" "paycheck" "Expenses:Taxes"\n',
-            '2026-01-01 custom "schedule" "posting" "paycheck" "Expenses:Savings"\n',
-        )
-    )
-    assert "E014" in _codes(result)
-
-
-def test_amortization_with_postings(compute_string) -> None:
-    result = compute_string(
-        BASE + '2026-01-01 custom "schedule" "new" "loan"\n'
-        '  rrule: "FREQ=MONTHLY"\n'
-        "  start: 2026-01-01\n"
-        '  match-account: "Assets:Bank"\n'
-        "  match-amount: -1000.00\n"
-        '  amount-mode: "exact"\n'
-        '  method: "static"\n'
-        "  rate: 0.05\n"
-        "  term: 12\n"
-        + '2026-01-01 custom "schedule" "posting" "loan" "Expenses:Interest"\n'
-        "  amount: 1000.00\n"
-    )
-    assert "E012" in _codes(result)
+    assert "E014" in _codes(_compute_schedules(txn))

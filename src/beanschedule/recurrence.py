@@ -17,6 +17,7 @@ from dateutil.rrule import rrule, rrulestr
 __all__ = [
     "at_or_before",
     "between",
+    "next_after",
     "occurrences",
     "on_sequence",
     "parse",
@@ -160,6 +161,40 @@ def at_or_before(rrule_text: str, start: date, when: date) -> date | None:
         return None
     found = occurrences(rrule_text, start, after=start, until=when, limit=None)
     return found[-1] if found else None
+
+
+def next_after(
+    rrule_text: str, start: date, when: date, *, end: date | None = None
+) -> date | None:
+    """Return the first nominal date strictly after a date.
+
+    Args:
+        rrule_text: The RFC 5545 recurrence rule, without a ``DTSTART``.
+        start: The date the series begins.
+        when: The reference date.
+        end: The series' own last date, inclusive, when it has one.
+
+    Returns:
+        The next nominal date after ``when``, or ``None`` when the series has
+        ended.
+
+    Examples:
+        >>> next_after("FREQ=MONTHLY;BYMONTHDAY=15", date(2026, 1, 15), date(2026, 1, 15))
+        datetime.date(2026, 2, 15)
+        >>> next_after(
+        ...     "FREQ=MONTHLY;BYMONTHDAY=15", date(2026, 1, 15),
+        ...     date(2026, 1, 15), end=date(2026, 1, 31),
+        ... ) is None
+        True
+    """
+    rule = parse(rrule_text, start)
+    moment = rule.after(datetime.combine(when, time.min), inc=False)
+    if moment is None:
+        return None
+    found = moment.date()
+    if end is not None and found > end:
+        return None
+    return found
 
 
 def on_sequence(rrule_text: str, start: date, when: date) -> bool:

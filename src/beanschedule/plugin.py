@@ -4,73 +4,56 @@ Load with::
 
     plugin "beanschedule.plugin"
 
-The plugin calls :func:`beanschedule.core.compute`, returns the entries
-unchanged and appends the validation diagnostics as ordinary Beancount errors,
-so Fava lists them on its errors page. Errors never stop the ledger from
-loading.
+The plugin does two things, both in memory — it never writes a ledger and never
+injects an entry:
 
-Pass ``"forecast"`` to also inject ``#``-flagged forecast transactions for each
-schedule's upcoming occurrences, so future balances project in the ledger::
+* it **relabels** the transactions that came from the pending file, adding a tag
+  and setting a flag, so pending items are obvious in Fava and ``bean-query``;
+* it **validates** the schedules file, which ``main.bean`` does not include, by
+  loading it itself and reporting the engine's diagnostics as ordinary Beancount
+  errors that point back at the schedules file.
 
-    plugin "beanschedule.plugin" "forecast"
+Config is a Python-literal mapping, e.g.::
 
-Forecast injection requires the two-ledger split: the import ledger excludes the
-plugin, so the hook never sees the injected entries as existing ones.
+    plugin "beanschedule.plugin" "{'schedules_file': 'schedules.bean', 'pending_file': 'pending.bean', 'pending_tag': 'pending', 'pending_flag': '!'}"
 
-Beancount runs ``beancount.ops.pad`` after every user plugin, so a plugin never
-sees the transactions ``pad`` synthesizes. To report the same occurrences the CLI
-does, the plugin applies ``pad`` to a working copy before computing.
+Every key has a default, so a bare ``plugin "beanschedule.plugin"`` works.
+Relative paths resolve against the ledger's directory.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import date, timedelta
 from typing import TYPE_CHECKING, NamedTuple
 
-from beancount.core import amount as bc_amount
+from beancount import loader as bc_loader
 from beancount.core import data
 from beancount.ops import pad as pad_ops
 
 from beanschedule.config import parse_config
-from beanschedule.core import (
-    Diagnostic,
-    Rule,
-    ScheduleResult,
-    Split,
-    amortization_splits,
-    amortized_accounts,
-    compute,
-    ledger_balances,
-    resolve_postings,
-)
-from beanschedule.report import operating_currency
+from beanschedule.core import Diagnostic, compute
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
-    from decimal import Decimal
+    from pathlib import Path
 
     from beancount.core.data import Directive
 
-__all__ = ["__plugins__", "forecast_entries", "plugin"]
+__all__ = ["SchedulesError", "__plugins__", "plugin", "relabel_pending"]
 
 #: The plugin functions for Beancount to run, discovered via ``__plugins__``.
 __plugins__ = ["plugin"]
 
-#: The config value that switches on forecast injection.
-_CONFIG_FORECAST = "forecast"
-
-#: How many months of future occurrences are injected by default.
-_DEFAULT_FORECAST_MONTHS = 3
-
-#: The metadata key written on a matched or forecast transaction.
+#: The metadata key written on a matched transaction.
 SCHEDULE_KEY = "schedule"
 
-#: The metadata key marking an injected forecast transaction.
-FORECAST_KEY = "schedule-forecast"
+_DEFAULT_SCHEDULES_FILE = "schedules.bean"
+_DEFAULT_PENDING_FILE = "pending.bean"
+_DEFAULT_PENDING_TAG = "pending"
+_DEFAULT_PENDING_FLAG = "!"
 
 
-class ScheduleError(NamedTuple):
+class SchedulesError(NamedTuple):
     """A Beancount-compatible error.
 
     Attributes:
@@ -89,55 +72,20 @@ class _Config:
     """The plugin's resolved configuration.
 
     Attributes:
-        forecast: Whether to inject forecast transactions.
-        months: How many months forward to forecast.
+        schedules_file: The schedules file, relative to the ledger.
+        pending_file: The pending file, relative to the ledger.
+        pending_tag: The tag added to pending transactions.
+        pending_flag: The flag set on pending transactions.
     """
 
-    forecast: bool = False
-    months: int = _DEFAULT_FORECAST_MONTHS
+    schedules_file: str = _DEFAULT_SCHEDULES_FILE
+    pending_file: str = _DEFAULT_PENDING_FILE
+    pending_tag: str = _DEFAULT_PENDING_TAG
+    pending_flag: str = _DEFAULT_PENDING_FLAG
 
 
-def plugin(
-    entries: list[Directive],
-    options_map: Mapping[str, object],
-    config: str | Mapping[str, object] | None = None,
-) -> tuple[list[Directive], list[ScheduleError]]:
-    """Validate the ledger and, opt-in, inject forecast transactions.
-
-    Args:
-        entries: The ledger entries.
-        options_map: The Beancount options map.
-        config: The plugin config, ``"forecast"`` or a mapping.
-
-    Returns:
-        The entries, with forecast transactions appended when enabled, and the
-        list of errors and warnings.
-    """
-    resolved = _config(config)
-    today = date.today()  # noqa: DTZ011 - the forecast window is wall-clock
-    padded = _with_padding(entries, options_map)
-    # Overdue (W001) is a report concern, not a load error, so the reference date
-    # is only used for the forecast window, not the diagnostics.
-    result = compute(padded, options_map)
-    errors = [_to_error(diagnostic, options_map) for diagnostic in result.diagnostics]
-    if not resolved.forecast:
-        return entries, errors
-    forecast = forecast_entries(
-        result,
-        padded,
-        options_map,
-        months=resolved.months,
-        today=today,
-    )
-    return [*entries, *forecast], errors
-
-
-def _config(config: str | Mapping[str, object] | None) -> _Config:
+def _config(config: object) -> _Config:
     """Resolve the plugin config.
-
-    The config is the string after the ``plugin`` directive, either the bare
-    word ``"forecast"`` or a Python-literal mapping, e.g.
-    ``"{'forecast': True, 'months': 3}"``.
 
     Args:
         config: The raw config value.
@@ -145,219 +93,120 @@ def _config(config: str | Mapping[str, object] | None) -> _Config:
     Returns:
         The resolved :class:`_Config`.
     """
-    if config is None:
-        return _Config()
-    if isinstance(config, str) and config.strip().lower() == _CONFIG_FORECAST:
-        return _Config(forecast=True)
-    mapping = parse_config(config)
-    if mapping is None:
-        return _Config()
-    forecast = bool(mapping.get("forecast", False))
-    months = mapping.get("months", _DEFAULT_FORECAST_MONTHS)
+    mapping = parse_config(config) or {}
     return _Config(
-        forecast=forecast,
-        months=(int(months) if isinstance(months, int) else _DEFAULT_FORECAST_MONTHS),
+        schedules_file=_string(mapping.get("schedules_file"), _DEFAULT_SCHEDULES_FILE),
+        pending_file=_string(mapping.get("pending_file"), _DEFAULT_PENDING_FILE),
+        pending_tag=_string(mapping.get("pending_tag"), _DEFAULT_PENDING_TAG),
+        pending_flag=_string(mapping.get("pending_flag"), _DEFAULT_PENDING_FLAG),
     )
 
 
-def forecast_entries(
-    result: ScheduleResult,
-    entries: list[Directive],
-    options_map: Mapping[str, object],
-    *,
-    months: int = _DEFAULT_FORECAST_MONTHS,
-    today: date | None = None,
+def _string(value: object, default: str) -> str:
+    """Return a config value as a non-empty string.
+
+    Args:
+        value: The raw value.
+        default: The fallback.
+
+    Returns:
+        The string, or the default.
+    """
+    return value if isinstance(value, str) and value else default
+
+
+def _ledger_dir(options_map: Mapping[str, object]) -> Path:
+    """Return the ledger's directory.
+
+    Args:
+        options_map: The Beancount options map.
+
+    Returns:
+        The directory holding the ledger file.
+    """
+    from pathlib import Path  # noqa: PLC0415 - a narrow local import
+
+    filename = options_map.get("filename")
+    return Path(str(filename)).resolve().parent if filename else Path.cwd()
+
+
+def relabel_pending(
+    entries: list[Directive], pending_file: str, tag: str, flag: str
 ) -> list[Directive]:
-    """Build the forecast transactions for a computed result.
-
-    Each upcoming unresolved occurrence becomes a ``#``-flagged transaction
-    dated at its nominal date, carrying the schedule's payee and narration. A
-    rule that names no amount cannot be forecast, since the amount is unknown.
-
-    Args:
-        result: The computed schedule result.
-        entries: The ledger entries, for balance-from-ledger amortization.
-        options_map: The Beancount options map, for the currency.
-        months: How many months forward to forecast.
-        today: The reference date, or ``None`` for the ledger's last date.
-
-    Returns:
-        The forecast transactions, in date order.
-    """
-    reference = today or _last_date(entries)
-    horizon = _horizon(reference, months)
-    currency = operating_currency(options_map)
-    balances = ledger_balances(entries, amortized_accounts(result))
-    forecast: list[Directive] = []
-    for report in result.reports:
-        rule = report.rule
-        if rule.match_amount is None:
-            continue
-        if not rule.postings and rule.amortization is None:
-            # A rule with no other side cannot form a balanced transaction.
-            continue
-        nominals = [
-            occurrence.nominal
-            for occurrence in report.occurrences
-            if not occurrence.resolved and reference <= occurrence.nominal <= horizon
-        ]
-        if not nominals:
-            continue
-        splits = amortization_splits(
-            rule,
-            [o.nominal for o in report.occurrences],
-            entries,
-            balances=balances,
-        )
-        forecast.extend(
-            transaction
-            for nominal in nominals
-            if (
-                transaction := _forecast_transaction(
-                    rule, nominal, splits.get(nominal), currency
-                )
-            )
-            is not None
-        )
-    forecast.sort(key=lambda entry: entry.date)
-    return forecast
-
-
-def _forecast_transaction(
-    rule: Rule,
-    nominal: date,
-    split: Split | None,
-    currency: str,
-) -> data.Transaction | None:
-    """Build one forecast transaction.
-
-    Args:
-        rule: The schedule's rule.
-        nominal: The nominal date.
-        split: The amortization split, if any.
-        currency: The operating currency.
-
-    Returns:
-        The forecast transaction, or ``None`` when the rule's postings cannot be
-        resolved to a balanced transaction.
-    """
-    postings = _forecast_postings(rule, split, currency)
-    if postings is None:
-        return None
-    meta = data.new_metadata("<beanschedule>", 0)
-    meta[SCHEDULE_KEY] = rule.id
-    meta[FORECAST_KEY] = True
-    return data.Transaction(
-        meta=meta,
-        date=nominal,
-        flag="#",
-        payee=rule.payee or "",
-        narration=rule.narration or rule.id,
-        tags=frozenset(),
-        links=frozenset(),
-        postings=postings,
-    )
-
-
-def _forecast_postings(
-    rule: Rule, split: Split | None, currency: str
-) -> list[data.Posting] | None:
-    """Build a forecast transaction's postings.
-
-    Every posting carries an explicit amount: Beancount's balance check reads
-    ``get_weight`` on each one, so a posting left for interpolation to fill would
-    crash it. When one declared posting omits its amount, it is computed here so
-    the transaction balances against ``match-amount``. When more than one omits
-    its amount there is nothing to resolve, and the rule is not forecast.
-
-    Args:
-        rule: The schedule's rule.
-        split: The amortization split, if any.
-        currency: The operating currency.
-
-    Returns:
-        The postings, or ``None`` when they cannot be resolved.
-    """
-    amount = rule.match_amount
-    if amount is None:
-        return None
-    postings = [_posting(rule.match_account, amount, currency)]
-    if split is not None and rule.amortization is not None:
-        amort = rule.amortization
-        postings.extend(
-            _posting(account, value, currency)
-            for account, value in (
-                (amort.principal_account, split.principal),
-                (amort.interest_account, split.interest),
-                (amort.escrow_account, split.escrow),
-            )
-            if account is not None and value != 0
-        )
-        return postings
-    resolved = resolve_postings(rule.postings, -amount)
-    if resolved is None:
-        return None
-    postings.extend(
-        _posting(account, value, currency, metadata)
-        for account, value, metadata in resolved
-    )
-    return postings
-    return postings
-
-
-def _posting(
-    account: str,
-    amount: Decimal | None,
-    currency: str,
-    metadata: dict[str, object] | None = None,
-) -> data.Posting:
-    """Build a posting.
-
-    Args:
-        account: The account.
-        amount: The amount, or ``None`` to let Beancount balance it.
-        currency: The currency.
-        metadata: The posting's metadata, if any.
-
-    Returns:
-        The posting.
-    """
-    units = None if amount is None else bc_amount.Amount(amount, currency)
-    return data.Posting(
-        account=account,
-        units=units,
-        cost=None,
-        price=None,
-        flag=None,
-        meta=metadata,
-    )
-
-
-def _last_date(entries: list[Directive]) -> date:
-    """Return the latest date in the ledger.
+    """Add the pending tag and flag to every pending transaction.
 
     Args:
         entries: The ledger entries.
+        pending_file: The pending file's basename.
+        tag: The tag to add.
+        flag: The flag to set.
 
     Returns:
-        The latest date, or today when the ledger is empty.
+        The entries, with pending transactions relabelled.
     """
-    dates = [entry.date for entry in entries if getattr(entry, "date", None)]
-    return max(dates) if dates else date.today()  # noqa: DTZ011 - fallback only
+    from pathlib import Path  # noqa: PLC0415 - a narrow local import
+
+    returned: list[Directive] = []
+    for entry in entries:
+        if not isinstance(entry, data.Transaction):
+            returned.append(entry)
+            continue
+        filename = (entry.meta or {}).get("filename")
+        if filename is None or Path(str(filename)).name != pending_file:
+            returned.append(entry)
+            continue
+        returned.append(
+            entry._replace(
+                tags=(entry.tags or frozenset()) | {tag},
+                flag=flag,
+            )
+        )
+    return returned
 
 
-def _horizon(reference: date, months: int) -> date:
-    """Return the last date a forecast reaches.
+def load_schedules(path: Path) -> list[Directive]:
+    """Load the schedule transactions from a file.
+
+    The whole file is schedules, so every transaction is returned — even one
+    missing its ``id``, so the engine can report it.
 
     Args:
-        reference: The reference date.
-        months: How many months forward.
+        path: The schedules file.
 
     Returns:
-        The last day of the month ``months`` ahead.
+        The schedule transactions, or an empty list when the file is missing.
     """
-    index = reference.year * 12 + (reference.month - 1) + months
-    return date(index // 12, index % 12 + 1, 1) - timedelta(days=1)
+    if not path.is_file():
+        return []
+    entries, _errors, _options = bc_loader.load_file(str(path))
+    return [entry for entry in entries if isinstance(entry, data.Transaction)]
+
+
+def plugin(
+    entries: list[Directive],
+    options_map: Mapping[str, object],
+    config: object = None,
+) -> tuple[list[Directive], list[SchedulesError]]:
+    """Relabel pending transactions and validate the schedules file.
+
+    Args:
+        entries: The ledger entries.
+        options_map: The Beancount options map.
+        config: The plugin config, a mapping or its string form.
+
+    Returns:
+        The entries with pending transactions relabelled, and the errors.
+    """
+    resolved = _config(config)
+    labelled = relabel_pending(
+        entries, resolved.pending_file, resolved.pending_tag, resolved.pending_flag
+    )
+    schedules_path = _ledger_dir(options_map) / resolved.schedules_file
+    schedules = load_schedules(schedules_path)
+    padded = _with_padding(labelled, options_map)
+    result = compute(padded, options_map, schedules=schedules)
+    errors = [_to_error(diagnostic, options_map) for diagnostic in result.diagnostics]
+    return labelled, errors
 
 
 def _with_padding(
@@ -391,7 +240,7 @@ def _with_padding(
 def _to_error(
     diagnostic: Diagnostic,
     options_map: Mapping[str, object],
-) -> ScheduleError:
+) -> SchedulesError:
     """Convert a core diagnostic into a Beancount error.
 
     Args:
@@ -402,9 +251,9 @@ def _to_error(
         The Beancount-compatible error.
     """
     if diagnostic.entry is not None:
-        return ScheduleError(
+        return SchedulesError(
             diagnostic.entry.meta, diagnostic.message, diagnostic.entry
         )
     filename = str(options_map.get("filename", "<unknown>"))
     lineno = diagnostic.source.lineno if diagnostic.source is not None else 0
-    return ScheduleError(data.new_metadata(filename, lineno), diagnostic.message, None)
+    return SchedulesError(data.new_metadata(filename, lineno), diagnostic.message, None)

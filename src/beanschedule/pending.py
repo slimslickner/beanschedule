@@ -2,18 +2,19 @@
 
 Allows users to stage transactions that have not posted yet (an online order, a
 pending charge) and have them automatically matched and enriched when they
-arrive through the beangulp hook.
+arrive. Pending transactions live in ``pending.bean``; the main ledger includes
+it, and the plugin tags and flags each one so it is obvious.
 
 A pending transaction:
 
-* is any transaction in ``pending.beancount`` (the whole file is pending);
+* is any transaction in ``pending.bean`` (the whole file is pending);
 * carries pre-defined splits with detailed posting narration;
 * matches on account + amount + date (within a four-day window); and
 * is removed once matched, so it is one-time use.
 
 Example pending transaction::
 
-    2026-02-20 ! "Amazon" "Wireless headphones ordered"
+    2026-02-20 * "Amazon" "Wireless headphones ordered"
       Assets:Checking  -89.99 USD
       Expenses:Electronics:Audio  85.00 USD
         narration: "Bose QuietComfort 45"
@@ -22,9 +23,7 @@ Example pending transaction::
 
 from __future__ import annotations
 
-import os
 from dataclasses import dataclass, field
-from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from beancount import loader as bc_loader
@@ -36,14 +35,13 @@ if TYPE_CHECKING:
     from collections.abc import Iterable
     from datetime import date as date_type
     from decimal import Decimal
+    from pathlib import Path
 
 __all__ = [
     "DEFAULT_PENDING_WINDOW_DAYS",
-    "PENDING_FILE",
     "PendingPosting",
     "PendingTransaction",
     "enrich_from_pending",
-    "find_pending_file",
     "load_pending_transactions",
     "match_pending_transaction",
     "remove_pending_transactions",
@@ -51,11 +49,6 @@ __all__ = [
 
 #: The default match window, in days.
 DEFAULT_PENDING_WINDOW_DAYS = 4
-
-#: The file the hook reads pending transactions from.
-PENDING_FILE = "pending.bean"
-
-_ENV_PENDING = "BEANSCHEDULE_PENDING"
 
 _BEANCOUNT_INTERNAL_META = frozenset({"filename", "lineno"})
 
@@ -102,23 +95,6 @@ class PendingTransaction:
     tags: frozenset[str] = frozenset()
     links: frozenset[str] = frozenset()
     source: Path | None = None
-
-
-def find_pending_file() -> Path | None:
-    """Find the pending transaction file.
-
-    The path comes from the ``BEANSCHEDULE_PENDING`` environment variable, or
-    ``pending.bean`` in the current directory.
-
-    Returns:
-        The path, or ``None`` when no file is found.
-    """
-    if env_path := os.getenv(_ENV_PENDING):
-        path = Path(env_path)
-        if path.exists():
-            return path
-    default = Path(PENDING_FILE)
-    return default if default.exists() else None
 
 
 def load_pending_transactions(file_path: Path) -> list[PendingTransaction]:

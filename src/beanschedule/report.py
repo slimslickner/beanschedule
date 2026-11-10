@@ -33,7 +33,7 @@ if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
     from decimal import Decimal
 
-    from beancount.core.data import Directive
+    from beancount.core.data import Directive, Transaction
 
 __all__ = [
     "STATUS_MOVED",
@@ -221,6 +221,30 @@ def format_money(value: Decimal | None, currency: str = "") -> str:
     return f"{text} {currency}" if currency else text
 
 
+def _history_line(transaction: Transaction, rule: Rule) -> OccurrenceLine:
+    """Build a report line from a resolved historical transaction.
+
+    History is a real transaction that resolves an occurrence older than the
+    schedule's window, so it is reported at its own date.
+
+    Args:
+        transaction: The resolved transaction.
+        rule: The schedule's rule.
+
+    Returns:
+        The :class:`OccurrenceLine`.
+    """
+    return OccurrenceLine(
+        nominal=transaction.date,
+        effective=transaction.date,
+        status=STATUS_POSTED,
+        amount=matched_amount(transaction, rule.match_account),
+        payee=transaction.payee,
+        narration=transaction.narration,
+        entry_hash=compare.hash_entry(transaction),
+    )
+
+
 def _status(occurrence: Occurrence, today: date | None) -> str:
     """Classify an occurrence's status.
 
@@ -315,10 +339,16 @@ def build_view(
     for report in result.reports:
         rule = report.rule
         splits = amortization_splits(
-            rule, [o.nominal for o in report.occurrences], entries, balances=balances
+            rule,
+            [o.nominal for o in report.occurrences],
+            entries,
+            balances=balances,
+            base=len(report.history),
         )
         horizon = _horizon(today, forecast_months)
-        lines: list[OccurrenceLine] = []
+        lines: list[OccurrenceLine] = [
+            _history_line(transaction, rule) for transaction in report.history
+        ]
         for occurrence in report.occurrences:
             status = _status(occurrence, today)
             if (

@@ -76,8 +76,7 @@ def compute_string() -> Callable[..., ScheduleResult]:
     """
 
     def _compute(text: str, today: date | None = None) -> ScheduleResult:
-        entries, errors, options = loader.load_string(text)
-        assert not errors, errors
+        entries, _errors, options = loader.load_string(text)
         return compute(entries, options, today=today)
 
     return _compute

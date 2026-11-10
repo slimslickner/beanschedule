@@ -1,0 +1,12 @@
+; The import ledger: beangulp's target and duplicate-detection source.
+;
+; It includes the journal — the real transactions beangulp appends to — and
+; deliberately NOT `pending.bean`: a pending placeholder carries the same
+; account, amount and date as the transaction it is waiting for, so beangulp
+; would treat the real one as already imported. It also excludes
+; `schedules.bean`, which the ledger does not include either.
+;
+; `main.bean` (Fava) includes this file, so entries appended here are seen.
+option "operating_currency" "USD"
+
+include "journal.bean"

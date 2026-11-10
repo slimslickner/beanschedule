@@ -1,15 +1,17 @@
-"""Convert legacy ``schedules/*.yaml`` files to ``custom "schedule"`` directives.
+"""Convert legacy ``schedules/*.yaml`` files to schedule transactions.
 
 This is the one module that reads YAML. It is pure apart from reading the files
 it is pointed at: it returns :class:`Migration` records, and the CLI renders
 them. Idempotence is by schedule id — a file whose id a ledger already declares
 is skipped.
 
-The v1 format was richer than the directive model in places, so what has no
+The v1 format was richer than the transaction model in places, so what has no
 equivalent is reported as a warning rather than silently dropped: a
-``transaction``'s tags, links and custom metadata, its ``missing_transaction``
-placeholder settings, a multi-currency posting, and an amortization block's
-original ``principal`` (the static method derives it from ``match-amount``).
+``transaction``'s ``missing_transaction`` placeholder settings, a multi-currency
+posting, an amortization block's original ``principal`` (the static method
+derives it from ``match-amount``), and any metadata key that would clash with the
+schedule's own. A ``transaction``'s tags, links and custom metadata are carried
+onto the schedule, and are not dropped.
 """
 
 from __future__ import annotations
@@ -21,14 +23,14 @@ from typing import TYPE_CHECKING, Any, cast
 
 import yaml
 
-from beanschedule import actions
+from beanschedule import actions, schema
 from beanschedule.core import DEFAULT_WINDOW
 
 if TYPE_CHECKING:
     from collections.abc import Collection, Mapping, Sequence
     from pathlib import Path
 
-    from beancount.core.data import Custom
+    from beancount.core.data import Transaction
 
 __all__ = ["Migration", "directory", "file", "render"]
 
@@ -73,7 +75,7 @@ class Migration:
 
     schedule_id: str
     source: Path
-    directives: tuple[Custom, ...]
+    transaction: Transaction
     warnings: tuple[str, ...] = ()
     disabled: bool = False
 
@@ -135,52 +137,46 @@ def file(yaml_path: Path, existing: Collection[str] = ()) -> Migration | None:
         else None
     )
 
-    amount, mode, tolerance = _amount_hints(match)
+    amount, _mode, tolerance = _amount_hints(match)
     window = _as_int(match.get("date_window_days"))
     window_arg = window if window is not None and window != DEFAULT_WINDOW else None
     amort = _amortization_fields(amortization, match, transaction, warnings)
-    directives = [
-        actions.new(
-            schedule_id,
-            start,
-            rrule=rrule_text,
-            start=start,
-            end=end,
-            match_account=str(match.get("account", "")),
-            match_payee=_as_str(match.get("payee_pattern")),
-            match_amount=amount,
-            amount_mode=_explicit_mode(amount, mode),
-            amount_tolerance=tolerance,
-            amount_min=_as_dec(match.get("amount_min")),
-            amount_max=_as_dec(match.get("amount_max")),
-            window_before=window_arg,
-            window_after=window_arg,
-            payee=_as_str(transaction.get("payee")),
-            narration=_as_str(transaction.get("narration")),
-            method=amort.method,
-            rate=amort.rate,
-            term=amort.term,
-            escrow=amort.escrow,
-            principal_account=amort.principal_account,
-            interest_account=amort.interest_account,
-            escrow_account=amort.escrow_account,
-        )
-    ]
+    amortized = _is_amortized(amortization)
+    postings = _postings(match, transaction, warnings, amortized=amortized)
+    migrated = actions.schedule_transaction(
+        schedule_id,
+        start,
+        rrule=rrule_text,
+        match_account=str(match.get("account", "")),
+        payee=_as_str(transaction.get("payee")),
+        narration=_as_str(transaction.get("narration")),
+        match_payee=_as_str(match.get("payee_pattern")),
+        match_amount=amount,
+        amount_tolerance=tolerance,
+        end=end,
+        window_before=window_arg,
+        window_after=window_arg,
+        postings=postings,
+        tags=_string_set(transaction.get("tags")),
+        links=_string_set(transaction.get("links")),
+        metadata=_carried_metadata(transaction, warnings),
+    )
+    amort_meta: dict[str, object] = {}
+    if amort.method is not None:
+        amort_meta["method"] = amort.method
+        if amort.rate is not None:
+            amort_meta["rate"] = amort.rate
+        if amort.term is not None:
+            amort_meta["term"] = Decimal(amort.term)
+        if amort.escrow is not None:
+            amort_meta["escrow"] = amort.escrow
+    if amort_meta:
+        migrated = migrated._replace(meta={**migrated.meta, **amort_meta})
 
-    if _is_amortized(amortization):
-        # The account keys carry the split; the legacy postings have no place.
-        warnings.append(
-            "amortized postings are dropped; the principal/interest/escrow "
-            "account keys carry the split"
-        )
-    else:
-        directives.extend(_postings(schedule_id, match, transaction, start, warnings))
-
-    _warn_dropped(transaction, warnings)
     return Migration(
         schedule_id=schedule_id,
         source=yaml_path,
-        directives=tuple(directives),
+        transaction=migrated,
         warnings=tuple(warnings),
         disabled=data.get("enabled") is False,
     )
@@ -193,19 +189,18 @@ def render(migration: Migration) -> str:
         migration: The migration.
 
     Returns:
-        The directives, each rendered, with a leading comment per warning and,
-        when the source was disabled, every directive line commented out.
+        The transaction, rendered, with a leading comment per warning and, when
+        the source was disabled, every line commented out.
     """
     lines: list[str] = []
     if migration.disabled:
         lines.append("; disabled in the source; uncomment to enable")
     lines.extend(f"; note: {warning}" for warning in migration.warnings)
-    for directive in migration.directives:
-        rendered = actions.render(directive)
-        if migration.disabled:
-            lines.extend(f"; {line}" for line in rendered.splitlines())
-        else:
-            lines.append(rendered)
+    rendered = actions.render(migration.transaction)
+    if migration.disabled:
+        lines.extend(f"; {line}" for line in rendered.splitlines())
+    else:
+        lines.append(rendered)
     return "\n".join(lines)
 
 
@@ -433,33 +428,32 @@ def _escrow_total(transaction: Mapping[str, Any]) -> Decimal | None:
 
 
 def _postings(
-    schedule_id: str,
     match: Mapping[str, Any],
     transaction: Mapping[str, Any],
-    day: date,
     warnings: list[str],
-) -> list[Custom]:
-    """Map legacy postings to ``posting`` directives.
+    *,
+    amortized: bool = False,
+) -> list[tuple[str, Decimal | None, dict[str, object] | None]]:
+    """Map legacy postings to a schedule transaction's split.
 
     The matched account's posting is skipped (the imported transaction carries
-    it), and a multi-currency posting is skipped and reported, since the
-    directive model carries one currency. The survivors are checked against
-    ``match-amount``: a v1 template was a full double-entry split, not
-    necessarily a split of the matched amount, so an unbalanced one is reported
-    rather than passed on silently.
+    it), and a multi-currency posting is skipped and reported, since a schedule
+    carries one currency. A posting with an amortization ``role`` becomes a leg,
+    marked with ``schedule-leg``.
 
     Args:
-        schedule_id: The schedule id.
         match: The legacy ``match`` mapping.
         transaction: The legacy ``transaction`` mapping.
-        day: The directive date.
         warnings: Extended in place.
+        amortized: Whether the schedule amortizes. An amortized schedule's leg
+            amounts are placeholders the engine recomputes, so they are not
+            balance-checked.
 
     Returns:
-        The ``posting`` directives.
+        The ``(account, amount, metadata)`` postings.
     """
     match_account = match.get("account")
-    resolved: list[tuple[str, Decimal | None, dict[str, object]]] = []
+    resolved: list[tuple[str, Decimal | None, dict[str, object] | None]] = []
     for posting in transaction.get("postings") or []:
         if not isinstance(posting, dict) or not posting.get("account"):
             continue
@@ -472,32 +466,24 @@ def _postings(
                 "schedules cannot carry; skipped"
             )
             continue
-        if posting.get("role"):
-            warnings.append(f"posting {account}'s role {posting['role']!r} is dropped")
-        resolved.append(
-            (
-                account,
-                _as_dec(posting.get("amount")),
-                {
-                    key: value
-                    for key, value in posting.items()
-                    if key not in ("account", "amount", "currency", "role")
-                    and value is not None
-                },
-            )
-        )
-    _warn_balance(match, resolved, warnings)
-    return [
-        actions.posting(
-            schedule_id, account, day, amount=amount, metadata=metadata or None
-        )
-        for account, amount, metadata in resolved
-    ]
+        metadata = {
+            key: value
+            for key, value in posting.items()
+            if key not in ("account", "amount", "currency", "role")
+            and value is not None
+        }
+        role = posting.get("role")
+        if role in ("principal", "interest", "escrow"):
+            metadata["schedule-leg"] = role
+        resolved.append((account, _as_dec(posting.get("amount")), metadata or None))
+    if not amortized:
+        _warn_balance(match, resolved, warnings)
+    return resolved
 
 
 def _warn_balance(
     match: Mapping[str, Any],
-    resolved: Sequence[tuple[str, Decimal | None, dict[str, object]]],
+    resolved: Sequence[tuple[str, Decimal | None, dict[str, object] | None]],
     warnings: list[str],
 ) -> None:
     """Report postings that cannot balance against ``match-amount``.
@@ -530,23 +516,52 @@ def _warn_balance(
         )
 
 
-def _warn_dropped(transaction: Mapping[str, Any], warnings: list[str]) -> None:
-    """Report the legacy transaction fields with no equivalent.
+def _string_set(value: object) -> frozenset[str]:
+    """Return a legacy list as a set of non-empty strings.
+
+    Args:
+        value: The legacy value, expected to be a list.
+
+    Returns:
+        The strings as a frozen set, or an empty set.
+    """
+    if not isinstance(value, list):
+        return frozenset()
+    return frozenset(str(item) for item in value if item)
+
+
+def _carried_metadata(
+    transaction: Mapping[str, Any], warnings: list[str]
+) -> dict[str, object]:
+    """Collect the legacy transaction metadata to carry onto the schedule.
+
+    Everything but the legacy ``schedule_id`` link is carried, except keys the
+    engine owns (which would clash with the schedule's own metadata and are
+    reported).
 
     Args:
         transaction: The legacy ``transaction`` mapping.
         warnings: Extended in place.
+
+    Returns:
+        The metadata to write on the schedule transaction.
     """
-    if transaction.get("tags"):
-        warnings.append("transaction tags are dropped")
-    if transaction.get("links"):
-        warnings.append("transaction links are dropped")
-    metadata = _mapping(transaction.get("metadata"))
-    dropped = [key for key in metadata if key != "schedule_id"]
+    reserved = {key.key for key in schema.METADATA_KEYS}
+    carried: dict[str, object] = {}
+    dropped: list[str] = []
+    for key, value in _mapping(transaction.get("metadata")).items():
+        if key == "schedule_id":
+            continue
+        if key in reserved:
+            dropped.append(key)
+            continue
+        carried[key] = value
     if dropped:
         warnings.append(
-            "transaction metadata " + ", ".join(sorted(dropped)) + " is dropped"
+            "transaction metadata " + ", ".join(sorted(dropped)) + " clashes "
+            "with the schedule's own keys and is dropped"
         )
+    return carried
 
 
 def _legacy_rrule(  # noqa: C901, PLR0911 - one branch per legacy frequency

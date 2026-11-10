@@ -1,9 +1,9 @@
 """Recurring-transaction pattern detection.
 
-Reads a ledger and proposes ``custom "schedule" "new"`` directives for the
-recurring payments it finds. The proposal is only a suggestion: the CLI's
-``detect`` prints the directives and ``create`` writes them, and neither guesses
-on the user's behalf.
+Reads a ledger and proposes schedule transactions for the recurring payments it
+finds. The proposal is only a suggestion: the CLI's ``detect`` prints the
+transactions and ``create`` writes them, and neither guesses on the user's
+behalf.
 
 The detector groups transactions by account, payee and amount, measures the gaps
 between them, maps the median gap to an RRULE, and scores the result. It is
@@ -28,7 +28,7 @@ if TYPE_CHECKING:
     from collections.abc import Sequence
     from datetime import date
 
-    from beancount.core.data import Custom, Directive, Transaction
+    from beancount.core.data import Directive, Transaction
 
     from beanschedule.core import ScheduleResult
 
@@ -162,35 +162,26 @@ class Proposal:
     first_date: date
     last_date: date
 
-    def directives(self) -> list[Custom]:
-        """Render the proposal as a ``new`` directive and its postings.
+    def transaction(self) -> Transaction:
+        """Render the proposal as a schedule transaction.
 
         Returns:
-            The directives, the ``new`` first.
+            The transaction.
         """
-        return [
-            actions.new(
-                self.schedule_id,
-                self.start,
-                rrule=self.rrule,
-                start=self.start,
-                match_account=self.account,
-                match_payee=self.payee,
-                match_amount=self.amount,
-                amount_mode="approx",
-                amount_tolerance=self.amount_tolerance,
-                payee=self.payee,
-            ),
-            *(
-                actions.posting(
-                    self.schedule_id,
-                    spec.account,
-                    self.start,
-                    amount=spec.amount,
-                )
+        return actions.schedule_transaction(
+            self.schedule_id,
+            self.start,
+            rrule=self.rrule,
+            match_account=self.account,
+            payee=self.payee,
+            match_payee=self.payee,
+            match_amount=self.amount,
+            amount_tolerance=self.amount_tolerance,
+            postings=[
+                (spec.account, spec.amount, spec.as_dict() or None)
                 for spec in self.postings
-            ),
-        ]
+            ],
+        )
 
 
 def detect(

@@ -25,13 +25,38 @@ def test_parse_config_rejects_non_mappings() -> None:
     assert parse_config("{not valid}") is None
 
 
-def test_fava_write_setting_from_string() -> None:
-    config = "{'write': 'Schedules.bean', 'months': 2}"
-    assert fava_ext._write_setting(config) == "Schedules.bean"
-    assert fava_ext._months_setting(config) == 2
-
-
-def test_fava_settings_default() -> None:
+def test_fava_write_setting() -> None:
+    assert fava_ext._write_setting("{'write': True}") is True
+    assert fava_ext._write_setting("{'write': 'custom.bean'}") == "custom.bean"
+    assert fava_ext._write_setting("{}") is None
     assert fava_ext._write_setting(None) is None
     assert fava_ext._write_setting("not a mapping") is None
+
+
+def test_fava_months_setting() -> None:
+    assert fava_ext._months_setting("{'months': 2}") == 2
     assert fava_ext._months_setting("{}") == fava_ext._DEFAULT_MONTHS
+
+
+def test_fava_plugin_config() -> None:
+    options = {
+        "plugin": [
+            ("beancount.plugins.auto_accounts", None),
+            (
+                "beanschedule.plugin",
+                "{'schedules_file': 's.bean', 'pending_file': 'p.bean'}",
+            ),
+        ]
+    }
+    assert fava_ext._plugin_config(options) == {
+        "schedules_file": "s.bean",
+        "pending_file": "p.bean",
+    }
+    assert fava_ext._plugin_config({}) == {}
+    assert fava_ext._plugin_config({"plugin": [("other", "{}")]}) == {}
+
+
+def test_fava_string_default() -> None:
+    assert fava_ext._string("x", "d") == "x"
+    assert fava_ext._string("", "d") == "d"
+    assert fava_ext._string(None, "d") == "d"

@@ -1,10 +1,11 @@
-"""Pure generation of ``custom "schedule"`` directives from schedule actions.
+"""Pure generation and rendering of schedule transactions.
 
 The CLI and the Fava report both change a schedule by appending, editing or
-removing a single ``custom "schedule"`` directive. This module turns an action —
-``new``, ``skip`` or ``move`` — into the Beancount directive that expresses it,
-and renders it with Beancount's own printer, so the CLI and the web report emit
-identical text. It performs no I/O and imports neither the CLI nor Fava.
+removing a single transaction — the "frontier" transaction that carries the
+schedule's metadata and its next occurrence date. This module turns an action
+into that transaction and renders it with Beancount's own printer, so the CLI
+and the web report emit identical text. It performs no I/O and imports neither
+the CLI nor Fava.
 """
 
 from __future__ import annotations
@@ -13,30 +14,32 @@ from datetime import date  # noqa: TC003 - used by doctests at runtime
 from decimal import Decimal
 from typing import TYPE_CHECKING
 
-from beancount.core.data import Custom
+from beancount.core.amount import Amount
+from beancount.core.data import Posting, Transaction
 from beancount.parser import printer
-from beancount.parser.grammar import ValueType
 
 from beanschedule.core import DEFAULT_WINDOW
-from beanschedule.schema import TYPE
 
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
 
+    from beancount.core.data import Directive
+
     from beanschedule.core import Rule
 
 __all__ = [
-    "TYPE",
+    "advance",
     "from_rule",
-    "move",
-    "new",
-    "posting",
     "render",
-    "skip",
+    "schedule_transaction",
+    "tag",
 ]
 
 #: The quantum every monetary amount is rounded to before it is written.
 _CENT = Decimal("0.01")
+
+#: The leg names an amortized schedule may mark its postings with.
+_LEG_ORDER = ("principal", "interest", "escrow")
 
 
 def _number(value: Decimal | None) -> Decimal | None:
@@ -73,379 +76,231 @@ def _coerce(value: object) -> object:
     return value
 
 
-def _custom(
-    day: date,
-    values: Sequence[object],
-    meta: Mapping[str, object] | None = None,
-) -> Custom:
-    """Build a ``custom "schedule"`` directive.
+def _posting(
+    account: str,
+    amount: Decimal | None,
+    currency: str,
+    metadata: Mapping[str, object] | None = None,
+) -> Posting:
+    """Build a posting.
 
     Args:
-        day: The directive's date.
-        values: The values after the ``schedule`` type, starting with the verb.
-        meta: The directive's metadata, or ``None``.
+        account: The posting's account.
+        amount: The signed amount, or ``None`` to let Beancount balance it.
+        currency: The amount's currency.
+        metadata: The posting's metadata, if any.
 
     Returns:
-        The directive.
+        The posting.
     """
-    return Custom(
-        meta=dict(meta) if meta else {},
-        date=day,
-        type=TYPE,
-        values=[ValueType(value, type(value)) for value in values],
+    units = None if amount is None else Amount(amount.quantize(_CENT), currency)
+    meta = {key: _coerce(value) for key, value in (metadata or {}).items()} or None
+    return Posting(
+        account=account,
+        units=units,
+        cost=None,
+        price=None,
+        flag=None,
+        meta=meta,
     )
 
 
-def _rule_meta(  # noqa: C901, PLR0912, PLR0913 - the rule's fields share one builder
+def schedule_transaction(  # noqa: PLR0913 - the schedule's fields share one builder
+    schedule_id: str,
+    day: date,
     *,
     rrule: str,
-    start: date,
     match_account: str,
-    end: date | None = None,
+    currency: str = "USD",
     payee: str | None = None,
     narration: str | None = None,
     match_payee: str | None = None,
     match_amount: Decimal | None = None,
-    amount_mode: str | None = None,
     amount_tolerance: Decimal | None = None,
-    amount_min: Decimal | None = None,
-    amount_max: Decimal | None = None,
+    end: date | None = None,
     window_before: int | None = None,
     window_after: int | None = None,
-    method: str | None = None,
-    rate: Decimal | None = None,
-    term: int | None = None,
-    escrow: Decimal | None = None,
-    principal_account: str | None = None,
-    interest_account: str | None = None,
-    escrow_account: str | None = None,
-) -> dict[str, object]:
-    """Build a rule directive's metadata in the registry's key order.
+    postings: Sequence[tuple[str, Decimal | None, Mapping[str, object] | None]] = (),
+    tags: frozenset[str] = frozenset(),
+    links: frozenset[str] = frozenset(),
+    metadata: Mapping[str, object] | None = None,
+) -> Transaction:
+    """Build a schedule transaction.
 
     Args:
+        schedule_id: The schedule's identifier.
+        day: The transaction's date, which anchors the series and is its next
+            occurrence.
         rrule: The RFC 5545 recurrence rule.
-        start: The first nominal date.
         match_account: The account an imported transaction must post to.
+        currency: The operating currency.
+        payee: The payee written onto enriched transactions.
+        narration: The narration written onto enriched transactions.
+        match_payee: A payee regex for matching, if any.
+        match_amount: The matched posting's amount, if any.
+        amount_tolerance: The approximate-match tolerance, if any.
         end: The last nominal date, if any.
-        payee: The payee to write onto enriched transactions.
-        narration: The narration to write onto enriched transactions.
-        match_payee: A payee regex, if any.
-        match_amount: The reference amount, if any.
-        amount_mode: The amount mode, if given.
-        amount_tolerance: The approx-mode tolerance, if any.
-        amount_min: The range-mode lower bound, if any.
-        amount_max: The range-mode upper bound, if any.
         window_before: Days before a nominal date, if non-zero.
         window_after: Days after a nominal date, if non-zero.
-        method: The amortization method, if any.
-        rate: The amortization rate, if any.
-        term: The amortization term, if any.
-        escrow: The amortization escrow amount, if any.
-        principal_account: The liability account, if any.
-        interest_account: The interest expense account, if any.
-        escrow_account: The escrow expense account, if any.
+        postings: The other-side postings as ``(account, amount, metadata)``.
+        tags: The tags carried onto a matched transaction.
+        links: The links carried onto a matched transaction.
+        metadata: The user metadata carried onto a matched transaction.
 
     Returns:
-        The metadata, omitting the fields that are ``None`` (or a zero window).
+        The transaction.
+
+    Examples:
+        >>> txn = schedule_transaction(
+        ...     "paycheck",
+        ...     date(2026, 1, 15),
+        ...     rrule="FREQ=MONTHLY;BYMONTHDAY=15",
+        ...     match_account="Assets:Bank",
+        ...     payee="Acme",
+        ...     match_amount=Decimal("-3000.00"),
+        ...     postings=[
+        ...         ("Expenses:Taxes", Decimal("600.00"), None),
+        ...         ("Expenses:Savings", Decimal("2400.00"), None),
+        ...     ],
+        ... )
+        >>> print(render(txn))
+        2026-01-15 * "Acme" ""
+          id: "paycheck"
+          rrule: "FREQ=MONTHLY;BYMONTHDAY=15"
+          match-account: "Assets:Bank"
+          Assets:Bank       -3000.00 USD
+          Expenses:Taxes      600.00 USD
+          Expenses:Savings   2400.00 USD
     """
-    meta: dict[str, object] = {"rrule": rrule, "start": start}
+    meta: dict[str, object] = {"id": schedule_id, "rrule": rrule}
+    meta["match-account"] = match_account
     if end is not None:
         meta["end"] = end
-    if payee is not None:
-        meta["payee"] = payee
-    if narration is not None:
-        meta["narration"] = narration
-    meta["match-account"] = match_account
     if match_payee is not None:
         meta["match-payee"] = match_payee
-    if match_amount is not None:
-        meta["match-amount"] = _number(match_amount)
-    if amount_mode is not None:
-        meta["amount-mode"] = amount_mode
-    for key, value in (
-        ("amount-tolerance", amount_tolerance),
-        ("amount-min", amount_min),
-        ("amount-max", amount_max),
-    ):
-        if value is not None:
-            meta[key] = _number(value)
+    if amount_tolerance is not None:
+        meta["amount-tolerance"] = _number(amount_tolerance)
     if window_before:
         meta["window-before"] = Decimal(window_before)
     if window_after:
         meta["window-after"] = Decimal(window_after)
-    if method is not None:
-        meta["method"] = method
-    if rate is not None:
-        meta["rate"] = rate
-    if term is not None:
-        meta["term"] = Decimal(term)
-    if escrow is not None:
-        meta["escrow"] = _number(escrow)
-    meta.update(
-        {
-            key: value
-            for key, value in (
-                ("principal-account", principal_account),
-                ("interest-account", interest_account),
-                ("escrow-account", escrow_account),
-            )
-            if value is not None
-        }
+    for key, value in (metadata or {}).items():
+        meta[key] = _coerce(value)
+    built = [_posting(match_account, match_amount, currency)]
+    built.extend(
+        _posting(account, amount, currency, metadata)
+        for account, amount, metadata in postings
     )
-    return meta
-
-
-def new(  # noqa: PLR0913 - the rule's fields share one builder
-    schedule_id: str,
-    day: date,
-    *,
-    rrule: str,
-    start: date,
-    match_account: str,
-    end: date | None = None,
-    payee: str | None = None,
-    narration: str | None = None,
-    match_payee: str | None = None,
-    match_amount: Decimal | None = None,
-    amount_mode: str | None = None,
-    amount_tolerance: Decimal | None = None,
-    amount_min: Decimal | None = None,
-    amount_max: Decimal | None = None,
-    window_before: int | None = None,
-    window_after: int | None = None,
-    method: str | None = None,
-    rate: Decimal | None = None,
-    term: int | None = None,
-    escrow: Decimal | None = None,
-    principal_account: str | None = None,
-    interest_account: str | None = None,
-    escrow_account: str | None = None,
-) -> Custom:
-    """Build a ``new`` directive.
-
-    Args:
-        schedule_id: The schedule's identifier.
-        day: The directive's date.
-        rrule: The RFC 5545 recurrence rule.
-        start: The first nominal date.
-        match_account: The account an imported transaction must post to.
-        end: The last nominal date, if any.
-        payee: The payee to write onto enriched transactions.
-        narration: The narration to write onto enriched transactions.
-        match_payee: A payee regex, if any.
-        match_amount: The reference amount, if any.
-        amount_mode: The amount mode, if given.
-        amount_tolerance: The approx-mode tolerance, if any.
-        amount_min: The range-mode lower bound, if any.
-        amount_max: The range-mode upper bound, if any.
-        window_before: Days before a nominal date, if non-zero.
-        window_after: Days after a nominal date, if non-zero.
-        method: The amortization method, if any.
-        rate: The amortization rate, if any.
-        term: The amortization term, if any.
-        escrow: The amortization escrow amount, if any.
-        principal_account: The liability account, if any.
-        interest_account: The interest expense account, if any.
-        escrow_account: The escrow expense account, if any.
-
-    Returns:
-        The directive.
-
-    Examples:
-        >>> entry = new(
-        ...     "paycheck",
-        ...     date(2026, 1, 1),
-        ...     rrule="FREQ=MONTHLY;BYMONTHDAY=15",
-        ...     start=date(2026, 1, 15),
-        ...     match_account="Assets:Bank",
-        ... )
-        >>> print(render(entry))
-        2026-01-01 custom "schedule" "new" "paycheck"
-          rrule: "FREQ=MONTHLY;BYMONTHDAY=15"
-          start: 2026-01-15
-          match-account: "Assets:Bank"
-    """
-    meta = _rule_meta(
-        rrule=rrule,
-        start=start,
-        match_account=match_account,
-        end=end,
-        payee=payee,
-        narration=narration,
-        match_payee=match_payee,
-        match_amount=match_amount,
-        amount_mode=amount_mode,
-        amount_tolerance=amount_tolerance,
-        amount_min=amount_min,
-        amount_max=amount_max,
-        window_before=window_before,
-        window_after=window_after,
-        method=method,
-        rate=rate,
-        term=term,
-        escrow=escrow,
-        principal_account=principal_account,
-        interest_account=interest_account,
-        escrow_account=escrow_account,
+    return Transaction(
+        meta=meta,
+        date=day,
+        flag="*",
+        payee=payee or "",
+        narration=narration or "",
+        tags=frozenset(tags),
+        links=frozenset(links),
+        postings=built,
     )
-    return _custom(day, ["new", schedule_id], meta)
 
 
-def posting(
-    schedule_id: str,
-    account: str,
-    day: date,
-    *,
-    amount: Decimal | None = None,
-    metadata: Mapping[str, object] | None = None,
-) -> Custom:
-    """Build a ``posting`` directive.
+def from_rule(rule: Rule, currency: str = "USD") -> Transaction:
+    """Rebuild the transaction for a parsed rule.
 
-    Args:
-        schedule_id: The schedule the posting belongs to.
-        account: The other-side account.
-        day: The directive's date. Its date is ignored by the engine; the
-            occurrence's date is used.
-        amount: The posting's signed amount, or ``None`` to let Beancount
-            balance it.
-        metadata: Any other posting metadata, copied verbatim (such as
-            ``narration`` or ``contribution-year``).
-
-    Returns:
-        The directive.
-
-    Examples:
-        >>> entry = posting(
-        ...     "paycheck",
-        ...     "Expenses:Taxes:Federal",
-        ...     date(2026, 1, 1),
-        ...     amount=Decimal("600"),
-        ...     metadata={"contribution-year": 2026},
-        ... )
-        >>> print(render(entry))
-        2026-01-01 custom "schedule" "posting" "paycheck" "Expenses:Taxes:Federal"
-          amount: 600.00
-          contribution-year: 2026
-    """
-    meta: dict[str, object] = {}
-    if amount is not None:
-        meta["amount"] = _number(amount)
-    if metadata:
-        meta.update({key: _coerce(value) for key, value in metadata.items()})
-    return _custom(day, ["posting", schedule_id, account], meta)
-
-
-def _inferred_mode(match_amount: Decimal | None) -> str:
-    """Return the amount mode a rule with no explicit mode implies.
-
-    Args:
-        match_amount: The reference amount, if any.
-
-    Returns:
-        ``"exact"`` when there is a reference amount, else ``"any"``.
-    """
-    return "any" if match_amount is None else "exact"
-
-
-def from_rule(rule: Rule) -> list[Custom]:
-    """Rebuild the directives for a parsed rule.
-
-    Editing a rule rewrites its directives in place, so the recurring series
-    (and therefore the nominal dates and their links) stays put. The ``new``
-    directive comes first, then one ``posting`` directive per declared posting.
-
-    Defaults are omitted, so a rule that never named a window or an amount mode
-    is not rewritten with them: a canonical rebuild of an unchanged ledger is a
-    no-op.
+    Defaults are omitted, so a rule that never named a window or a tolerance is
+    not rewritten with them: a canonical rebuild of an unchanged schedule is a
+    no-op. Amortization legs keep their ``schedule-leg`` marker.
 
     Args:
         rule: The rule.
+        currency: The operating currency.
 
     Returns:
-        The directives, the ``new`` first.
+        The schedule transaction.
     """
+    legs: dict[str, str] = {}
     amort = rule.amortization
-    meta = _rule_meta(
+    if amort is not None:
+        legs = {
+            account: leg
+            for leg, account in (
+                ("principal", amort.principal_account),
+                ("interest", amort.interest_account),
+                ("escrow", amort.escrow_account),
+            )
+            if account is not None
+        }
+    postings: list[tuple[str, Decimal | None, dict[str, object] | None]] = []
+    for spec in rule.postings:
+        metadata = spec.as_dict()
+        leg = legs.pop(spec.account, None)
+        if leg is not None:
+            metadata["schedule-leg"] = leg
+        postings.append((spec.account, spec.amount, metadata or None))
+    for account, leg in legs.items():
+        postings.append((account, None, {"schedule-leg": leg}))
+    meta_extra: dict[str, object] = {}
+    if amort is not None:
+        meta_extra["method"] = amort.method
+        meta_extra["rate"] = amort.rate
+        if amort.term is not None:
+            meta_extra["term"] = Decimal(amort.term)
+        if amort.escrow is not None:
+            meta_extra["escrow"] = amort.escrow
+    txn = schedule_transaction(
+        rule.id,
+        rule.start,
         rrule=rule.rrule,
-        start=rule.start,
         match_account=rule.match_account,
-        end=rule.end,
+        currency=currency,
         payee=rule.payee,
         narration=rule.narration,
         match_payee=rule.match_payee,
         match_amount=rule.match_amount,
-        amount_mode=(
-            None
-            if rule.amount_mode == _inferred_mode(rule.match_amount)
-            else rule.amount_mode
-        ),
         amount_tolerance=rule.amount_tolerance,
-        amount_min=rule.amount_min,
-        amount_max=rule.amount_max,
+        end=rule.end,
         window_before=(
             None if rule.window_before == DEFAULT_WINDOW else rule.window_before
         ),
         window_after=(
             None if rule.window_after == DEFAULT_WINDOW else rule.window_after
         ),
-        method=amort.method if amort else None,
-        rate=amort.rate if amort else None,
-        term=amort.term if amort else None,
-        escrow=amort.escrow if amort else None,
-        principal_account=amort.principal_account if amort else None,
-        interest_account=amort.interest_account if amort else None,
-        escrow_account=amort.escrow_account if amort else None,
+        postings=postings,
+        tags=rule.tags,
+        links=rule.links,
+        metadata=dict(rule.metadata),
     )
-    directives = [_custom(rule.declared, ["new", rule.id], meta)]
-    directives.extend(
-        posting(
-            rule.id,
-            spec.account,
-            rule.declared,
-            amount=spec.amount,
-            metadata=spec.as_dict(),
-        )
-        for spec in rule.postings
-    )
-    return directives
+    extra = {key: _coerce(value) for key, value in meta_extra.items()}
+    return txn._replace(meta={**txn.meta, **extra})
 
 
-def skip(schedule_id: str, nominal: date) -> Custom:
-    """Build a ``skip`` directive.
+def advance(rule: Rule, new_date: date, currency: str = "USD") -> Transaction:
+    """Return the schedule transaction dated at its next occurrence.
 
     Args:
-        schedule_id: The schedule whose occurrence is skipped.
-        nominal: The skipped nominal date, which becomes the directive's date.
+        rule: The rule.
+        new_date: The next occurrence date.
+        currency: The operating currency.
 
     Returns:
-        The directive.
-
-    Examples:
-        >>> render(skip("paycheck", date(2026, 12, 15)))
-        '2026-12-15 custom "schedule" "skip" "paycheck"'
+        The advanced transaction.
     """
-    return _custom(nominal, ["skip", schedule_id])
+    return from_rule(rule, currency)._replace(date=new_date)
 
 
-def move(schedule_id: str, nominal: date, new_date: date) -> Custom:
-    """Build a ``move`` directive.
+def tag(entry: Transaction, schedule_id: str) -> Transaction:
+    """Return a transaction tagged as resolving a schedule.
 
     Args:
-        schedule_id: The schedule whose occurrence is moved.
-        nominal: The original nominal date, which becomes the directive's date.
-        new_date: The date the occurrence moves to.
+        entry: The transaction.
+        schedule_id: The schedule it resolves.
 
     Returns:
-        The directive.
-
-    Examples:
-        >>> render(move("paycheck", date(2026, 12, 15), date(2026, 12, 20)))
-        '2026-12-15 custom "schedule" "move" "paycheck" 2026-12-20'
+        The tagged transaction.
     """
-    return _custom(nominal, ["move", schedule_id, new_date])
+    return entry._replace(meta={**(entry.meta or {}), "schedule": schedule_id})
 
 
-def render(entry: Custom) -> str:
+def render(entry: Directive) -> str:
     """Render a directive as it should appear in a ledger.
 
     Delegates to Beancount's own printer so the CLI and the Fava report never

@@ -1,4 +1,4 @@
-"""The opt-in writer for ``custom "schedule"`` directives.
+"""The opt-in writer for schedule transactions.
 
 Pure code never touches disk. This is the only module through which the CLI
 edits a ledger file; the Fava report has its own writer over Fava's file API,
@@ -17,7 +17,7 @@ if TYPE_CHECKING:
     from collections.abc import Sequence
     from pathlib import Path
 
-    from beancount.core.data import Custom
+    from beancount.core.data import Directive
 
 __all__ = [
     "SOURCE_SUFFIXES",
@@ -83,7 +83,7 @@ def directive_line_count(lines: list[str], lineno: int) -> int:
     return count
 
 
-def append(path: Path, entry: Custom) -> None:
+def append(path: Path, entry: Directive) -> None:
     """Append a directive to a file.
 
     Args:
@@ -100,7 +100,7 @@ def append(path: Path, entry: Custom) -> None:
     _write_lines(path, lines)
 
 
-def replace(path: Path, lineno: int, entry: Custom) -> None:
+def replace(path: Path, lineno: int, entry: Directive) -> None:
     """Replace the directive at a line with another.
 
     Args:
@@ -131,7 +131,7 @@ def delete(path: Path, lineno: int) -> None:
 
 def apply_edits(
     lines: list[str],
-    edits: Sequence[tuple[int, Custom | None]],
+    edits: Sequence[tuple[int, Directive | None]],
 ) -> list[str]:
     """Replace or delete directives in a file's lines, without touching disk.
 
@@ -160,7 +160,7 @@ def apply_edits(
     return updated
 
 
-def rewrite(path: Path, edits: Sequence[tuple[int, Custom | None]]) -> None:
+def rewrite(path: Path, edits: Sequence[tuple[int, Directive | None]]) -> None:
     """Replace or delete directives in a file, in place.
 
     Args:

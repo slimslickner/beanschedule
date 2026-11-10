@@ -6,10 +6,8 @@ from datetime import date
 from decimal import Decimal
 
 from beanschedule.report import (
-    STATUS_MOVED,
     STATUS_OVERDUE,
     STATUS_POSTED,
-    STATUS_SKIPPED,
     STATUS_UPCOMING,
     format_money,
     operating_currency,
@@ -23,19 +21,18 @@ def test_view_statuses(load_view) -> None:
     assert view.currency == "USD"
     assert schedule.next == date(2026, 2, 15)
     statuses = {line.nominal: line.status for line in schedule.lines}
-    assert statuses[date(2026, 1, 15)] == STATUS_POSTED
+    assert statuses[date(2026, 1, 16)] == STATUS_POSTED
     assert statuses[date(2026, 2, 15)] == STATUS_UPCOMING
     assert schedule.rule_hash
 
 
-def test_view_stale_outcomes(load_view) -> None:
+def test_view_overdue(load_view) -> None:
     view = load_view("stale.bean", today=date(2026, 6, 15))
     schedule = view.schedule("rent")
     assert schedule is not None
     statuses = {line.nominal: line.status for line in schedule.lines}
-    assert statuses[date(2026, 2, 1)] == STATUS_SKIPPED
-    assert statuses[date(2026, 3, 1)] == STATUS_MOVED
     assert statuses[date(2026, 1, 1)] == STATUS_OVERDUE
+    assert statuses[date(2026, 2, 1)] == STATUS_OVERDUE
     assert schedule.overdue
 
 

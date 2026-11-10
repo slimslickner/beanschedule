@@ -3,13 +3,10 @@ option "operating_currency" "USD"
 2020-01-01 open Assets:Bank
 2020-01-01 open Expenses:Rent
 
-; A rule whose occurrences are never resolved, so every past month is overdue.
-2026-01-01 custom "schedule" "new" "rent"
+; A schedule whose occurrences are never resolved, so every past month is
+; overdue.
+2026-01-01 * "Landlord" "Rent"
+  id: "rent"
   rrule: "FREQ=MONTHLY;BYMONTHDAY=1"
-  start: 2026-01-01
-  match-account: "Assets:Bank"
-  amount-mode: "any"
-
-; February is skipped; March is moved to the 20th.
-2026-02-01 custom "schedule" "skip" "rent"
-2026-03-01 custom "schedule" "move" "rent" 2026-03-20
+  Assets:Bank                -1000.00 USD
+  Expenses:Rent               1000.00 USD

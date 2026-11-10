@@ -2,61 +2,77 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-**Ledger-native scheduled transactions for Beancount.**
+**Reconciliation-native scheduled transactions for Beancount.**
 
-Beanschedule is a forward-looking tool built on one pure core with thin shells.
-Schedules are defined as `custom "schedule"` directives in the ledger, and the
-import hook, the Beancount plugin, the CLI and the Fava report all read the same
-core, so they cannot disagree.
+Beanschedule is built on one pure core with thin shells. A schedule is a real
+Beancount transaction carrying an `id` and an `rrule`, so there are no bespoke
+directive verbs and no import hook: import runs normally, then reconciliation is
+an explicit, re-runnable step that matches imported transactions to schedules,
+tags them, and advances each schedule to its next occurrence. The CLI, the
+Beancount plugin and the Fava report all read the same core, so they cannot
+disagree.
 
 ## The model
 
-The model is iCalendar's, over Beancount directives:
+The model is iCalendar's, over Beancount transactions:
 
-- **Rule** — one immutable `custom "schedule" "new" "<id>"` directive. Its
-  recurrence generates the nominal occurrence dates.
-- **Posting** — `custom "schedule" "posting" "<id>" "<account>"`, one per
-  other-side account, carrying that posting's `amount` plus any further metadata
-  (`narration`, `contribution-year`, …). A schedule that omits it keeps whatever
-  split the importer produced.
-- **Posted occurrence** — a transaction carrying `schedule: "<id>"` metadata.
-  Its nominal date is re-derived by the nearest-occurrence rule, so nothing is
-  stored on the transaction.
-- **Skip** — `custom "schedule" "skip" "<id>"`, dated at the skipped nominal
-  date (an EXDATE).
-- **Move** — `custom "schedule" "move" "<id>" <new_date>`, dated at the original
-  nominal date (a RECURRENCE-ID).
-- **`next`** — the first nominal date with no resolved occurrence. Derived, never
-  written. A resolved occurrence is one with a posted link, a skip, or a move.
+- **Schedule** — a real `Transaction` with an `id`, an `rrule` and its postings.
+  Its date is its next occurrence, and it anchors the series. Schedules live in
+  one file (`schedules.bean`) that the main ledger does **not** include, so the
+  series never inflates balances.
+- **Matched occurrence** — an imported transaction that resolves a schedule,
+  tagged `schedule: "<id>"`. Its nominal date is re-derived by the
+  nearest-occurrence rule, so nothing extra is stored.
+- **Pending** — any transaction in `pending.bean`, which the main ledger
+  includes. The plugin tags it and flags it, so one-off items are obvious until
+  reconciliation consumes them.
+- **`next`** — the first nominal date with no matched occurrence, derived and
+  never written. A skip or a move is just an edit to the schedule's date.
 
 ```beancount
-2026-01-01 custom "schedule" "new" "paycheck"
+; schedules.bean — a paycheck split across two accounts
+2026-02-15 * "Acme" "Paycheck"
+  id: "paycheck"
   rrule: "FREQ=MONTHLY;BYMONTHDAY=15"
-  start: 2026-01-15
-  payee: "Acme"
-  match-account: "Assets:Bank:Checking"
   match-payee: "Acme"
-  match-amount: -3000.00
-  amount-mode: "approx"
   amount-tolerance: 7.50
-
-; The split, declared posting by posting. Amounts must sum to -match-amount.
-2026-01-01 custom "schedule" "posting" "paycheck" "Expenses:Taxes:Federal"
-  amount: 600.00
-  narration: "Federal withholding"
-
-2026-01-01 custom "schedule" "posting" "paycheck" "Expenses:Savings"
-  amount: 2400.00
-
-2026-12-15 custom "schedule" "skip" "paycheck"
-2026-12-15 custom "schedule" "move" "paycheck" 2026-12-20
+  Assets:Bank:Checking       -3000.00 USD
+  Expenses:Taxes:Federal       600.00 USD
+    narration: "Federal withholding"
+  Expenses:Savings            2400.00 USD
 ```
 
-The registry validates every posting: one that names an unknown schedule is
-orphaned (`E010`), one that posts to the matched account is rejected (`E013`),
-the amounts must sum to the negative of `match-amount` (`E011`), at most one
-posting may omit its amount (`E014`), and an amortized rule cannot also declare
-postings (`E012`).
+The matched account is the first balance-sheet posting (or `match-account`).
+Every other posting is the split; its amounts must sum to the negative of the
+matched amount (`E011`), and at most one may omit its amount (`E014`).
+
+When a schedule (or a pending transaction) reconciles a match, its **tags**,
+**links** (`^`), **transaction metadata** and **posting metadata** are carried
+onto the matched transaction — anything the engine does not itself own. So a
+schedule can be tagged `#housing`, linked `^mortgage-2026`, or carry
+`category: "home"`, and the real transaction inherits all of it.
+
+### Amortization
+
+An amortized schedule marks its posting legs with `schedule-leg`. The leg
+amounts are placeholders the engine recomputes per occurrence:
+
+```beancount
+2026-01-01 * "Chase" "Mortgage"
+  id: "mortgage"
+  rrule: "FREQ=MONTHLY;BYMONTHDAY=1"
+  method: "static"
+  rate: 0.065
+  term: 360
+  Assets:Bank:Checking             -2134.00 USD
+  Liabilities:Mortgage:Principal    900.00 USD
+    schedule-leg: "principal"
+  Expenses:Interest                 100.00 USD
+    schedule-leg: "interest"
+```
+
+`method: "balance-from-ledger"` walks forward from the `principal` leg's ledger
+balance instead of the static term.
 
 ## Installation
 
@@ -66,119 +82,102 @@ uv sync
 
 Python 3.13 is required. The version comes from the git tag via `hatch-vcs`.
 
-## The two-ledger topology
+## Configuration
 
-Schedule directives live in one balance-neutral `Schedules.bean`, included in the
-general ledger (`main.bean`) and excluded from the import ledger
-(`main_no_plugins.bean`):
+**Plugin (a config string on the directive).** The plugin relabels pending
+transactions and validates `schedules.bean`, which the ledger does not include,
+by path:
 
-- `main.bean` (Fava) includes the journal, `Schedules.bean`, and
-  `plugin "beanschedule.plugin"`.
-- `main_no_plugins.bean` (import) includes the journal only, so the hook sees
-  the tagged transactions it needs but never the plugin's forecast output.
-- The hook loads `Schedules.bean` directly by path, from the
-  `BEANSCHEDULE_SCHEDULES` environment variable or `Schedules.bean` in the
-  working directory.
+```beancount
+plugin "beanschedule.plugin" "{'schedules_file': 'schedules.bean', 'pending_file': 'pending.bean', 'pending_tag': 'pending', 'pending_flag': '!'}"
+```
 
-The split is only *required* when forecast injection is enabled; report-only
-forecasting adds nothing to the ledger.
+| Key | Meaning | Default |
+| --- | --- | --- |
+| `schedules_file` | The schedules file, relative to the ledger | `schedules.bean` |
+| `pending_file` | The pending file, relative to the ledger | `pending.bean` |
+| `pending_tag` | The tag added to pending transactions | `pending` |
+| `pending_flag` | The flag set on pending transactions | `!` |
+
+A bare `plugin "beanschedule.plugin"` uses the defaults. `bean-check main.bean`
+alone does not validate the schedules; `beanschedule check` loads both. The
+plugin's config is the **single source of truth** for the paths — the Fava
+extension reads it rather than repeating it.
+
+**Fava extension (a config string on the directive).** The report takes its
+paths from the plugin; only Fava-specific settings live here:
+
+```beancount
+2026-01-01 custom "fava-extension" "beanschedule.fava_ext" "{'write': True, 'months': 2}"
+```
+
+| Key | Meaning |
+| --- | --- |
+| `write` | `True` to make the report writable at the plugin's `schedules_file`, or a string naming a different file; omit for read-only |
+| `months` | How many months of future occurrences to show |
 
 ## Command line
 
 ```bash
-beanschedule check    LEDGER                 # heavy, ledger-wide validation
-beanschedule report   LEDGER                 # next, overdue, resolved, upcoming
-beanschedule forecast LEDGER                 # print upcoming occurrences
-beanschedule list     LEDGER                 # schedules with next and overdue
-beanschedule detect   LEDGER                 # propose schedules for recurring payments
-beanschedule migrate  schedules/             # convert schedules/*.yaml to directives
-beanschedule skip     LEDGER ID DATE   --write [FILE]
-beanschedule move     LEDGER ID DATE NEW --write [FILE]
-beanschedule create   LEDGER ID --rrule R --start D --account A --posting ACCT AMT --write [FILE]
-beanschedule edit     LEDGER ID --amount X --write [FILE]
-beanschedule rebuild  LEDGER          --write [FILE]
-beanschedule docs [--check]                  # schema.md, errors.md, cli.md
+beanschedule check     LEDGER                 # validate the schedules
+beanschedule report    LEDGER                 # next, overdue, resolved, upcoming
+beanschedule list      LEDGER                 # schedules with next and overdue
+beanschedule reconcile LEDGER [--write]       # match imported transactions (dry run by default)
+beanschedule detect    LEDGER                 # propose schedules for recurring payments
+beanschedule migrate   schedules/             # convert schedules/*.yaml to transactions
+beanschedule migrate-ledger LEDGER [--write]   # strip v1 tracking metadata (dry run by default)
+beanschedule skip      LEDGER ID      --write [FILE]
+beanschedule move      LEDGER ID DATE --write [FILE]
+beanschedule create    LEDGER ID --rrule R --start D --account A --posting ACCT AMT --write [FILE]
+beanschedule edit      LEDGER ID --amount X --write [FILE]
+beanschedule docs [--check]                   # schema.md, errors.md, cli.md
 ```
 
-The mutating commands write **opt-in only**, through `writer.py`, at one
-configured file inside the ledger directory. A cadence change splits the series
-(set `end` on the old rule, create a new one); an amount change rewrites the one
-directive in place.
+`reconcile` tags each matched transaction in its own file and advances each
+schedule in `schedules.bean`. It is a dry run until `--write` is passed; in Fava
+it is the **Reconcile** button. The mutating commands write **opt-in only**,
+through `writer.py`, inside the ledger directory.
 
-## Pending support
+## The topology
 
-Stage one-time payments in `pending.bean`; the hook matches each by account,
-amount and date, applies its splits, and removes it from the file. Point it
-elsewhere with `BEANSCHEDULE_PENDING`.
-
-## Configuration
-
-The **import hook** and the **Beancount/Fava shells** are configured separately,
-because the import ledger (`main_no_plugins.bean`) excludes both `Schedules.bean`
-and the plugin — nothing declared on the Fava side can reach the hook.
-
-**Hook (two environment variables).** `beangulp` loads `main_no_plugins.bean`;
-the hook finds the schedules and pending files itself:
-
-| Variable | Meaning | Default |
-| --- | --- | --- |
-| `BEANSCHEDULE_SCHEDULES` | The `Schedules.bean` to match against | `Schedules.bean` in the cwd |
-| `BEANSCHEDULE_PENDING` | The one-time pending file | `pending.bean` in the cwd |
-
-**Plugin (a config string on the directive).** The plugin reads the schedule
-directives from the ledger it is loaded with, so it needs no path. Its config is
-the string after `plugin`, either the bare word `forecast` or a Python-literal
-mapping:
-
-```beancount
-plugin "beanschedule.plugin" "{'forecast': True, 'months': 3}"
-```
-
-| Key | Meaning |
-| --- | --- |
-| `forecast` | Inject `#`-flagged forecast transactions (requires the two-ledger split) |
-| `months` | How many months forward to forecast |
-
-**Fava extension (a config string on the directive).** The report is read-only
-unless a `write` path is configured, and that path is the `Schedules.bean` the
-hook also reads:
-
-```beancount
-2026-01-01 custom "fava-extension" "beanschedule.fava_ext" "{'write': 'Schedules.bean', 'months': 2}"
-```
-
-| Key | Meaning |
-| --- | --- |
-| `write` | The Beancount file to write directives to, relative to the ledger directory; omit for read-only |
-| `months` | How many months of future occurrences to show |
+- `main.bean` (Fava) includes the import ledger and `pending.bean`, and loads the
+  plugin and the Fava extension.
+- `import.bean` (beangulp's target and duplicate-detection source) includes the
+  journal **only** — never `pending.bean` or `schedules.bean`.
+- `schedules.bean` (recurring) is included by nothing; the plugin and the report
+  read it by path.
+- `pending.bean` (one-off) is included by `main.bean` **only**, so beangulp never
+  mistakes a placeholder for the transaction it is waiting for and skips the
+  real import.
 
 ## Documentation
 
-- `docs/schema.md` — directive verbs, metadata keys and reserved values.
+- `docs/schema.md` — metadata keys and reserved values.
 - `docs/errors.md` — every diagnostic code.
 - `docs/cli.md` — the command tree.
 - `examples/` — a self-contained ledger.
 
-All three documents are generated from the registries and gated in CI by
-`beanschedule docs --check`.
+All three documents are generated from the registries and the command tree, and
+gated in CI by `beanschedule docs --check`.
 
 ## Architecture
 
 ```
 src/beanschedule/
-  schema.py     registry: verbs/metadata + diagnostic codes -> docs
-  core.py       pure: parse rules, derive occurrences, match, link, amortization
+  schema.py     registry: metadata keys + diagnostic codes -> docs
+  core.py       pure: parse schedules, derive occurrences, match, amortization
   recurrence.py pure RRULE date generation
-  actions.py    build custom "schedule" directives (CLI + Fava emit identical text)
-  report.py     shared view model (next, overdue, per-schedule ledger)
+  reconcile.py  pure: match imported transactions, advance frontiers
+  actions.py    build and render schedule transactions (CLI + Fava emit identical text)
+  report.py     shared view model (next, overdue, history, per-schedule ledger)
   config.py     parse the config strings plugins and Fava carry
   writer.py     deterministic opt-in ledger edits
-  hook.py       beangulp: match, enrich, tag            [never writes rules]
-  plugin.py     beancount: light diagnostics; opt-in forecast injection
-  detector.py   ledger -> proposed schedule directives
-  migrate.py    legacy schedules/*.yaml -> directives
-  cli.py        check / report / forecast / list / detect / migrate / skip / move / create / edit / rebuild
-  fava_ext.py   read-only report, opt-in writes         [only module importing Fava]
+  plugin.py     beancount: relabel pending; validate the schedules file
+  detector.py   ledger -> proposed schedule transactions
+  migrate.py    legacy schedules/*.yaml -> transactions
+  migrate_ledger.py  strip v1 tracking metadata and placeholders from a ledger
+  cli.py        check / report / list / reconcile / detect / migrate / migrate-ledger / skip / move / create / edit
+  fava_ext.py   read-only report, opt-in reconcile + writes   [only module importing Fava]
   templates/    Fava report template
 ```
 

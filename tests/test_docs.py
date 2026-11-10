@@ -62,10 +62,9 @@ def test_diagnostic_codes_are_complete() -> None:
         assert code.severity is expected, f"{code.code} has the wrong severity"
 
 
-def test_metadata_verbs_reference_real_keys() -> None:
-    keys = {key.key for key in schema.METADATA_KEYS}
-    for verb in schema.DIRECTIVE_VERBS:
-        assert set(verb.metadata) <= keys
+def test_metadata_keys_are_unique() -> None:
+    keys = [key.key for key in schema.METADATA_KEYS]
+    assert len(set(keys)) == len(keys)
 
 
 def test_render_message_unknown_code_raises() -> None:
@@ -74,4 +73,4 @@ def test_render_message_unknown_code_raises() -> None:
 
 
 def test_schema_json_is_serialisable() -> None:
-    assert json.loads(schema.dump_schema_json())["directive_verbs"]
+    assert json.loads(schema.dump_schema_json())["metadata_keys"]

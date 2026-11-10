@@ -1,21 +1,19 @@
 """Pure scheduled-transaction computation over a parsed Beancount ledger.
 
 This module performs no I/O and imports neither the CLI nor Fava. It converts
-Beancount entries into the engine's own typed records, parses the
-``custom "schedule"`` directives, derives each rule's nominal occurrences,
-resolves them against the transactions, skips and moves already in the ledger,
-and reports diagnostics.
+Beancount entries into the engine's own typed records, parses the schedule
+transactions, derives each rule's nominal occurrences, resolves them against the
+transactions already in the ledger, and reports diagnostics.
 
-The model is iCalendar's, over Beancount directives:
+The model is iCalendar's, over Beancount transactions:
 
-* a **rule** is one immutable ``custom "schedule" "new"`` directive;
-* a **posted occurrence** is a transaction whose ``schedule`` metadata names a
-  rule — its nominal date is re-derived by the nearest-occurrence rule, so no
+* a **rule** is one schedule transaction — a real ``Transaction`` carrying an
+  ``id`` metadata key, an ``rrule`` and its postings. Its date anchors the series
+  and is the schedule's next occurrence;
+* a **posted occurrence** is a real transaction whose ``schedule`` metadata names
+  a rule — its nominal date is re-derived by the nearest-occurrence rule, so no
   actual or nominal date is stored on it;
-* a **skip** is ``custom "schedule" "skip" "<id>"`` dated at the skipped nominal
-  date (an EXDATE);
-* a **move** is ``custom "schedule" "move" "<id>" <new_date>`` dated at the
-  original nominal date (a RECURRENCE-ID);
+* a **skip** or a **move** is an edit to the frontier transaction's date;
 * **``next``** is the first nominal date with no resolved occurrence, derived and
   never written.
 
@@ -32,10 +30,10 @@ from decimal import Decimal
 from typing import TYPE_CHECKING
 
 from beancount.core.amount import Amount
-from beancount.core.data import Custom, Directive, Transaction
+from beancount.core.data import Directive, Transaction
 
 from beanschedule import recurrence
-from beanschedule.schema import TYPE, Severity, get_diagnostic, render_message
+from beanschedule.schema import METADATA_KEYS, Severity, get_diagnostic, render_message
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Mapping, Sequence
@@ -59,12 +57,17 @@ __all__ = [
     "assign",
     "compute",
     "format_amount",
+    "is_balance_sheet",
+    "is_schedule",
     "ledger_balance",
     "ledger_balances",
     "matched_amount",
     "nearest_nominal",
+    "parse_schedule",
     "resolve_nominal",
     "resolve_postings",
+    "schedule_id",
+    "user_metadata",
 ]
 
 #: The transaction metadata key that links a posted occurrence to its rule.
@@ -208,6 +211,10 @@ class Rule:
         narration: The narration written onto enriched transactions, if any.
         postings: The other-side postings, in declaration order.
         amortization: The loan-split configuration, if any.
+        tags: The tags carried onto a matched transaction.
+        links: The links carried onto a matched transaction.
+        metadata: The user metadata carried onto a matched transaction, in
+            declaration order, without the engine's own keys.
         entry: The source directive, excluded from equality.
     """
 
@@ -229,6 +236,9 @@ class Rule:
     narration: str | None = None
     postings: tuple[PostingSpec, ...] = ()
     amortization: Amortization | None = None
+    tags: frozenset[str] = frozenset()
+    links: frozenset[str] = frozenset()
+    metadata: tuple[tuple[str, object], ...] = ()
     entry: Directive | None = field(default=None, compare=False, repr=False)
 
     @property
@@ -297,12 +307,15 @@ class ScheduleReport:
         occurrences: The occurrences within the window, ascending.
         next: The first nominal date with no resolved occurrence, if any.
         overdue: The unresolved nominal dates strictly before the reference date.
+        history: The resolved transactions older than the rule's window, in date
+            order — the occurrences already posted before the frontier.
     """
 
     rule: Rule
     occurrences: tuple[Occurrence, ...]
     next: date | None
     overdue: tuple[date, ...]
+    history: tuple[Transaction, ...] = ()
 
     @property
     def id(self) -> str:
@@ -1047,7 +1060,11 @@ def ledger_balances(  # noqa: C901 - one pass over the ledger
     latest: dict[str, date | None] = dict.fromkeys(wanted)
     earliest: date | None = None
     for entry in entries:
-        if not isinstance(entry, Transaction) or entry.flag not in ("*", "P"):
+        if (
+            not isinstance(entry, Transaction)
+            or entry.flag not in ("*", "P")
+            or is_schedule(entry)
+        ):
             continue
         if earliest is None or entry.date < earliest:
             earliest = entry.date
@@ -1166,6 +1183,7 @@ def amortization_splits(
     entries: Sequence[Directive] = (),
     *,
     balances: Mapping[str, tuple[Decimal, date]] | None = None,
+    base: int = 0,
 ) -> dict[date, Split]:
     """Compute the amortization split for each of a rule's occurrences.
 
@@ -1177,6 +1195,9 @@ def amortization_splits(
             is not given.
         balances: A precomputed liability-balance index, so several amortized
             rules do not each rescan the ledger.
+        base: The number of payments already made before the series' frontier, so
+            a static split starts at the right position. Balance-from-ledger
+            ignores it.
 
     Returns:
         A mapping from nominal date to :class:`Split`, possibly empty.
@@ -1197,7 +1218,7 @@ def amortization_splits(
         ):
             if nominal not in wanted:
                 continue
-            split = static_split(rule, index, escrow)
+            split = static_split(rule, index + base, escrow)
             if split is not None:
                 splits[nominal] = split
         return splits
@@ -1292,134 +1313,122 @@ def _window(meta: Mapping[str, object], key: str) -> int:
     return DEFAULT_WINDOW if value is None else value
 
 
-def _custom_directives(entries: Sequence[Directive]) -> list[Custom]:
-    """Collect every ``custom "schedule"`` directive, in order.
+#: Posting metadata that is the engine's own and is never copied onto a match.
+_RESERVED_POSTING_META = frozenset({"amount", "schedule-leg"})
 
-    Args:
-        entries: The ledger entries.
+#: Beancount's per-directive bookkeeping metadata.
+_BEANCOUNT_META = frozenset({"filename", "lineno"})
 
-    Returns:
-        The directives, sorted by date (stable for equal dates).
-    """
-    found = [
-        entry for entry in entries if isinstance(entry, Custom) and entry.type == TYPE
-    ]
-    found.sort(key=lambda entry: entry.date)
-    return found
+#: The transaction metadata the engine owns; everything else is the user's and is
+#: carried onto a matched transaction.
+_RESERVED_META = frozenset(key.key for key in METADATA_KEYS)
 
 
-def _verb_values(
-    entry: Custom, diagnostics: list[Diagnostic]
-) -> tuple[str, tuple[object, ...]]:
-    """Return a custom directive's verb and remaining positional values.
+def user_metadata(entry: Directive) -> tuple[tuple[str, object], ...]:
+    """Return a directive's user metadata, engine keys removed.
 
     Args:
         entry: The directive.
-        diagnostics: The list to append diagnostics to.
 
     Returns:
-        The verb and the values that follow it, unwrapped.
+        The metadata that is not the engine's own nor Beancount's bookkeeping, in
+        declaration order.
     """
-    values = tuple(_unwrap(value) for value in entry.values)
-    verb = values[0] if values else None
-    if not isinstance(verb, str) or not verb:
-        diagnostics.append(_diag("E001", entry=entry, id="<unknown>", key="verb"))
-        return "", ()
-    return verb, values[1:]
-
-
-def _parse_amortization(
-    meta: Mapping[str, object],
-    schedule_id: str,
-    entry: Directive,
-    diagnostics: list[Diagnostic],
-) -> Amortization | None:
-    """Parse a rule's amortization configuration, if any.
-
-    Args:
-        meta: The directive's metadata.
-        schedule_id: The schedule id, for diagnostics.
-        entry: The source directive.
-        diagnostics: The list to append diagnostics to.
-
-    Returns:
-        The :class:`Amortization`, or ``None`` when the rule is not amortized.
-    """
-    flag = meta.get("balance-from-ledger")
-    method = _as_str(meta.get("method"))
-    if method is None and flag is True:
-        method = "balance-from-ledger"
-    rate = _as_decimal(meta.get("rate"))
-    if method is None and rate is None:
-        return None
-    if method is None:
-        method = "balance-from-ledger" if flag is True else "static"
-    if method == "balance-from-ledger":
-        principal = _as_str(meta.get("principal-account"))
-        if principal is None:
-            diagnostics.append(
-                _diag("E001", entry=entry, id=schedule_id, key="principal-account")
-            )
-            return None
-    elif method != "static":
-        diagnostics.append(_diag("E006", entry=entry, id=schedule_id, mode=method))
-        return None
-    elif _as_int(meta.get("term")) is None:
-        diagnostics.append(_diag("E001", entry=entry, id=schedule_id, key="term"))
-        return None
-    if rate is None:
-        diagnostics.append(_diag("E001", entry=entry, id=schedule_id, key="rate"))
-        return None
-    return Amortization(
-        method=method,
-        rate=rate,
-        term=_as_int(meta.get("term")),
-        escrow=_as_decimal(meta.get("escrow")),
-        principal_account=_as_str(meta.get("principal-account")),
-        interest_account=_as_str(meta.get("interest-account")),
-        escrow_account=_as_str(meta.get("escrow-account")),
+    return tuple(
+        (key, value)
+        for key, value in (entry.meta or {}).items()
+        if key not in _RESERVED_META and key not in _BEANCOUNT_META
     )
 
 
-def _amount_mode(
-    meta: Mapping[str, object],
-    schedule_id: str,
-    entry: Directive,
-    diagnostics: list[Diagnostic],
-) -> str:
-    """Resolve a rule's amount mode, defaulting sensibly.
+#: The account roots treated as balance-sheet accounts.
+_BALANCE_SHEET_ROOTS = ("Assets", "Liabilities")
+
+
+def _account_root(account: str) -> str:
+    """Return an account's root segment.
 
     Args:
-        meta: The directive's metadata.
-        schedule_id: The schedule id, for diagnostics.
-        entry: The source directive.
-        diagnostics: The list to append diagnostics to.
+        account: The account name.
 
     Returns:
-        The amount mode.
+        The first colon-separated segment.
     """
-    mode = _as_str(meta.get("amount-mode"))
-    if mode is None:
-        return "any" if meta.get("match-amount") is None else "exact"
-    if mode not in AMOUNT_MODES:
-        diagnostics.append(_diag("E006", entry=entry, id=schedule_id, mode=mode))
-        return "any"
-    return mode
+    return account.split(":", 1)[0]
+
+
+def is_balance_sheet(account: str) -> bool:
+    """Report whether an account is a balance-sheet account.
+
+    Args:
+        account: The account name.
+
+    Returns:
+        ``True`` for an ``Assets`` or ``Liabilities`` account.
+    """
+    return _account_root(account) in _BALANCE_SHEET_ROOTS
+
+
+def _posting_meta(posting: object) -> tuple[tuple[str, object], ...]:
+    """Return a posting's user metadata, engine keys removed.
+
+    Args:
+        posting: A Beancount posting.
+
+    Returns:
+        The metadata, in declaration order, without ``amount``, ``schedule-leg``
+        or Beancount's own keys.
+    """
+    meta = getattr(posting, "meta", None) or {}
+    return tuple(
+        (key, value)
+        for key, value in meta.items()
+        if key not in _RESERVED_POSTING_META and key not in _BEANCOUNT_META
+    )
+
+
+def is_schedule(entry: Directive) -> bool:
+    """Report whether a directive is a schedule definition.
+
+    A schedule is a transaction carrying an ``id`` metadata key.
+
+    Args:
+        entry: The directive.
+
+    Returns:
+        ``True`` when the entry is a schedule transaction.
+    """
+    return isinstance(entry, Transaction) and bool(
+        _as_str((entry.meta or {}).get("id"))
+    )
+
+
+def schedule_id(entry: Directive) -> str | None:
+    """Return the schedule a directive names, accepting the legacy key.
+
+    Args:
+        entry: The directive.
+
+    Returns:
+        The schedule id from ``schedule`` metadata, falling back to
+        ``schedule_id``, or ``None``.
+    """
+    meta = entry.meta or {}
+    value = meta.get(SCHEDULE_KEY, meta.get(LEGACY_SCHEDULE_KEY))
+    return value if isinstance(value, str) and value else None
 
 
 def _amounts_in_currency(
-    meta: Mapping[str, object],
+    entry: Transaction,
     schedule_id: str,
-    entry: Directive,
     operating_currency: str,
     diagnostics: list[Diagnostic],
 ) -> bool:
-    """Check a rule's amount metadata against the operating currency.
+    """Check a schedule's posting amounts against the operating currency.
 
     Args:
-        meta: The directive's metadata.
+        entry: The schedule transaction.
         schedule_id: The schedule id, for diagnostics.
-        entry: The source directive.
         operating_currency: The operating currency, or ``""`` when none.
         diagnostics: The list to append diagnostics to.
 
@@ -1429,21 +1438,15 @@ def _amounts_in_currency(
     """
     if not operating_currency:
         return True
-    for key in (
-        "match-amount",
-        "amount-tolerance",
-        "amount-min",
-        "amount-max",
-        "escrow",
-    ):
-        value = meta.get(key)
-        if isinstance(value, Amount) and value.currency != operating_currency:
+    for posting in entry.postings:
+        units = posting.units
+        if units is not None and units.currency != operating_currency:
             diagnostics.append(
                 _diag(
                     "E008",
                     entry=entry,
                     id=schedule_id,
-                    currency=value.currency,
+                    currency=units.currency,
                     operating_currency=operating_currency,
                 )
             )
@@ -1451,41 +1454,152 @@ def _amounts_in_currency(
     return True
 
 
-def parse_rule(  # noqa: PLR0911
-    entry: Custom,
-    verb: str,  # noqa: ARG001 - kept for symmetry with the other verb parsers
-    values: Sequence[object],
+def _parse_amortization(
+    entry: Transaction,
+    schedule_id: str,
+    meta: Mapping[str, object],
+    diagnostics: list[Diagnostic],
+) -> Amortization | None:
+    """Parse a schedule's amortization configuration, if any.
+
+    A schedule is amortized when a ``rate`` is given or a posting carries a
+    ``schedule-leg``. The legs name the accounts; the amounts on those postings
+    are placeholders and are recomputed per occurrence.
+
+    Args:
+        entry: The schedule transaction.
+        schedule_id: The schedule id, for diagnostics.
+        meta: The transaction's metadata.
+        diagnostics: The list to append diagnostics to.
+
+    Returns:
+        The :class:`Amortization`, or ``None`` when the schedule is not
+        amortized.
+    """
+    legs: dict[str, str] = {}
+    for posting in entry.postings:
+        leg = _as_str((posting.meta or {}).get("schedule-leg"))
+        if leg is not None:
+            legs.setdefault(leg, posting.account)
+    rate = _as_decimal(meta.get("rate"))
+    if not legs and rate is None:
+        return None
+    method = (
+        "balance-from-ledger"
+        if meta.get("balance-from-ledger") is True
+        else (_as_str(meta.get("method")) or "static")
+    )
+    if method not in METHODS:
+        diagnostics.append(_diag("E006", entry=entry, id=schedule_id, mode=method))
+        return None
+    if rate is None:
+        diagnostics.append(_diag("E001", entry=entry, id=schedule_id, key="rate"))
+        return None
+    principal = legs.get("principal")
+    if principal is None:
+        diagnostics.append(_diag("E012", entry=entry, id=schedule_id))
+        return None
+    if method == "static" and _as_int(meta.get("term")) is None:
+        diagnostics.append(_diag("E001", entry=entry, id=schedule_id, key="term"))
+        return None
+    return Amortization(
+        method=method,
+        rate=rate,
+        term=_as_int(meta.get("term")),
+        escrow=_as_decimal(meta.get("escrow")),
+        principal_account=principal,
+        interest_account=legs.get("interest"),
+        escrow_account=legs.get("escrow"),
+    )
+
+
+def _validate_postings(
+    entry: Transaction,
+    schedule_id: str,
+    postings: Sequence[PostingSpec],
+    amortization: Amortization | None,
+    match_amount: Decimal | None,
+    operating_currency: str,
+    diagnostics: list[Diagnostic],
+) -> None:
+    """Validate a schedule's other-side postings.
+
+    An amortized schedule's leg amounts are placeholders, so they are not
+    checked. Otherwise at most one posting may omit its amount, and the explicit
+    amounts must sum to the negative of the matched amount.
+
+    Args:
+        entry: The schedule transaction.
+        schedule_id: The schedule id, for diagnostics.
+        postings: The other-side postings.
+        amortization: The amortization, if any.
+        match_amount: The matched amount, if any.
+        operating_currency: The operating currency, for the message.
+        diagnostics: The list to append diagnostics to.
+    """
+    if amortization is not None or not postings:
+        return
+    missing = sum(1 for posting in postings if posting.amount is None)
+    if missing > 1:
+        diagnostics.append(_diag("E014", entry=entry, id=schedule_id))
+    if match_amount is not None and missing == 0:
+        total = sum(
+            (posting.amount for posting in postings if posting.amount is not None),
+            Decimal(0),
+        )
+        expected = -match_amount
+        if total != expected:
+            diagnostics.append(
+                _diag(
+                    "E011",
+                    entry=entry,
+                    id=schedule_id,
+                    total=format_amount(total, operating_currency),
+                    expected=format_amount(expected, operating_currency),
+                )
+            )
+
+
+def parse_schedule(  # noqa: PLR0911
+    entry: Transaction,
     diagnostics: list[Diagnostic],
     operating_currency: str = "",
 ) -> Rule | None:
-    """Parse a ``new`` directive into a rule.
+    """Parse a schedule transaction into a rule.
+
+    The transaction's date anchors the series and doubles as its next
+    occurrence. The matched account is named by ``match-account`` or taken from
+    the first balance-sheet posting; the remaining postings are the split.
 
     Args:
-        entry: The source directive.
-        verb: The verb, always ``"new"``.
-        values: The positional values after the verb.
+        entry: The schedule transaction.
         diagnostics: The list to append diagnostics to.
         operating_currency: The operating currency, for the amount check.
 
     Returns:
         The :class:`Rule`, or ``None`` when required metadata is missing or
         invalid.
+
+    Examples:
+        >>> from beancount.parser import parser
+        >>> ledger = '''
+        ... 2026-01-15 * "Acme" "Paycheck"
+        ...   id: "paycheck"
+        ...   rrule: "FREQ=MONTHLY;BYMONTHDAY=15"
+        ...   Assets:Bank     -1000.00 USD
+        ...   Expenses:Tax     1000.00 USD
+        ... '''
+        >>> entries, _errors, _options = parser.parse_string(ledger)
+        >>> rule = parse_schedule(entries[0], [])
+        >>> rule.id, rule.match_account, rule.start
+        ('paycheck', 'Assets:Bank', datetime.date(2026, 1, 15))
     """
-    schedule_id = _as_str(values[0]) if values else None
+    meta = _meta(entry)
+    schedule_id = _as_str(meta.get("id"))
     if schedule_id is None:
         diagnostics.append(_diag("E001", entry=entry, id="<unknown>", key="id"))
         return None
-    meta = _meta(entry)
-    if not _amounts_in_currency(
-        meta, schedule_id, entry, operating_currency, diagnostics
-    ):
-        return None
-    missing = False
-    for key in ("rrule", "start", "match-account"):
-        if meta.get(key) is None:
-            diagnostics.append(_diag("E001", entry=entry, id=schedule_id, key=key))
-            missing = True
-    if missing:
+    if not _amounts_in_currency(entry, schedule_id, operating_currency, diagnostics):
         return None
     rrule_text = _as_str(meta.get("rrule"))
     if rrule_text is None:
@@ -1496,41 +1610,91 @@ def parse_rule(  # noqa: PLR0911
     except ValueError as exc:
         diagnostics.append(_diag("E002", entry=entry, id=schedule_id, detail=str(exc)))
         return None
-    start = _as_date(meta.get("start"))
-    match_account = _as_str(meta.get("match-account"))
-    if start is None or match_account is None:
-        return None
     end = _as_date(meta.get("end"))
-    if end is not None and end < start:
+    if end is not None and end < entry.date:
         diagnostics.append(
             _diag(
                 "E009",
                 entry=entry,
                 id=schedule_id,
-                start=start.isoformat(),
+                start=entry.date.isoformat(),
                 end=end.isoformat(),
             )
         )
         return None
-    mode = _amount_mode(meta, schedule_id, entry, diagnostics)
+    match_account = _as_str(meta.get("match-account"))
+    if match_account is None:
+        match_posting = next(
+            (
+                posting
+                for posting in entry.postings
+                if is_balance_sheet(posting.account)
+            ),
+            None,
+        )
+        if match_posting is None:
+            diagnostics.append(
+                _diag("E001", entry=entry, id=schedule_id, key="match-account")
+            )
+            return None
+        match_account = match_posting.account
+    match_amount = next(
+        (
+            _amount_number(posting.units)
+            for posting in entry.postings
+            if posting.account == match_account
+        ),
+        None,
+    )
+    postings = tuple(
+        PostingSpec(
+            account=posting.account,
+            amount=_amount_number(posting.units),
+            metadata=_posting_meta(posting),
+            entry=entry,
+        )
+        for posting in entry.postings
+        if posting.account != match_account
+    )
+    tolerance = _as_decimal(meta.get("amount-tolerance"))
+    if tolerance is not None:
+        mode = "approx"
+    elif match_amount is not None:
+        mode = "exact"
+    else:
+        mode = "any"
+    amortization = _parse_amortization(entry, schedule_id, meta, diagnostics)
+    _validate_postings(
+        entry,
+        schedule_id,
+        postings,
+        amortization,
+        match_amount,
+        operating_currency,
+        diagnostics,
+    )
     return Rule(
         id=schedule_id,
         declared=entry.date,
         rrule=rrule_text,
-        start=start,
+        start=entry.date,
         end=end,
         match_account=match_account,
         match_payee=_as_str(meta.get("match-payee")),
-        match_amount=_as_decimal(meta.get("match-amount")),
+        match_amount=match_amount,
         amount_mode=mode,
-        amount_tolerance=_as_decimal(meta.get("amount-tolerance")),
-        amount_min=_as_decimal(meta.get("amount-min")),
-        amount_max=_as_decimal(meta.get("amount-max")),
+        amount_tolerance=tolerance,
+        amount_min=None,
+        amount_max=None,
         window_before=_window(meta, "window-before"),
         window_after=_window(meta, "window-after"),
-        payee=_as_str(meta.get("payee")),
-        narration=_as_str(meta.get("narration")),
-        amortization=_parse_amortization(meta, schedule_id, entry, diagnostics),
+        payee=entry.payee,
+        narration=entry.narration,
+        postings=postings,
+        amortization=amortization,
+        tags=entry.tags or frozenset(),
+        links=entry.links or frozenset(),
+        metadata=user_metadata(entry),
         entry=entry,
     )
 
@@ -1538,234 +1702,24 @@ def parse_rule(  # noqa: PLR0911
 # --- Resolution ----------------------------------------------------------------
 
 
-def _scan_outcomes(
-    directives: Sequence[Custom],
-    rules: Mapping[str, Rule],
-    diagnostics: list[Diagnostic],
-) -> dict[tuple[str, date], Occurrence]:
-    """Build the skip and move outcomes from the custom directives.
-
-    Args:
-        directives: The ``custom "schedule"`` directives.
-        rules: The parsed rules, keyed by id.
-        diagnostics: The list to append diagnostics to.
-
-    Returns:
-        A mapping from ``(rule_id, nominal)`` to the resolving occurrence.
-    """
-    outcomes: dict[tuple[str, date], Occurrence] = {}
-    for entry in directives:
-        verb, values = _verb_values(entry, diagnostics)
-        if verb not in ("skip", "move"):
-            continue
-        schedule_id = _as_str(values[0]) if values else None
-        if schedule_id is None:
-            continue
-        rule = rules.get(schedule_id)
-        if rule is None:
-            diagnostics.append(_diag("E004", entry=entry, id=schedule_id, verb=verb))
-            continue
-        nominal = entry.date
-        if not _in_series(rule, nominal):
-            diagnostics.append(
-                _diag(
-                    "W002",
-                    entry=entry,
-                    id=schedule_id,
-                    verb=verb,
-                    date=nominal.isoformat(),
-                )
-            )
-            continue
-        if not recurrence.on_sequence(rule.rrule, rule.start, nominal):
-            diagnostics.append(
-                _diag(
-                    "E005",
-                    entry=entry,
-                    id=schedule_id,
-                    verb=verb,
-                    date=nominal.isoformat(),
-                )
-            )
-            continue
-        key = (schedule_id, nominal)
-        if verb == "move":
-            moved_to = _as_date(values[1]) if len(values) > 1 else None
-            if moved_to is None:
-                continue
-            outcomes[key] = Occurrence(
-                rule_id=schedule_id, nominal=nominal, moved_to=moved_to, entry=entry
-            )
-        else:
-            outcomes[key] = Occurrence(
-                rule_id=schedule_id, nominal=nominal, skipped=True, entry=entry
-            )
-    return outcomes
-
-
-def _in_series(rule: Rule, when: date) -> bool:
-    """Report whether a date falls within a rule's ``start``/``end`` window.
-
-    Args:
-        rule: The rule.
-        when: The date.
-
-    Returns:
-        ``True`` when the date is in the window.
-    """
-    return rule.start <= when and (rule.end is None or when <= rule.end)
-
-
-def _scan_postings(
-    directives: Sequence[Custom],
-    rules: Mapping[str, Rule],
-    operating_currency: str,
-    diagnostics: list[Diagnostic],
-) -> dict[str, list[PostingSpec]]:
-    """Collect every ``posting`` directive, keyed by schedule.
-
-    A posting that names no known schedule is orphaned and reported (``E010``);
-    one that posts to its rule's matched account is reported (``E013``).
-
-    Args:
-        directives: The ``custom "schedule"`` directives.
-        rules: The parsed rules, keyed by id.
-        operating_currency: The operating currency, for the amount check.
-        diagnostics: The list to append diagnostics to.
-
-    Returns:
-        The postings for each schedule, in declaration order.
-    """
-    found: dict[str, list[PostingSpec]] = {}
-    for entry in directives:
-        verb, values = _verb_values(entry, diagnostics)
-        if verb != "posting":
-            continue
-        schedule_id = _as_str(values[0]) if values else None
-        account = _as_str(values[1]) if len(values) > 1 else None
-        if schedule_id is None:
-            diagnostics.append(_diag("E010", entry=entry, id=schedule_id))
-            continue
-        rule = rules.get(schedule_id)
-        if rule is None:
-            diagnostics.append(_diag("E010", entry=entry, id=schedule_id))
-            continue
-        if account is None:
-            diagnostics.append(
-                _diag("E001", entry=entry, id=schedule_id, key="account")
-            )
-            continue
-        if account == rule.match_account:
-            diagnostics.append(
-                _diag("E013", entry=entry, id=schedule_id, account=account)
-            )
-            continue
-        meta = _meta(entry)
-        raw = meta.get("amount")
-        if (
-            operating_currency
-            and isinstance(raw, Amount)
-            and raw.currency != operating_currency
-        ):
-            diagnostics.append(
-                _diag(
-                    "E008",
-                    entry=entry,
-                    id=schedule_id,
-                    currency=raw.currency,
-                    operating_currency=operating_currency,
-                )
-            )
-            continue
-        found.setdefault(schedule_id, []).append(
-            PostingSpec(
-                account=account,
-                amount=_as_decimal(raw),
-                metadata=tuple(
-                    (key, value) for key, value in meta.items() if key != "amount"
-                ),
-                entry=entry,
-            )
-        )
-    return found
-
-
-def _apply_postings(
-    rule: Rule,
-    postings: Sequence[PostingSpec],
-    operating_currency: str,
-    diagnostics: list[Diagnostic],
-) -> Rule:
-    """Attach a rule's postings and validate the split.
-
-    Args:
-        rule: The rule.
-        postings: Its declared postings, in order.
-        operating_currency: The operating currency, for the message.
-        diagnostics: The list to append diagnostics to.
-
-    Returns:
-        The rule with its postings attached.
-    """
-    if not postings:
-        return rule
-    if rule.amortization is not None:
-        diagnostics.append(_diag("E012", entry=rule.entry, id=rule.id))
-        return rule
-    missing = sum(1 for posting in postings if posting.amount is None)
-    if missing > 1:
-        diagnostics.append(_diag("E014", entry=rule.entry, id=rule.id))
-    if rule.match_amount is not None and missing == 0:
-        total = sum(
-            (posting.amount for posting in postings if posting.amount is not None),
-            Decimal(0),
-        )
-        expected = -rule.match_amount
-        if total != expected:
-            diagnostics.append(
-                _diag(
-                    "E011",
-                    entry=rule.entry,
-                    id=rule.id,
-                    total=format_amount(total, operating_currency),
-                    expected=format_amount(expected, operating_currency),
-                )
-            )
-    return replace(rule, postings=tuple(postings))
-
-
-def _posted_occurrences(
+def _tagged_by_schedule(
     entries: Sequence[Directive],
-    rules: Mapping[str, Rule],
-    nominals_by_rule: Mapping[str, Sequence[date]],
-) -> dict[tuple[str, date], Transaction]:
-    """Index the transactions that name a schedule by their nominal date.
-
-    Each transaction's nominal date is re-derived from the rule's precomputed
-    nominal list by a bisect, so the scan is linear in the entries.
+) -> dict[str, list[Transaction]]:
+    """Index the transactions that name a schedule by that schedule.
 
     Args:
         entries: The ledger entries.
-        rules: The parsed rules, keyed by id.
-        nominals_by_rule: Each rule's nominal dates, ascending.
 
     Returns:
-        A mapping from ``(rule_id, nominal)`` to the transaction.
+        A mapping from schedule id to the transactions that tag it.
     """
-    found: dict[tuple[str, date], Transaction] = {}
+    found: dict[str, list[Transaction]] = {}
     for entry in entries:
-        if not isinstance(entry, Transaction):
+        if not isinstance(entry, Transaction) or is_schedule(entry):
             continue
-        schedule_id = _schedule_id(entry)
-        if schedule_id is None:
-            continue
-        rule = rules.get(schedule_id)
-        if rule is None:
-            continue
-        nominal = _nearest_in(nominals_by_rule.get(schedule_id, ()), entry.date, rule)
-        if nominal is None:
-            continue
-        found.setdefault((schedule_id, nominal), entry)
+        named = schedule_id(entry)
+        if named is not None:
+            found.setdefault(named, []).append(entry)
     return found
 
 
@@ -1811,15 +1765,15 @@ def _window_until(today: date | None) -> date:
 def _build_occurrences(
     rule: Rule,
     outcomes: Mapping[tuple[str, date], Occurrence],
-    posted: Mapping[tuple[str, date], Transaction],
+    posted: Mapping[date, Transaction],
     nominals: Sequence[date],
 ) -> tuple[Occurrence, ...]:
     """Build a rule's occurrences over the window, resolving each.
 
     Args:
         rule: The rule.
-        outcomes: The skip and move outcomes.
-        posted: The posted occurrences.
+        outcomes: Pre-seeded occurrences, keyed by nominal.
+        posted: The posted occurrences, keyed by nominal.
         nominals: The rule's nominal dates, ascending.
 
     Returns:
@@ -1827,14 +1781,13 @@ def _build_occurrences(
     """
     built: list[Occurrence] = []
     for nominal in nominals:
-        key = (rule.id, nominal)
-        transaction = posted.get(key)
+        transaction = posted.get(nominal)
         if transaction is not None:
             built.append(
                 Occurrence(rule_id=rule.id, nominal=nominal, posted=transaction)
             )
             continue
-        outcome = outcomes.get(key)
+        outcome = outcomes.get((rule.id, nominal))
         if outcome is not None:
             built.append(replace(outcome, rule_id=rule.id, nominal=nominal))
             continue
@@ -1846,13 +1799,17 @@ def compute(
     entries: Sequence[Directive],
     options: Mapping[str, object],
     *,
+    schedules: Sequence[Directive] | None = None,
     today: date | None = None,
 ) -> ScheduleResult:
     """Compute every schedule's occurrences and diagnostics.
 
     Args:
-        entries: The ledger entries.
+        entries: The ledger entries. The resolutions (tagged transactions) and
+            amortization balances are read from here.
         options: The Beancount options map, used for ``operating_currency``.
+        schedules: The schedule transactions. When ``None`` they are taken from
+            ``entries`` — every transaction carrying an ``id`` metadata key.
         today: The reference date for ``next``, overdue and the occurrence
             horizon, if any. When it is ``None`` the diagnostics that need a
             reference date are skipped and the horizon is measured from the wall
@@ -1865,10 +1822,11 @@ def compute(
     Examples:
         >>> from beancount.parser import parser
         >>> ledger = '''
-        ... 2026-01-01 custom "schedule" "new" "paycheck"
+        ... 2026-01-15 * "Acme" "Paycheck"
+        ...   id: "paycheck"
         ...   rrule: "FREQ=MONTHLY;BYMONTHDAY=15"
-        ...   start: 2026-01-15
-        ...   match-account: "Assets:Bank"
+        ...   Assets:Bank     -1000.00 USD
+        ...   Expenses:Tax     1000.00 USD
         ... '''
         >>> entries, _errors, options = parser.parse_string(ledger)
         >>> result = compute(entries, options, today=date(2026, 2, 1))
@@ -1881,16 +1839,18 @@ def compute(
     """
     diagnostics: list[Diagnostic] = []
     entries = list(entries)
-    directives = _custom_directives(entries)
+    if schedules is None:
+        schedules = [entry for entry in entries if is_schedule(entry)]
+    else:
+        schedules = list(schedules)
     currency = _operating_currency(options)
 
     rules: dict[str, Rule] = {}
     order: list[Rule] = []
-    for entry in directives:
-        verb, values = _verb_values(entry, diagnostics)
-        if verb != "new":
+    for entry in sorted(schedules, key=lambda item: item.date):
+        if not isinstance(entry, Transaction):
             continue
-        rule = parse_rule(entry, verb, values, diagnostics, currency)
+        rule = parse_schedule(entry, diagnostics, currency)
         if rule is None:
             continue
         if rule.id in rules:
@@ -1899,27 +1859,29 @@ def compute(
         rules[rule.id] = rule
         order.append(rule)
 
-    declared = _scan_postings(directives, rules, currency, diagnostics)
-    order = [
-        _apply_postings(rule, declared.get(rule.id, []), currency, diagnostics)
-        for rule in order
-    ]
-    rules = {rule.id: rule for rule in order}
-
-    outcomes = _scan_outcomes(directives, rules, diagnostics)
     until = _window_until(today)
-    nominals = {rule.id: tuple(rule.nominal_dates(until=until)) for rule in order}
-    posted = _posted_occurrences(entries, rules, nominals)
+    tagged = _tagged_by_schedule(entries)
 
     reports: list[ScheduleReport] = []
     for rule in order:
-        occurrences = _build_occurrences(rule, outcomes, posted, nominals[rule.id])
+        nominals = tuple(rule.nominal_dates(until=until))
+        posted: dict[date, Transaction] = {}
+        history: list[Transaction] = []
+        for entry in tagged.get(rule.id, []):
+            nominal = _nearest_in(nominals, entry.date, rule)
+            if nominal is None:
+                history.append(entry)
+            else:
+                posted.setdefault(nominal, entry)
+        occurrences = _build_occurrences(rule, {}, posted, nominals)
+        history.sort(key=lambda item: item.date)
         reports.append(
             ScheduleReport(
                 rule=rule,
                 occurrences=occurrences,
                 next=_next_unresolved(occurrences),
                 overdue=_overdue(occurrences, today),
+                history=tuple(history),
             )
         )
     if today is not None:

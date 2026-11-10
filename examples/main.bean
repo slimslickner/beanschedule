@@ -1,9 +1,15 @@
-; The general ledger: Fava opens this one. It includes the journal, the
-; schedules, and the plugin (for diagnostics and, if you pass "forecast",
-; opt-in forecast injection).
+; The general ledger: Fava opens this one. It includes the import ledger (the
+; journal, where beangulp appends real transactions) and the pending file, and
+; loads the plugin (pending relabelling + schedule validation) and the report.
+;
+; `pending.bean` is included here but NOT in `import.bean`, so beangulp never
+; mistakes a placeholder for an imported transaction. `schedules.bean` is not
+; included at all — the plugin and the report read it by path.
 option "operating_currency" "USD"
 
-include "journal.bean"
-include "Schedules.bean"
+include "import.bean"
+include "pending.bean"
 
-plugin "beanschedule.plugin"
+plugin "beanschedule.plugin" "{'schedules_file': 'schedules.bean', 'pending_file': 'pending.bean'}"
+
+2026-01-01 custom "fava-extension" "beanschedule.fava_ext" "{'write': True, 'months': 2}"

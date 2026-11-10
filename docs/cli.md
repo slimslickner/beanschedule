@@ -6,11 +6,11 @@
 
 The ``beanschedule`` command line interface.
 
-A thin ``argparse`` front end over :mod:`beanschedule.core`. The read-only
-commands — ``check``, ``report``, ``forecast``, ``list`` and ``detect`` — never
-touch the ledger. The mutating commands — ``skip``, ``move``, ``create``,
-``edit`` and ``rebuild`` — write only with ``--write``, and only through
-:mod:`beanschedule.writer`, at one configured file inside the ledger directory.
+A thin ``argparse`` front end over :mod:`beanschedule.core` and
+:mod:`beanschedule.reconcile`. The read-only commands — ``check``, ``report``,
+``list`` and ``detect`` — never touch the ledger. ``reconcile`` matches imported
+transactions to schedules and, with ``--write``, tags the matches and advances
+the frontiers. ``skip``, ``move``, ``create`` and ``edit`` change a schedule.
 ``docs`` renders the generated documentation and gates it with ``--check``.
 .
 
@@ -25,7 +25,7 @@ Validate the schedules across a ledger.
 | Argument | Required | Help |
 | --- | --- | --- |
 | `ledger` | yes | The ledger file |
-| `--schedules` | no | The Schedules.bean file |
+| `--schedules` | no | The schedules file |
 | `--today` | no | The reference date (YYYY-MM-DD) |
 
 ## `beanschedule report`
@@ -35,7 +35,7 @@ Show each schedule's occurrences.
 | Argument | Required | Help |
 | --- | --- | --- |
 | `ledger` | yes | The ledger file |
-| `--schedules` | no | The Schedules.bean file |
+| `--schedules` | no | The schedules file |
 | `--today` | no | The reference date (YYYY-MM-DD) |
 
 ## `beanschedule list`
@@ -45,19 +45,8 @@ List schedules with next and overdue.
 | Argument | Required | Help |
 | --- | --- | --- |
 | `ledger` | yes | The ledger file |
-| `--schedules` | no | The Schedules.bean file |
+| `--schedules` | no | The schedules file |
 | `--today` | no | The reference date (YYYY-MM-DD) |
-
-## `beanschedule forecast`
-
-Print upcoming occurrences.
-
-| Argument | Required | Help |
-| --- | --- | --- |
-| `ledger` | yes | The ledger file |
-| `--schedules` | no | The Schedules.bean file |
-| `--today` | no | The reference date (YYYY-MM-DD) |
-| `--months` | no | Months to forecast `3` |
 
 ## `beanschedule detect`
 
@@ -66,93 +55,99 @@ Propose schedules for recurring payments.
 | Argument | Required | Help |
 | --- | --- | --- |
 | `ledger` | yes | The ledger file |
-| `--schedules` | no | The Schedules.bean file |
+| `--schedules` | no | The schedules file |
 | `--today` | no | The reference date (YYYY-MM-DD) |
 | `--json` | no | Emit machine-readable JSON |
 
-## `beanschedule skip`
+## `beanschedule reconcile`
 
-Record a skip for one occurrence.
+Match imported transactions to schedules.
 
 | Argument | Required | Help |
 | --- | --- | --- |
 | `ledger` | yes | The ledger file |
-| `--schedules` | no | The Schedules.bean file |
+| `--schedules` | no | The schedules file |
+| `--today` | no | The reference date (YYYY-MM-DD) |
+| `--pending` | no | The pending file |
+| `--write` | no | Apply the plan, writing to this schedules file |
+
+## `beanschedule skip`
+
+Skip a schedule's next occurrence.
+
+| Argument | Required | Help |
+| --- | --- | --- |
+| `ledger` | yes | The ledger file |
+| `--schedules` | no | The schedules file |
 | `--today` | no | The reference date (YYYY-MM-DD) |
 | `--write` | no | Write to this file |
 | `schedule` | yes | The schedule id |
-| `date` | yes | The nominal date to skip |
 
 ## `beanschedule move`
 
-Record a move for one occurrence.
+Move a schedule's frontier date.
 
 | Argument | Required | Help |
 | --- | --- | --- |
 | `ledger` | yes | The ledger file |
-| `--schedules` | no | The Schedules.bean file |
+| `--schedules` | no | The schedules file |
 | `--today` | no | The reference date (YYYY-MM-DD) |
 | `--write` | no | Write to this file |
 | `schedule` | yes | The schedule id |
-| `date` | yes | The original nominal date |
 | `new_date` | yes | The date to move it to |
 
 ## `beanschedule create`
 
-Create a new schedule rule.
+Create a new schedule.
 
 | Argument | Required | Help |
 | --- | --- | --- |
 | `ledger` | yes | The ledger file |
-| `--schedules` | no | The Schedules.bean file |
+| `--schedules` | no | The schedules file |
 | `--today` | no | The reference date (YYYY-MM-DD) |
 | `--write` | no | Write to this file |
 | `schedule` | yes | The schedule id |
 | `--rrule` | yes | The recurrence rule |
-| `--start` | yes | The first nominal date |
+| `--start` | yes | The first occurrence date |
 | `--account` | yes | The matched account |
 | `--posting` | no | An other-side posting (repeatable; omit AMOUNT to let Beancount balance) |
 | `--payee` | no | A payee regex for matching |
-| `--amount` | no | The reference amount |
-| `--amount-mode` | no | The amount mode |
+| `--amount` | no | The matched amount |
+| `--tolerance` | no | The approximate-match tolerance |
 | `--write-payee` | no | The payee to write |
 | `--narration` | no | The narration to write |
 
 ## `beanschedule edit`
 
-Edit a schedule rule in place.
+Edit a schedule's matched amount.
 
 | Argument | Required | Help |
 | --- | --- | --- |
 | `ledger` | yes | The ledger file |
-| `--schedules` | no | The Schedules.bean file |
+| `--schedules` | no | The schedules file |
 | `--today` | no | The reference date (YYYY-MM-DD) |
 | `--write` | no | Write to this file |
 | `schedule` | yes | The schedule id |
-| `--amount` | no | Set a new reference amount |
-| `--rrule` | no | A new recurrence rule (splits the series) |
-| `--start` | no | A new start (splits the series) |
-
-## `beanschedule rebuild`
-
-Recompute and canonically rewrite the rules.
-
-| Argument | Required | Help |
-| --- | --- | --- |
-| `ledger` | yes | The ledger file |
-| `--schedules` | no | The Schedules.bean file |
-| `--today` | no | The reference date (YYYY-MM-DD) |
-| `--write` | no | Write to this file |
+| `--amount` | no | Set a new matched amount |
 
 ## `beanschedule migrate`
 
-Convert a schedules/ directory of YAML files to `custom "schedule"` directives, idempotently, and report enriched transactions still carrying schedule_id metadata.
+Convert a schedules/ directory of YAML files to schedule transactions, idempotently.
 
 | Argument | Required | Help |
 | --- | --- | --- |
 | `directory` | yes | The schedules directory |
-| `--ledger` | no | The ledger, for the schedules file and report |
-| `--schedules` | no | The Schedules.bean file |
+| `--ledger` | no | The ledger, for the schedules file |
+| `--schedules` | no | The schedules file |
+
+## `beanschedule migrate-ledger`
+
+Rename v1 `schedule_id` metadata to `schedule`, remove the v1 tracking metadata, and delete placeholder transactions, editing the ledger files in place. A dry run until --write is passed.
+
+| Argument | Required | Help |
+| --- | --- | --- |
+| `ledger` | yes | The ledger file |
+| `--write` | no | Apply the edits, in place |
 
 ## `beanschedule docs`
 
