@@ -1,9 +1,10 @@
 """The opt-in writer for schedule transactions.
 
 Pure code never touches disk. This is the only module through which the CLI
-edits a ledger file; the Fava report has its own writer over Fava's file API,
-but both render through :mod:`beanschedule.actions` and both edit by literal
-line changes, never by regenerating a file, so line endings and the file's inode
+edits a ledger file; the Fava report edits included files through Fava's own
+file API and its non-included schedules file through this module, but both
+render through :mod:`beanschedule.actions` and both edit by literal line
+changes, never by regenerating a file, so line endings and the file's inode
 are preserved. Writing outside the ledger directory is refused.
 """
 

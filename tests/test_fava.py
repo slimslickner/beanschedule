@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import shutil
+import threading
 from pathlib import Path
 from types import SimpleNamespace
 from typing import TYPE_CHECKING, cast
@@ -133,3 +135,37 @@ def test_save_rejects_source_without_an_id() -> None:
     )
     with pytest.raises(ValueError, match="id"):
         extension._save({"source": source})
+
+
+def test_save_rewrites_the_non_source_schedules_file(tmp_path: Path) -> None:
+    source_dir = _LEDGERS / "extension"
+    for name in ("main.bean", "schedules.bean"):
+        shutil.copy(source_dir / name, tmp_path / name)
+    path = tmp_path / "main.bean"
+    entries, _errors, options = loader.load_file(str(path))
+    notified: list[Path] = []
+    ledger = SimpleNamespace(
+        all_entries=entries,
+        options=options,
+        beancount_file_path=str(path),
+        file=SimpleNamespace(_lock=threading.Lock()),
+        watcher=SimpleNamespace(notify=notified.append),
+        load_file=lambda: None,
+    )
+    extension = Schedules(cast("FavaLedger", ledger), "{'write': True}")
+    extension.after_load_file()
+    source = (
+        '2026-01-15 * "Acme" "Paycheck" #payroll\n'
+        '  id: "paycheck"\n'
+        '  rrule: "FREQ=MONTHLY;BYMONTHDAY=16"\n'
+        '  match-payee: "Acme"\n'
+        "  amount-tolerance: 7.50\n"
+        "  Assets:Bank:Checking       -3000.00 USD\n"
+        "  Expenses:Taxes:Federal       600.00 USD\n"
+        "  Expenses:Savings            2400.00 USD\n"
+    )
+    extension.perform({"action": "save", "id": "paycheck", "source": source})
+    written = (tmp_path / "schedules.bean").read_text()
+    assert "BYMONTHDAY=16" in written
+    assert "BYMONTHDAY=15" not in written
+    assert tmp_path / "schedules.bean" in notified

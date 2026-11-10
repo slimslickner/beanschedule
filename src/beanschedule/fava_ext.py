@@ -11,10 +11,12 @@ report reconcile matches and edit schedules::
     2026-01-01 custom "fava-extension" "beanschedule.fava_ext" "{'write': 'schedules.bean'}"
 
 A path that escapes the ledger directory or is not a Beancount source file is
-refused. Writes go through Fava's own file API (its lock, watcher and printer),
-so Fava's editor and this report stay consistent; the transactions themselves
-come from :mod:`beanschedule.actions` and :mod:`beanschedule.reconcile`, the same
-modules the CLI uses. The extension is the only module that imports Fava.
+refused. Edits to an included file go through Fava's own file API (its lock,
+watcher and printer), so Fava's editor and this report stay consistent; the
+schedules file is not included by the ledger, so it is edited directly under
+Fava's lock instead. The transactions themselves come from
+:mod:`beanschedule.actions` and :mod:`beanschedule.reconcile`, the same modules
+the CLI uses. The extension is the only module that imports Fava.
 
 The report has three tabs, selected by the ``view`` query parameter: an
 **Overview** of every schedule, an **Upcoming** ledger of all outstanding
@@ -786,13 +788,25 @@ def _rewrite_source(
     path: Path,
     edits: list[tuple[int, Directive | None]],
 ) -> None:
-    """Rewrite a source file's directives through Fava's own file API.
+    """Rewrite a file's directives, in place.
+
+    The included files are edited through Fava's own file API, which detects an
+    external change and reloads the ledger. The schedules file is deliberately
+    *not* included by the ledger, so Fava refuses it as a non-source file; it is
+    edited directly instead, under Fava's lock, the same way the append path
+    already writes it, and the ledger is reloaded so the plugin re-validates it.
 
     Args:
         ledger: The Fava ledger.
-        path: The source file to rewrite.
+        path: The file to rewrite.
         edits: ``(lineno, entry)`` pairs; ``None`` deletes the directive.
     """
-    source, sha256sum = ledger.file.get_source(path)
-    updated = writer.apply_edits(source.splitlines(keepends=True), edits)
-    ledger.file.set_source(path, "".join(updated), sha256sum)
+    if str(path) in ledger.options.get("include", ()):
+        source, sha256sum = ledger.file.get_source(path)
+        updated = writer.apply_edits(source.splitlines(keepends=True), edits)
+        ledger.file.set_source(path, "".join(updated), sha256sum)
+        return
+    with ledger.file._lock:  # noqa: SLF001 - Fava's own lock is the point
+        writer.rewrite(path, edits)
+        ledger.watcher.notify(path)
+        ledger.load_file()

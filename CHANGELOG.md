@@ -89,3 +89,6 @@ plugin and the Fava report.
   dropped when the schedules file is loaded.
 - Amortization no longer counts escrow twice, so an enriched payment's legs sum
   to the matched amount.
+- Saving an edited schedule from the Fava report works again: the schedules file
+  is not part of the ledger, so the report edits it directly under Fava's lock
+  instead of through Fava's source API, which refused it as a non-source file.
