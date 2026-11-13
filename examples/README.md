@@ -1,113 +1,57 @@
-# Beanschedule Examples
+# Examples
 
-This directory contains example schedule files and a sample Beancount ledger demonstrating how to use beanschedule.
+A small, self-contained ledger demonstrating the reconciliation model and the
+file split it needs.
 
-## Example Schedules
+| File | Role |
+| --- | --- |
+| `main.bean` | The ledger Fava opens: includes `import.bean` and `pending.bean`, and loads the plugin and report. |
+| `import.bean` | beangulp's target and duplicate-detection source: includes the journal only. |
+| `journal.bean` | Accounts, opening balances and imported transactions (`schedule:`-tagged and untagged). |
+| `schedules.bean` | One recurring schedule, as a real transaction. Not included by anything. Carries a `#payroll` tag, an `^acme-2026` link and `category: "income"` to demonstrate carry-over. |
+| `pending.bean` | A staged one-time payment. Included by `main.bean` only. |
 
-The `schedules/` directory contains 10 example schedule files showing different recurrence patterns and matching strategies.
+The split matters: `import.bean` omits `pending.bean` (a placeholder shares the
+account, amount and date of the transaction it waits for, so beangulp would skip
+the real one) and `schedules.bean` is omitted everywhere (the plugin and the
+report read it by path).
 
-**Schedules that match the example.beancount ledger** (enabled):
+There is no import hook. Import runs normally against `import.bean`, then
+reconciliation is an explicit step.
 
-1. **paycheck-biweekly.yaml** - Bi-weekly Hoogle payroll with tax deductions (matches real transactions)
-2. **rent-payment.yaml** - Monthly rent payment to RiverBank Properties (matches real transactions)
-3. **utilities-electric.yaml** - Monthly electric bill from EDISON POWER (matches real transactions)
-
-**Schedules for reference/customization** (disabled - no matching data in example ledger): 4. **mortgage-payment.yaml** - Monthly mortgage with interest, escrow, and principal split 5. **utilities-water.yaml** - Quarterly water bill (interval-based) 6. **subscription-streaming.yaml** - Monthly streaming subscription ($14.99) 7. **subscription-annual.yaml** - Annual cloud storage subscription 8. **insurance-auto.yaml** - Monthly auto insurance with policy metadata 9. **credit-card-payment.yaml** - Monthly credit card payment (variable amount) 10. **loan-payment-biweekly.yaml** - Bi-weekly student loan payment on Fridays
-
-## Recurrence Types Demonstrated
-
-- **MONTHLY**: Schedules that occur once per month on a specific day
-- **BIMONTHLY**: Schedules that occur twice per month (e.g., 5th and 20th)
-- **WEEKLY**: Schedules that occur every N weeks on a specific day
-- **YEARLY**: Schedules that occur once per year on a specific date
-- **INTERVAL**: Schedules that occur every N months
-
-## Amount Matching Strategies
-
-The examples show three ways to match transaction amounts:
-
-1. **Fixed amount with tolerance**: `amount: -1850.00, amount_tolerance: 10.00`
-   - Matches amounts between -1860.00 and -1840.00
-
-2. **Range matching**: `amount_min: -200.00, amount_max: -50.00`
-   - Matches any amount in the specified range
-   - Useful for variable bills like utilities
-
-3. **Null amount**: `amount: null`
-   - Uses imported amount without matching
-   - Useful when combined with other matching criteria
-
-## Using These Examples
-
-### 1. Try the CLI Tool
-
-Validate the example schedules:
+Try:
 
 ```bash
-beanschedule validate examples/schedules/
+# Validate the schedules and show the report.
+beanschedule check examples/main.bean
+beanschedule list examples/main.bean
+beanschedule report examples/main.bean --today 2026-02-01
+
+# Match imported transactions to schedules (dry run, then apply).
+beanschedule reconcile examples/main.bean --today 2026-02-01
+beanschedule reconcile examples/main.bean --today 2026-02-01 --write schedules.bean
+
+# Propose schedules for the ledger's recurring payments.
+beanschedule detect examples/main.bean
 ```
 
-List all schedules:
+In Fava, load `main.bean`; the **Schedules** report has three tabs — an
+**Overview** of every schedule, an **Upcoming** ledger of outstanding
+occurrences, and a per-schedule **Schedule** drill-down. With `write` configured
+it offers a **Reconcile** button and lets the drill-down edit a schedule in
+place.
+
+## `legacy/`
+
+Two v1 YAML schedules kept as migration inputs, not as a supported format:
 
 ```bash
-beanschedule list examples/schedules/
+beanschedule migrate examples/legacy
 ```
 
-Generate expected dates for a schedule:
+- `paycheck-biweekly.yaml` — a multi-posting, bi-weekly paycheck.
+- `mortgage-amortized.yaml` — an amortized mortgage with escrow postings.
 
-```bash
-beanschedule generate mortgage-payment 2024-01-01 2024-12-31 --schedules-path examples/schedules/
-```
-
-### 2. Customize for Your Use
-
-1. Copy the `schedules/` directory to your project:
-
-   ```bash
-   cp -r examples/schedules/ my-project/schedules/
-   ```
-
-2. Edit the schedule files to match your actual transactions:
-   - Update payee patterns to match your bank's format
-   - Adjust amounts and dates
-   - Modify account names to match your ledger
-
-3. Update `_config.yaml` if needed:
-   - Adjust matching threshold (default: 0.80)
-   - Change date window (default: 3 days)
-   - Modify placeholder flag (default: '!')
-
-### 3. Integrate with Beangulp
-
-Add to your `importers/config.py`:
-
-```python
-from beanschedule import schedule_hook
-
-# ... your importer configuration ...
-
-HOOKS = [schedule_hook]
-```
-
-Then run your imports as normal:
-
-```bash
-bean-extract importers/config.py documents/ > output.beancount
-```
-
-## Tips
-
-- **Start simple**: Begin with 2-3 schedules for your most regular transactions
-- **Use metadata**: Add custom metadata fields to track additional information
-- **Test patterns**: Use `beanschedule validate` to check your YAML syntax
-- **Monitor matches**: Check the `schedule_confidence` metadata to see match scores
-- **Adjust thresholds**: Lower the fuzzy_match_threshold if you're getting too many false matches
-
-## Example Beancount Ledger
-
-See `example.beancount` for a sample ledger showing how scheduled transactions appear in your Beancount file after being matched and enriched.
-
-## Questions?
-
-For full documentation, see the main project README and documentation at:
-<https://github.com/yourusername/beanschedule>
+The migrator converts what the transaction model can express and prints a
+comment for anything it cannot (multi-currency postings, tags,
+`missing_transaction`).

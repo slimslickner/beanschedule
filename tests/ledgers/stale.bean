@@ -1,0 +1,12 @@
+option "operating_currency" "USD"
+
+2020-01-01 open Assets:Bank
+2020-01-01 open Expenses:Rent
+
+; A schedule whose occurrences are never resolved, so every past month is
+; overdue.
+2026-01-01 * "Landlord" "Rent"
+  id: "rent"
+  rrule: "FREQ=MONTHLY;BYMONTHDAY=1"
+  Assets:Bank                -1000.00 USD
+  Expenses:Rent               1000.00 USD

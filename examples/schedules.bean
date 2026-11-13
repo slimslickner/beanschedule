@@ -1,0 +1,19 @@
+; The schedules live in one file that `main.bean` does NOT include, so the
+; series never inflates the ledger's balances. Each schedule is a real
+; Beancount transaction carrying an `id` and an `rrule`; its date is the
+; schedule's next occurrence and is advanced by `beanschedule reconcile`.
+;
+; The plugin validates this file by path and the Fava report reconciles it. A
+; schedule's other-side postings carry the split, each with its own metadata.
+
+2026-02-15 * "Acme" "Paycheck" #payroll ^acme-2026
+  id: "paycheck"
+  rrule: "FREQ=MONTHLY;BYMONTHDAY=15"
+  match-payee: "Acme"
+  category: "income"
+  amount-tolerance: 7.50
+  Assets:Bank:Checking       -3000.00 USD
+  Expenses:Taxes:Federal       600.00 USD
+    narration: "Federal withholding"
+  Expenses:Savings            2400.00 USD
+    narration: "Savings transfer"

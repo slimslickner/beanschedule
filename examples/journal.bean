@@ -1,0 +1,26 @@
+option "operating_currency" "USD"
+
+2020-01-01 open Assets:Bank:Checking
+2020-01-01 open Expenses:Taxes:Federal
+2020-01-01 open Expenses:Savings
+2020-01-01 open Expenses:Electronics:Audio
+2020-01-01 open Expenses:Shopping:Shipping
+2020-01-01 open Equity:Opening-Balances
+
+2025-12-31 * "Opening balances"
+  Assets:Bank:Checking        5000.00 USD
+  Equity:Opening-Balances     -5000.00 USD
+
+; An imported paycheck, already tagged as resolving the `paycheck` schedule.
+2026-01-16 * "Acme" "January pay"
+  schedule: "paycheck"
+  Assets:Bank:Checking       -3000.00 USD
+  Expenses:Taxes:Federal       600.00 USD
+  Expenses:Savings            2400.00 USD
+
+; A freshly imported paycheck with no schedule tag yet: `beanschedule reconcile`
+; matches it to the February occurrence and tags it.
+2026-02-16 * "Acme" "February pay"
+  Assets:Bank:Checking       -3000.00 USD
+  Expenses:Taxes:Federal       600.00 USD
+  Expenses:Savings            2400.00 USD
