@@ -24,13 +24,12 @@ from beanschedule.core import (
     ScheduleReport,
     ScheduleResult,
     Split,
+    amortization_projection,
     amortization_splits,
     amortized_accounts,
-    ledger_balance,
     ledger_balances,
     matched_amount,
-    static_split,
-    walk_balance,
+    operating_currency,
 )
 from beanschedule.schema import Severity
 
@@ -407,29 +406,6 @@ def today_month() -> date:
     return date.today().replace(day=1)  # noqa: DTZ011 - local today is intended
 
 
-def operating_currency(options: Mapping[str, object]) -> str:
-    """Read the single operating currency from the ledger options.
-
-    Args:
-        options: The Beancount options map.
-
-    Returns:
-        The operating currency, or ``""`` when it is missing or ambiguous.
-
-    Examples:
-        >>> operating_currency({"operating_currency": "USD"})
-        'USD'
-        >>> operating_currency({})
-        ''
-    """
-    value = options.get("operating_currency")
-    if isinstance(value, str):
-        return value
-    if isinstance(value, list | tuple) and len(value) == 1:
-        return str(value[0])
-    return ""
-
-
 def format_money(value: Decimal | None, currency: str = "") -> str:
     """Format an optional amount for a report line.
 
@@ -722,31 +698,6 @@ def _is_due(nominal: date, rule: Rule, today: date | None) -> bool:
     return 0 <= (nominal - today).days <= rule.window_before
 
 
-def _project_dates(rule: Rule, limit: int) -> list[date]:
-    """Generate a rule's nominal dates forward from its frontier.
-
-    Unlike the compute horizon, this expands far enough for a loan's full
-    remaining series; it stops after ``limit`` dates or the rule's ``end``. The
-    sequence is the rule's own nominal dates, so a frontier that is not itself on
-    the recurrence is skipped exactly as the core would skip it.
-
-    Args:
-        rule: The schedule's rule.
-        limit: The maximum number of dates to generate.
-
-    Returns:
-        The nominal dates, ascending, starting at or after the rule's frontier.
-    """
-    years = limit // 12 + 2
-    bound = rule.start + timedelta(days=366 * years)
-    return rule.nominal_dates(until=bound)[:limit]
-
-
-#: The most payments an amortization projection will generate, so an open-ended
-#: rule cannot expand without bound.
-_MAX_AMORTIZATION_PAYMENTS = 600
-
-
 def _amortization(
     report: ScheduleReport,
     entries: Sequence[Directive],
@@ -767,31 +718,16 @@ def _amortization(
     amort = rule.amortization
     if amort is None:
         return None
-    escrow = amort.escrow or Decimal(0)
-    dates = _project_dates(rule, _MAX_AMORTIZATION_PAYMENTS)
     if amort.method == "static":
         if amort.term is None:
             return None
-        base = len(report.history)
-        lines: list[AmortizationLine] = []
-        for index, day in enumerate(dates):
-            split = static_split(rule, index + 1 + base, escrow)
-            if split is None:
-                break
-            lines.append(AmortizationLine(day, split))
-        return AmortizationView("static", amort.rate, tuple(lines))
-    principal = amort.principal_account
-    if principal is None:
+    elif amort.principal_account is None:
         return None
-    observed = balances.get(principal)
-    if observed is None:
-        observed = ledger_balance(entries, principal)
-    if observed is None:
-        return AmortizationView("balance-from-ledger", amort.rate, ())
-    balance, balance_date = observed
-    splits = walk_balance(rule, balance, balance_date, dates, escrow)
-    lines = [AmortizationLine(day, split) for day, split in sorted(splits.items())]
-    return AmortizationView("balance-from-ledger", amort.rate, tuple(lines))
+    pairs = amortization_projection(
+        rule, base=len(report.history), entries=entries, balances=balances
+    )
+    lines = tuple(AmortizationLine(day, split) for day, split in pairs)
+    return AmortizationView(amort.method, amort.rate, lines)
 
 
 def _horizon(today: date | None, months: int) -> date | None:

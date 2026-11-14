@@ -478,3 +478,45 @@ def test_structured_update_keeps_amortization_legs(tmp_path: Path) -> None:
     assert 'schedule-leg: "principal"' in written
     assert 'schedule-leg: "interest"' in written
     assert 'schedule-leg: "escrow"' in written
+
+
+def test_reconcile_tags_the_match_and_advances_the_frontier(tmp_path: Path) -> None:
+    source_dir = _LEDGERS / "extension"
+    for name in ("main.bean", "schedules.bean"):
+        shutil.copy(source_dir / name, tmp_path / name)
+    ledger_path = tmp_path / "main.bean"
+    ledger_path.write_text(
+        ledger_path.read_text(encoding="utf-8") + '\n\n2026-01-16 * "Acme" "January"\n'
+        "  Assets:Bank:Checking   -3000.00 USD\n"
+        "  Expenses:Taxes:Federal  3000.00 USD\n",
+        encoding="utf-8",
+    )
+    entries, _errors, options = loader.load_file(str(ledger_path))
+
+    def _get_source(path: str | Path) -> tuple[str, str]:
+        return Path(path).read_text(encoding="utf-8"), "sha"
+
+    def _set_source(path: str | Path, source: str, _sha: str) -> None:
+        Path(path).write_text(source, encoding="utf-8")
+
+    ledger = SimpleNamespace(
+        all_entries=entries,
+        options=options,
+        beancount_file_path=str(ledger_path),
+        file=SimpleNamespace(
+            _lock=threading.Lock(),
+            get_source=_get_source,
+            set_source=_set_source,
+        ),
+        watcher=SimpleNamespace(notify=lambda _path: None),
+        load_file=lambda: None,
+    )
+    extension = Schedules(cast("FavaLedger", ledger), "{'write': True}")
+    extension.after_load_file()
+    written = extension.perform({"action": "reconcile"})
+    assert written
+    # The match is tagged in the ledger, the frontier advanced in the schedules.
+    assert 'schedule: "paycheck"' in ledger_path.read_text(encoding="utf-8")
+    schedules_after = (tmp_path / "schedules.bean").read_text(encoding="utf-8")
+    assert '2026-02-15 * "Acme" "Paycheck"' in schedules_after
+    assert '2026-01-15 * "Acme" "Paycheck"' not in schedules_after

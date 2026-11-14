@@ -21,7 +21,7 @@ from typing import TYPE_CHECKING
 
 from beancount.core import data
 
-from beanschedule import actions
+from beanschedule import actions, recurrence
 from beanschedule.core import PostingSpec
 
 if TYPE_CHECKING:
@@ -54,8 +54,6 @@ _BIWEEKLY = (12, 16)
 _MONTHLY = (25, 35)
 _QUARTERLY = (85, 95)
 _YEARLY = (355, 375)
-
-_WEEKDAYS = ("MO", "TU", "WE", "TH", "FR", "SA", "SU")
 
 _COVERAGE_WEIGHT = 0.5
 _REGULARITY_WEIGHT = 0.3
@@ -603,7 +601,7 @@ def _weekday(dates: Sequence[date]) -> str:
     """
     if not dates:
         return "MO"
-    counter = Counter(_WEEKDAYS[day.weekday()] for day in dates)
+    counter = Counter(recurrence.WEEKDAYS[day.weekday()] for day in dates)
     return max(counter, key=lambda key: counter.get(key, 0))
 
 

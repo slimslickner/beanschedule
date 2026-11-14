@@ -4,8 +4,9 @@ There is no import hook. Import runs normally; reconciliation is an explicit,
 re-runnable step. This module is pure — it reads a ledger, a schedules file and
 a pending file, and returns a :class:`Plan` describing which real transactions
 resolve which expected ones, which schedule frontiers advance, and which
-pending placeholders are consumed. The CLI and the Fava report render and apply
-the plan; this module never touches disk.
+pending placeholders are consumed. It also turns a plan into the per-file line
+edits that apply it (:func:`plan_edits`). The CLI and the Fava report render and
+flush those edits; this module never touches disk.
 
 The engine reuses :mod:`beanschedule.core`'s matching and amortization: a
 schedule's outstanding occurrences (from its frontier forward) are linked to
@@ -15,6 +16,7 @@ transaction is enriched with the schedule's postings.
 
 from __future__ import annotations
 
+from collections import defaultdict
 from dataclasses import dataclass
 from decimal import Decimal
 from pathlib import Path
@@ -23,7 +25,7 @@ from typing import TYPE_CHECKING
 from beancount.core import amount as bc_amount
 from beancount.core import data
 
-from beanschedule import core, recurrence
+from beanschedule import actions, core, recurrence, writer
 from beanschedule.core import Rule, Split, compute
 from beanschedule.pending import (
     PendingTransaction,
@@ -44,6 +46,7 @@ __all__ = [
     "Plan",
     "enrich",
     "plan",
+    "plan_edits",
 ]
 
 #: A transaction is recognised as pending by the file it came from.
@@ -222,6 +225,84 @@ def plan(
             advances.append(Advance(rule, new_date))
 
     return Plan(tuple(matches), tuple(pending_matches), tuple(advances))
+
+
+# --- Applying ------------------------------------------------------------------
+
+
+def plan_edits(
+    plan: Plan, *, ledger_dir: Path
+) -> tuple[
+    dict[Path, list[tuple[int, Directive | None]]],
+    list[Directive],
+    list[PendingTransaction],
+]:
+    """Prepare the in-place line edits a plan would apply.
+
+    The plan is turned into a mapping from source file to ``(lineno, entry)``
+    edits: each matched transaction is enriched in place, and each schedule
+    frontier is advanced or removed in its own source file. Nothing is written;
+    the CLI and the Fava report flush these edits through their own writer.
+
+    Args:
+        plan: The reconciliation plan.
+        ledger_dir: The ledger's directory, to resolve the edited files against.
+
+    Returns:
+        The ``(edits, written, consumed)`` triple: per-file line edits, the
+        enriched transactions that were written, and the pending placeholders
+        that were consumed.
+    """
+    edits: dict[Path, list[tuple[int, Directive | None]]] = defaultdict(list)
+    written: list[Directive] = []
+    for match in plan.matches:
+        enriched = enrich(match)
+        written.append(enriched)
+        _queue(edits, match.transaction, enriched, ledger_dir)
+    for match in plan.pending:
+        enriched = enrich_pending(match)
+        written.append(enriched)
+        _queue(edits, match.transaction, enriched, ledger_dir)
+    for advance in plan.advances:
+        entry = advance.rule.entry
+        lineno = writer.entry_lineno(entry)
+        if entry is None or lineno is None:
+            continue
+        filename = (entry.meta or {}).get("filename")
+        if filename is None:
+            continue
+        target = writer.resolve_target(Path(str(filename)), ledger_dir)
+        if advance.new_date is None:
+            edits[target].append((lineno, None))
+        else:
+            edits[target].append(
+                (lineno, actions.advance(advance.rule, advance.new_date))
+            )
+    consumed = [match.pending for match in plan.pending]
+    return dict(edits), written, consumed
+
+
+def _queue(
+    edits: dict[Path, list[tuple[int, Directive | None]]],
+    original: Directive,
+    updated: Directive,
+    base: Path,
+) -> None:
+    """Queue an in-place edit of a transaction's own source file.
+
+    Args:
+        edits: The per-file edit lists, extended in place.
+        original: The transaction being replaced.
+        updated: Its replacement.
+        base: The ledger directory.
+    """
+    meta = getattr(original, "meta", None) or {}
+    filename = meta.get("filename")
+    lineno = meta.get("lineno")
+    if filename is None or lineno is None:
+        return
+    target = writer.resolve_target(Path(str(filename)), base)
+    edits[target].append((int(lineno), updated))
 
 
 # --- Enrichment ----------------------------------------------------------------

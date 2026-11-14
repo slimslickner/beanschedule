@@ -12,7 +12,13 @@ from __future__ import annotations
 import ast
 from typing import Any, cast
 
-__all__ = ["parse_config"]
+__all__ = ["DEFAULT_PENDING_FILE", "DEFAULT_SCHEDULES_FILE", "parse_config", "string"]
+
+#: The default schedules file, beside a ledger.
+DEFAULT_SCHEDULES_FILE = "schedules.bean"
+
+#: The default pending file, beside a ledger.
+DEFAULT_PENDING_FILE = "pending.bean"
 
 
 def parse_config(value: object) -> dict[str, Any] | None:
@@ -48,3 +54,24 @@ def parse_config(value: object) -> dict[str, Any] | None:
     except (ValueError, SyntaxError):
         return None
     return parsed if isinstance(parsed, dict) else None
+
+
+def string(value: object, default: str) -> str:
+    """Return a config value as a non-empty string.
+
+    Args:
+        value: The raw value.
+        default: The fallback.
+
+    Returns:
+        The string, or the default when the value is empty or not a string.
+
+    Examples:
+        >>> string("x", "d")
+        'x'
+        >>> string("", "d")
+        'd'
+        >>> string(None, "d")
+        'd'
+    """
+    return value if isinstance(value, str) and value else default

@@ -26,6 +26,7 @@ __all__ = [
     "apply_edits",
     "delete",
     "directive_line_count",
+    "entry_lineno",
     "replace",
     "resolve_target",
     "rewrite",
@@ -60,6 +61,20 @@ def resolve_target(target: Path, ledger_dir: Path) -> Path:
         message = f"{target} is not a Beancount source file (.bean or .beancount)"
         raise ValueError(message)
     return resolved
+
+
+def entry_lineno(entry: Directive | None) -> int | None:
+    """Return a directive's one-based source line number.
+
+    Args:
+        entry: The directive, if any.
+
+    Returns:
+        The line number, or ``None`` when the directive has no source location.
+    """
+    meta = getattr(entry, "meta", None) or {}
+    line = meta.get("lineno")
+    return int(line) if line is not None else None
 
 
 def directive_line_count(lines: list[str], lineno: int) -> int:

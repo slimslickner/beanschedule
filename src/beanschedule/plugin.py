@@ -30,7 +30,14 @@ from beancount.core import data
 from beancount.ops import pad as pad_ops
 from beancount.parser import parser
 
-from beanschedule.config import parse_config
+from beanschedule.config import (
+    DEFAULT_PENDING_FILE,
+    DEFAULT_SCHEDULES_FILE,
+    parse_config,
+)
+from beanschedule.config import (
+    string as _string,
+)
 from beanschedule.core import Diagnostic, compute
 
 if TYPE_CHECKING:
@@ -47,8 +54,6 @@ __plugins__ = ["plugin"]
 #: The metadata key written on a matched transaction.
 SCHEDULE_KEY = "schedule"
 
-_DEFAULT_SCHEDULES_FILE = "schedules.bean"
-_DEFAULT_PENDING_FILE = "pending.bean"
 _DEFAULT_PENDING_TAG = "pending"
 _DEFAULT_PENDING_FLAG = "!"
 
@@ -78,8 +83,8 @@ class _Config:
         pending_flag: The flag set on pending transactions.
     """
 
-    schedules_file: str = _DEFAULT_SCHEDULES_FILE
-    pending_file: str = _DEFAULT_PENDING_FILE
+    schedules_file: str = DEFAULT_SCHEDULES_FILE
+    pending_file: str = DEFAULT_PENDING_FILE
     pending_tag: str = _DEFAULT_PENDING_TAG
     pending_flag: str = _DEFAULT_PENDING_FLAG
 
@@ -95,24 +100,11 @@ def _config(config: object) -> _Config:
     """
     mapping = parse_config(config) or {}
     return _Config(
-        schedules_file=_string(mapping.get("schedules_file"), _DEFAULT_SCHEDULES_FILE),
-        pending_file=_string(mapping.get("pending_file"), _DEFAULT_PENDING_FILE),
+        schedules_file=_string(mapping.get("schedules_file"), DEFAULT_SCHEDULES_FILE),
+        pending_file=_string(mapping.get("pending_file"), DEFAULT_PENDING_FILE),
         pending_tag=_string(mapping.get("pending_tag"), _DEFAULT_PENDING_TAG),
         pending_flag=_string(mapping.get("pending_flag"), _DEFAULT_PENDING_FLAG),
     )
-
-
-def _string(value: object, default: str) -> str:
-    """Return a config value as a non-empty string.
-
-    Args:
-        value: The raw value.
-        default: The fallback.
-
-    Returns:
-        The string, or the default.
-    """
-    return value if isinstance(value, str) and value else default
 
 
 def _ledger_dir(options_map: Mapping[str, object]) -> Path:

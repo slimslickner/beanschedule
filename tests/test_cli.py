@@ -142,3 +142,37 @@ def test_complete_schedule_without_ledger() -> None:
         _complete_schedule(prefix="", action=None, parser=None, parsed_args=parsed)
         == []
     )
+
+
+_MAIN = """option "operating_currency" "USD"
+2020-01-01 open Assets:Bank
+2020-01-01 open Expenses:Tax
+
+include "schedules.bean"
+
+2026-02-16 * "Acme" "February"
+  Assets:Bank     -3000.00 USD
+  Expenses:Tax     3000.00 USD
+"""
+
+_SCHEDULES = """2026-02-15 * "Acme" "Paycheck"
+  id: "paycheck"
+  rrule: "FREQ=MONTHLY;BYMONTHDAY=15"
+  Assets:Bank     -3000.00 USD
+  Expenses:Tax     3000.00 USD
+"""
+
+
+def test_reconcile_write_applies_the_plan(tmp_path: Path, capsys) -> None:
+    ledger = tmp_path / "main.bean"
+    ledger.write_text(_MAIN, encoding="utf-8")
+    (tmp_path / "schedules.bean").write_text(_SCHEDULES, encoding="utf-8")
+    code = main(["reconcile", str(ledger), "--today", "2026-02-20", "--write"])
+    assert code == 0
+    capsys.readouterr()
+    assert 'schedule: "paycheck"' in ledger.read_text(encoding="utf-8")
+    assert (
+        (tmp_path / "schedules.bean")
+        .read_text(encoding="utf-8")
+        .startswith("2026-03-15")
+    )

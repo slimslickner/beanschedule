@@ -297,3 +297,71 @@ def test_half_gap_stops_an_adjacent_occurrence_stealing_a_match() -> None:
     schedules = _schedules(entries)
     plan = reconcile.plan(entries, schedules, (), options, today=date(2026, 1, 20))
     assert [match.nominal for match in plan.matches] == [date(2026, 1, 8)]
+
+
+_SCHEDULES_FILE = """2026-02-15 * "Acme" "Paycheck"
+  id: "paycheck"
+  rrule: "FREQ=MONTHLY;BYMONTHDAY=15"
+  Assets:Bank     -3000.00 USD
+  Expenses:Tax     3000.00 USD
+"""
+
+_MAIN_FILE = """option "operating_currency" "USD"
+2020-01-01 open Assets:Bank
+2020-01-01 open Expenses:Tax
+
+include "schedules.bean"
+
+2026-02-16 * "Acme" "February"
+  Assets:Bank     -3000.00 USD
+  Expenses:Tax     3000.00 USD
+"""
+
+
+def test_plan_edits_batches_source_edits(tmp_path: Path) -> None:
+    schedules_path = tmp_path / "schedules.bean"
+    schedules_path.write_text(_SCHEDULES_FILE, encoding="utf-8")
+    main = tmp_path / "main.bean"
+    main.write_text(_MAIN_FILE, encoding="utf-8")
+    entries, _errors, options = loader.load_file(str(main))
+    entries = list(entries)
+    plan = reconcile.plan(
+        entries, _schedules(entries), (), options, today=date(2026, 2, 20)
+    )
+    edits, written, consumed = reconcile.plan_edits(plan, ledger_dir=tmp_path)
+    assert len(plan.matches) == 1
+    assert written[0].meta["schedule"] == "paycheck"
+    assert consumed == []
+    # The match is edited in the ledger, the frontier in the schedules file.
+    assert set(edits) == {main.resolve(), schedules_path.resolve()}
+    advance_edits = edits[schedules_path.resolve()]
+    advance_entry = advance_edits[0][1]
+    assert advance_entry is not None
+    assert "2026-03-15" in actions.render(advance_entry)
+
+
+def test_plan_edits_reports_consumed_pending(tmp_path: Path) -> None:
+    schedules_path = tmp_path / "schedules.bean"
+    schedules_path.write_text(_SCHEDULES_FILE, encoding="utf-8")
+    main = tmp_path / "main.bean"
+    main.write_text(_MAIN_FILE, encoding="utf-8")
+    entries, _errors, options = loader.load_file(str(main))
+    entries = list(entries)
+    pending = PendingTransaction(
+        date=date(2026, 2, 16),
+        account="Assets:Bank",
+        amount=Decimal("-3000.00"),
+        payee="Amazon",
+        narration="Headphones",
+        postings=(
+            PendingPosting("Assets:Bank", Decimal("-3000.00")),
+            PendingPosting("Expenses:Tax", Decimal("3000.00")),
+        ),
+        source=tmp_path / "pending.bean",
+    )
+    plan = reconcile.plan(
+        entries, _schedules(entries), [pending], options, today=date(2026, 2, 20)
+    )
+    _edits, written, consumed = reconcile.plan_edits(plan, ledger_dir=tmp_path)
+    assert consumed == [pending]
+    assert "Headphones" in actions.render(written[0])

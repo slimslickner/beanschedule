@@ -18,6 +18,7 @@ from beancount.core.amount import Amount
 from beancount.core.data import Posting, Transaction
 from beancount.parser import printer
 
+from beanschedule import recurrence
 from beanschedule.core import DEFAULT_WINDOW
 
 if TYPE_CHECKING:
@@ -30,6 +31,7 @@ if TYPE_CHECKING:
 __all__ = [
     "advance",
     "from_rule",
+    "next_frontier",
     "render",
     "schedule_transaction",
     "tag",
@@ -285,6 +287,21 @@ def advance(rule: Rule, new_date: date, currency: str = "USD") -> Transaction:
         The advanced transaction.
     """
     return from_rule(rule, currency)._replace(date=new_date)
+
+
+def next_frontier(rule: Rule) -> date | None:
+    """Return the rule's next occurrence after its current frontier.
+
+    The frontier is the schedule's own date, so this is the date a ``skip``
+    advances to. It is ``None`` when the series has already ended.
+
+    Args:
+        rule: The rule.
+
+    Returns:
+        The next occurrence date, or ``None`` when the series has ended.
+    """
+    return recurrence.next_after(rule.rrule, rule.start, rule.start, end=rule.end)
 
 
 def tag(entry: Transaction, schedule_id: str) -> Transaction:

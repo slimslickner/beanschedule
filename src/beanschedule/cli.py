@@ -16,7 +16,6 @@ import argparse
 import difflib
 import json
 import sys
-from collections import defaultdict
 from datetime import date, timedelta
 from decimal import Decimal
 from pathlib import Path
@@ -24,7 +23,6 @@ from typing import TYPE_CHECKING
 
 import argcomplete
 from beancount import loader
-from beancount.parser import parser
 
 from beanschedule import (
     __version__,
@@ -32,12 +30,13 @@ from beanschedule import (
     detector,
     migrate,
     migrate_ledger,
+    plugin,
     reconcile,
-    recurrence,
     schema,
     writer,
 )
-from beanschedule.core import compute
+from beanschedule.config import DEFAULT_PENDING_FILE, DEFAULT_SCHEDULES_FILE
+from beanschedule.core import compute, first_amount
 from beanschedule.pending import (
     PendingTransaction,
     load_pending_transactions,
@@ -55,9 +54,6 @@ if TYPE_CHECKING:
 __all__ = ["build_parser", "cli_markdown", "main", "render_docs"]
 
 _GENERATED_FILES = ("cli.md", "schema.md", "errors.md")
-
-_DEFAULT_SCHEDULES_FILE = "schedules.bean"
-_DEFAULT_PENDING_FILE = "pending.bean"
 
 #: Completes Beancount source paths for the ``ledger`` and file options.
 _BEAN_FILES = argcomplete.FilesCompleter(".bean")
@@ -301,29 +297,6 @@ def _load(path: Path) -> tuple[list[Directive], Mapping[str, object]]:
     return list(entries), options
 
 
-def _load_schedules(path: Path) -> list[Directive]:
-    """Load the schedules file.
-
-    The whole file is schedules, so every transaction is returned — even one
-    missing its ``id``, so validation can report it. The file is parsed without
-    Beancount's interpolation: an amortized schedule's leg postings are
-    amount-less placeholders, and the full loader would drop a transaction with
-    more than one of them. The engine reports its own diagnostics instead.
-
-    Args:
-        path: The schedules file.
-
-    Returns:
-        The schedule transactions, or an empty list when the file is missing.
-    """
-    if not path.is_file():
-        return []
-    entries, _errors, _options = parser.parse_file(str(path))
-    from beancount.core.data import Transaction  # noqa: PLC0415 - narrow the type
-
-    return [entry for entry in entries if isinstance(entry, Transaction)]
-
-
 def _schedules_path(args: argparse.Namespace, ledger: Path) -> Path:
     """Resolve the schedules file for a command.
 
@@ -339,7 +312,7 @@ def _schedules_path(args: argparse.Namespace, ledger: Path) -> Path:
     """
     target = getattr(args, "schedules", None)
     base = ledger.parent
-    requested = Path(target) if target else Path(_DEFAULT_SCHEDULES_FILE)
+    requested = Path(target) if target else Path(DEFAULT_SCHEDULES_FILE)
     return requested if requested.is_absolute() else base / requested
 
 
@@ -355,7 +328,7 @@ def _pending_path(args: argparse.Namespace, ledger: Path) -> Path:
     """
     target = getattr(args, "pending", None)
     base = ledger.parent
-    requested = Path(target) if target else Path(_DEFAULT_PENDING_FILE)
+    requested = Path(target) if target else Path(DEFAULT_PENDING_FILE)
     return requested if requested.is_absolute() else base / requested
 
 
@@ -385,7 +358,7 @@ def cmd_check(args: argparse.Namespace) -> int:
     """
     ledger = Path(args.ledger)
     entries, options = _load(ledger)
-    schedules = _load_schedules(_schedules_path(args, ledger))
+    schedules = plugin.load_schedules(_schedules_path(args, ledger))
     result = compute(entries, options, schedules=schedules, today=_today(args))
     for diagnostic in result.diagnostics:
         print(f"{diagnostic.code} {diagnostic.message}")
@@ -403,7 +376,7 @@ def cmd_report(args: argparse.Namespace) -> int:
     """
     ledger = Path(args.ledger)
     entries, options = _load(ledger)
-    schedules = _load_schedules(_schedules_path(args, ledger))
+    schedules = plugin.load_schedules(_schedules_path(args, ledger))
     result = compute(entries, options, schedules=schedules, today=_today(args))
     view = build_view(
         result, entries, options, today=_today(args), forecast_days=args.days
@@ -445,7 +418,7 @@ def cmd_list(args: argparse.Namespace) -> int:
     """
     ledger = Path(args.ledger)
     entries, options = _load(ledger)
-    schedules = _load_schedules(_schedules_path(args, ledger))
+    schedules = plugin.load_schedules(_schedules_path(args, ledger))
     today = _today(args)
     result = compute(entries, options, schedules=schedules, today=today)
     view = build_view(result, entries, options, today=today, forecast_days=args.days)
@@ -505,7 +478,7 @@ def cmd_upcoming(args: argparse.Namespace) -> int:
     """
     ledger = Path(args.ledger)
     entries, options = _load(ledger)
-    schedules = _load_schedules(_schedules_path(args, ledger))
+    schedules = plugin.load_schedules(_schedules_path(args, ledger))
     result = compute(entries, options, schedules=schedules, today=_today(args))
     view = build_view(
         result, entries, options, today=_today(args), forecast_days=args.days
@@ -542,7 +515,7 @@ def cmd_amortize(args: argparse.Namespace) -> int:
     """
     ledger = Path(args.ledger)
     entries, options = _load(ledger)
-    schedules = _load_schedules(_schedules_path(args, ledger))
+    schedules = plugin.load_schedules(_schedules_path(args, ledger))
     result = compute(entries, options, schedules=schedules, today=_today(args))
     view = build_view(result, entries, options, today=_today(args))
     targets = [
@@ -606,7 +579,7 @@ def cmd_detect(args: argparse.Namespace) -> int:
     """
     ledger = Path(args.ledger)
     entries, options = _load(ledger)
-    schedules = _load_schedules(_schedules_path(args, ledger))
+    schedules = plugin.load_schedules(_schedules_path(args, ledger))
     result = compute(entries, options, schedules=schedules)
     proposals = detector.detect(entries, exclude=result)
     if args.json:
@@ -647,19 +620,19 @@ def cmd_reconcile(args: argparse.Namespace) -> int:
     ledger = Path(args.ledger)
     entries, options = _load(ledger)
     schedules_path = _schedules_path(args, ledger)
-    schedules = _load_schedules(schedules_path)
+    schedules = plugin.load_schedules(schedules_path)
     pending_path = _pending_path(args, ledger)
     pending = _load_pending(pending_path)
     result = reconcile.plan(entries, schedules, pending, options, today=_today(args))
     currency = operating_currency(options)
     for match in result.pending:
-        amount = format_money(_matched_amount(match.transaction), currency)
+        amount = format_money(first_amount(match.transaction), currency)
         print(
             f"pending  {match.transaction.date}  {amount:>14}  "
             f"{(match.transaction.payee or '')}  ->  #pending"
         )
     for match in result.matches:
-        amount = format_money(_matched_amount(match.transaction), currency)
+        amount = format_money(first_amount(match.transaction), currency)
         print(
             f"schedule {match.rule.id:<24} {match.nominal}  {match.transaction.date}  "
             f"{amount:>14}  {(match.transaction.payee or '')}"
@@ -673,31 +646,14 @@ def cmd_reconcile(args: argparse.Namespace) -> int:
     if not args.write:
         print("dry run — pass --write to apply")
         return 0
-    _apply(result, ledger, schedules_path, pending_path)
+    _apply(result, ledger, pending_path)
     print("applied")
     return 0
-
-
-def _matched_amount(entry: Directive) -> Decimal | None:
-    """Return a transaction's first amount, for the preview.
-
-    Args:
-        entry: The transaction.
-
-    Returns:
-        The first posting's amount, or ``None``.
-    """
-    postings = getattr(entry, "postings", ())
-    for posting in postings:
-        if posting.units is not None:
-            return posting.units.number
-    return None
 
 
 def _apply(
     result: reconcile.Plan,
     ledger: Path,
-    schedules_path: Path,
     pending_path: Path,
 ) -> None:
     """Apply a reconciliation plan by editing the ledger files.
@@ -705,68 +661,13 @@ def _apply(
     Args:
         result: The plan.
         ledger: The ledger path.
-        schedules_path: The schedules file.
         pending_path: The pending file.
     """
-    edits: dict[Path, list[tuple[int, Directive | None]]] = defaultdict(list)
-    schedules_target = writer.resolve_target(schedules_path, ledger.parent)
-    for match in result.matches:
-        enriched = reconcile.enrich(match)
-        _add_edit(edits, ledger, match.transaction, enriched)
-    for match in result.pending:
-        enriched = reconcile.enrich_pending(match)
-        _add_edit(edits, ledger, match.transaction, enriched)
-    for advance in result.advances:
-        line = _lineno(advance.rule.entry)
-        if line is None:
-            continue
-        if advance.new_date is None:
-            edits[schedules_target].append((line, None))
-        else:
-            updated = actions.advance(advance.rule, advance.new_date)
-            edits[schedules_target].append((line, updated))
+    edits, _written, consumed = reconcile.plan_edits(result, ledger_dir=ledger.parent)
     for path, changes in edits.items():
         writer.rewrite(path, changes)
-    consumed = [match.pending for match in result.pending]
     if consumed:
         remove_pending_transactions(pending_path, consumed)
-
-
-def _add_edit(
-    edits: dict[Path, list[tuple[int, Directive | None]]],
-    ledger: Path,
-    original: Directive,
-    updated: Directive,
-) -> None:
-    """Queue an in-place edit of a transaction's own source file.
-
-    Args:
-        edits: The per-file edit lists.
-        ledger: The ledger path.
-        original: The transaction being replaced.
-        updated: Its replacement.
-    """
-    meta = getattr(original, "meta", None) or {}
-    filename = meta.get("filename")
-    line = meta.get("lineno")
-    if filename is None or line is None:
-        return
-    target = writer.resolve_target(Path(str(filename)), ledger.parent)
-    edits[target].append((int(line), updated))
-
-
-def _lineno(entry: Directive | None) -> int | None:
-    """Return a directive's line number.
-
-    Args:
-        entry: The directive, if any.
-
-    Returns:
-        The one-based line number, or ``None``.
-    """
-    meta = getattr(entry, "meta", None) or {}
-    line = meta.get("lineno")
-    return int(line) if line is not None else None
 
 
 # --- Mutating commands ---------------------------------------------------------
@@ -811,7 +712,7 @@ def _skip_or_move(
     ledger = Path(args.ledger)
     entries, options = _load(ledger)
     schedules_path = _schedules_path(args, ledger)
-    schedules = _load_schedules(schedules_path)
+    schedules = plugin.load_schedules(schedules_path)
     result = compute(entries, options, schedules=schedules)
     rule = result.rule(schedule_id)
     if rule is None:
@@ -822,7 +723,7 @@ def _skip_or_move(
         print(f"{schedule_id}: {rule.start} -> {target}")
         return 0
     target = writer.resolve_target(Path(args.write), ledger.parent)
-    line = _lineno(rule.entry)
+    line = writer.entry_lineno(rule.entry)
     if line is None:
         print("the schedule has no source location to edit", file=sys.stderr)
         return 1
@@ -844,13 +745,13 @@ def cmd_skip(args: argparse.Namespace) -> int:
     """
     ledger = Path(args.ledger)
     entries, options = _load(ledger)
-    schedules = _load_schedules(_schedules_path(args, ledger))
+    schedules = plugin.load_schedules(_schedules_path(args, ledger))
     result = compute(entries, options, schedules=schedules)
     rule = result.rule(args.schedule)
     if rule is None:
         print(f"unknown schedule: {args.schedule}", file=sys.stderr)
         return 1
-    new_date = recurrence.next_after(rule.rrule, rule.start, rule.start, end=rule.end)
+    new_date = actions.next_frontier(rule)
     return _skip_or_move(args.schedule, new_date, args)
 
 
@@ -911,7 +812,7 @@ def cmd_edit(args: argparse.Namespace) -> int:
     ledger = Path(args.ledger)
     entries, options = _load(ledger)
     schedules_path = _schedules_path(args, ledger)
-    schedules = _load_schedules(schedules_path)
+    schedules = plugin.load_schedules(schedules_path)
     result = compute(entries, options, schedules=schedules)
     rule = result.rule(args.schedule)
     if rule is None:
@@ -930,7 +831,7 @@ def cmd_edit(args: argparse.Namespace) -> int:
         print(actions.render(updated))
         return 0
     target = writer.resolve_target(Path(args.write), ledger.parent)
-    line = _lineno(rule.entry)
+    line = writer.entry_lineno(rule.entry)
     if line is None:
         print("the schedule has no source location to edit", file=sys.stderr)
         return 1
@@ -1183,7 +1084,7 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915 - one wiring blo
     engine.add_argument(
         "--write",
         nargs="?",
-        const=_DEFAULT_SCHEDULES_FILE,
+        const=DEFAULT_SCHEDULES_FILE,
         help="Apply the plan, writing to this schedules file",
     )
 
@@ -1326,7 +1227,7 @@ def _complete_schedule(
         return []
     path = _schedules_path(parsed_args, Path(ledger))
     try:
-        entries = _load_schedules(path)
+        entries = plugin.load_schedules(path)
         ids = {rule.id for rule in compute(entries, {}).rules}
     except Exception:  # noqa: BLE001 - completion must never raise
         return []
@@ -1400,7 +1301,7 @@ def _add_write(
         parser.add_argument(
             "--write",
             nargs="?",
-            const=_DEFAULT_SCHEDULES_FILE,
+            const=DEFAULT_SCHEDULES_FILE,
             help="Write to this file",
         ),
         _BEAN_FILES,

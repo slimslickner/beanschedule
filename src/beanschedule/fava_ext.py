@@ -27,7 +27,6 @@ schedule's own Beancount source in place.
 
 from __future__ import annotations
 
-from collections import defaultdict
 from datetime import date
 from decimal import Decimal
 from pathlib import Path
@@ -39,8 +38,15 @@ from fava.ext import ExtensionConfigError, FavaExtensionBase, extension_endpoint
 from flask import jsonify, make_response, redirect, request
 
 from beanschedule import actions, reconcile, recurrence, writer
-from beanschedule.config import parse_config
-from beanschedule.core import ScheduleResult, compute
+from beanschedule.config import (
+    DEFAULT_PENDING_FILE,
+    DEFAULT_SCHEDULES_FILE,
+    parse_config,
+)
+from beanschedule.config import (
+    string as _string,
+)
+from beanschedule.core import ScheduleResult, compute, first_amount
 from beanschedule.pending import load_pending_transactions
 from beanschedule.plugin import load_schedules
 from beanschedule.report import (
@@ -53,9 +59,9 @@ from beanschedule.report import (
 )
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping
+    from collections.abc import Mapping, Sequence
 
-    from beancount.core.data import Directive, Transaction
+    from beancount.core.data import Directive
     from fava.beans.abc import Directive as FavaDirective
     from fava.core import FavaLedger
     from flask import Response
@@ -65,8 +71,6 @@ if TYPE_CHECKING:
 __all__ = ["Schedules"]
 
 _DEFAULT_MONTHS = 3
-_DEFAULT_SCHEDULES_FILE = "schedules.bean"
-_DEFAULT_PENDING_FILE = "pending.bean"
 
 
 class Schedules(FavaExtensionBase):
@@ -104,10 +108,10 @@ class Schedules(FavaExtensionBase):
         try:
             plugin = _plugin_config(self.ledger.options)
             self.default_schedules = _string(
-                plugin.get("schedules_file"), _DEFAULT_SCHEDULES_FILE
+                plugin.get("schedules_file"), DEFAULT_SCHEDULES_FILE
             )
             self.default_pending = _string(
-                plugin.get("pending_file"), _DEFAULT_PENDING_FILE
+                plugin.get("pending_file"), DEFAULT_PENDING_FILE
             )
             self.write_target = self._resolve_write(_write_setting(self.config))
             self.default_months = _months_setting(self.config)
@@ -462,7 +466,7 @@ class Schedules(FavaExtensionBase):
         if rule is None or rule.entry is None:
             self._write(self.write_target, entry)
             return [entry]
-        lineno = _lineno(rule.entry)
+        lineno = writer.entry_lineno(rule.entry)
         filename = (rule.entry.meta or {}).get("filename")
         if lineno is None or filename is None:
             self._write(self.write_target, entry)
@@ -519,7 +523,7 @@ class Schedules(FavaExtensionBase):
         if rule is None or rule.entry is None:
             self._write(self.write_target, entry)
             return [entry]
-        lineno = _lineno(rule.entry)
+        lineno = writer.entry_lineno(rule.entry)
         filename = (rule.entry.meta or {}).get("filename")
         if lineno is None or filename is None:
             self._write(self.write_target, entry)
@@ -538,75 +542,26 @@ class Schedules(FavaExtensionBase):
         """
         plan = self._plan()
         base = Path(self.ledger.beancount_file_path).parent
-        edits: dict[Path, list[tuple[int, Directive | None]]] = defaultdict(list)
-        written: list[Directive] = []
-        for match in plan.matches:
-            enriched = reconcile.enrich(match)
-            self._queue(edits, match.transaction, enriched, base)
-            written.append(enriched)
-        for match in plan.pending:
-            enriched = reconcile.enrich_pending(match)
-            self._queue(edits, match.transaction, enriched, base)
-            written.append(enriched)
-        for advance in plan.advances:
-            entry = advance.rule.entry
-            lineno = _lineno(entry)
-            if entry is None or lineno is None:
-                continue
-            filename = (entry.meta or {}).get("filename")
-            if filename is None:
-                continue
-            target = writer.resolve_target(Path(str(filename)), base)
-            if advance.new_date is None:
-                edits[target].append((lineno, None))
-            else:
-                updated = actions.advance(advance.rule, advance.new_date)
-                edits[target].append((lineno, updated))
-        self._queue_pending_removals(edits, plan)
+        edits, written, consumed = reconcile.plan_edits(plan, ledger_dir=base)
+        self._queue_pending_removals(edits, consumed)
         for path, changes in edits.items():
             _rewrite_source(self.ledger, path, changes)
         self.after_load_file()
         return written
 
-    def _queue(
-        self,
-        edits: dict[Path, list[tuple[int, Directive | None]]],
-        original: Directive,
-        updated: Directive,
-        base: Path,
-    ) -> None:
-        """Queue an in-place edit of a transaction's own source file.
-
-        Args:
-            edits: The per-file edit lists.
-            original: The transaction being replaced.
-            updated: Its replacement.
-            base: The ledger directory.
-        """
-        meta = getattr(original, "meta", None) or {}
-        filename = meta.get("filename")
-        lineno = meta.get("lineno")
-        if filename is None or lineno is None:
-            return
-        target = writer.resolve_target(Path(str(filename)), base)
-        edits[target].append((int(lineno), updated))
-
     def _queue_pending_removals(
         self,
         edits: dict[Path, list[tuple[int, Directive | None]]],
-        plan: reconcile.Plan,
+        consumed: Sequence[PendingTransaction],
     ) -> None:
         """Queue the removal of the consumed pending placeholders.
 
         Args:
             edits: The per-file edit lists.
-            plan: The applied plan.
+            consumed: The pending placeholders the plan consumed.
         """
-        consumed = {
-            (match.pending.date, match.pending.payee, match.pending.amount)
-            for match in plan.pending
-        }
-        if not consumed:
+        keys = {(item.date, item.payee, item.amount) for item in consumed}
+        if not keys:
             return
         pending_name = self._pending_file().name
         for entry in self._entries():
@@ -619,8 +574,8 @@ class Schedules(FavaExtensionBase):
                 continue
             if Path(str(filename)).name != pending_name:
                 continue
-            key = (entry.date, entry.payee, _first_amount(entry))
-            if key in consumed:
+            key = (entry.date, entry.payee, first_amount(entry))
+            if key in keys:
                 edits[Path(str(filename))].append((int(lineno), None))
 
     def _edit_schedule(
@@ -643,7 +598,7 @@ class Schedules(FavaExtensionBase):
         if rule is None or rule.entry is None:
             message = f"unknown schedule: {schedule_id}"
             raise ValueError(message)
-        lineno = _lineno(rule.entry)
+        lineno = writer.entry_lineno(rule.entry)
         filename = (rule.entry.meta or {}).get("filename")
         if lineno is None or filename is None:
             message = "the schedule has no source location to edit"
@@ -662,9 +617,7 @@ class Schedules(FavaExtensionBase):
                 self.view().currency or "USD",
             )
         elif action == "skip":
-            new_date = recurrence.next_after(
-                rule.rrule, rule.start, rule.start, end=rule.end
-            )
+            new_date = actions.next_frontier(rule)
             if new_date is None:
                 _rewrite_source(self.ledger, target, [(lineno, None)])
                 self.after_load_file()
@@ -719,20 +672,6 @@ class Schedules(FavaExtensionBase):
         return cast("Response", redirect(request.referrer or report))
 
 
-def _lineno(entry: Directive | None) -> int | None:
-    """Return a directive's line number.
-
-    Args:
-        entry: The directive, if any.
-
-    Returns:
-        The one-based line number, or ``None``.
-    """
-    meta = getattr(entry, "meta", None) or {}
-    line = meta.get("lineno")
-    return int(line) if line is not None else None
-
-
 def _refers_to(candidate: Directive | None, entry: Directive | None) -> bool:
     """Report whether a diagnostic's directive is the given schedule.
 
@@ -756,21 +695,6 @@ def _refers_to(candidate: Directive | None, entry: Directive | None) -> bool:
         right.get("filename"),
         right.get("lineno"),
     )
-
-
-def _first_amount(entry: Transaction) -> Decimal | None:
-    """Return a transaction's first posting amount.
-
-    Args:
-        entry: The transaction.
-
-    Returns:
-        The amount, or ``None``.
-    """
-    for posting in entry.postings:
-        if posting.units is not None:
-            return posting.units.number
-    return None
 
 
 def _schedule_entry(
@@ -1000,19 +924,6 @@ def _plugin_config(options: Mapping[str, object]) -> dict[str, object]:
         ):
             return parse_config(entry[1]) or {}
     return {}
-
-
-def _string(value: object, default: str) -> str:
-    """Return a config value as a non-empty string.
-
-    Args:
-        value: The raw value.
-        default: The fallback.
-
-    Returns:
-        The string, or the default.
-    """
-    return value if isinstance(value, str) and value else default
 
 
 def _rewrite_source(

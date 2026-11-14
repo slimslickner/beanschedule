@@ -53,9 +53,11 @@ __all__ = [
     "ScheduleResult",
     "Source",
     "Split",
+    "amortization_projection",
     "amortized_accounts",
     "assign",
     "compute",
+    "first_amount",
     "format_amount",
     "is_balance_sheet",
     "is_schedule",
@@ -63,6 +65,7 @@ __all__ = [
     "ledger_balances",
     "matched_amount",
     "nearest_nominal",
+    "operating_currency",
     "parse_schedule",
     "resolve_nominal",
     "resolve_postings",
@@ -507,19 +510,19 @@ def matched_amount(entry: Transaction, account: str) -> Decimal | None:
     return None
 
 
-def _schedule_id(entry: Directive) -> str | None:
-    """Return the schedule a directive names, accepting the legacy key.
+def first_amount(entry: Transaction) -> Decimal | None:
+    """Return the amount of a transaction's first posting with units.
 
     Args:
-        entry: The directive.
+        entry: The transaction.
 
     Returns:
-        The schedule id from ``schedule`` metadata, falling back to
-        ``schedule_id``, or ``None``.
+        The first posting's number, or ``None``.
     """
-    meta = entry.meta or {}
-    value = meta.get(SCHEDULE_KEY, meta.get(LEGACY_SCHEDULE_KEY))
-    return value if isinstance(value, str) else None
+    for posting in entry.postings:
+        if posting.units is not None:
+            return posting.units.number
+    return None
 
 
 # --- Nominal-date helpers ------------------------------------------------------
@@ -1244,6 +1247,84 @@ def amortization_splits(
     return walk_balance(rule, balance, balance_date, nominals, escrow)
 
 
+#: The most payments an amortization projection will generate, so an open-ended
+#: rule cannot expand without bound.
+_MAX_AMORTIZATION_PAYMENTS = 600
+
+
+def _project_dates(rule: Rule, limit: int) -> list[date]:
+    """Generate a rule's nominal dates forward from its frontier.
+
+    Unlike the compute horizon, this expands far enough for a loan's full
+    remaining series; it stops after ``limit`` dates or the rule's ``end``. The
+    sequence is the rule's own nominal dates, so a frontier that is not itself on
+    the recurrence is skipped exactly as the compute would skip it.
+
+    Args:
+        rule: The schedule's rule.
+        limit: The maximum number of dates to generate.
+
+    Returns:
+        The nominal dates, ascending, starting at or after the rule's frontier.
+    """
+    years = limit // 12 + 2
+    bound = rule.start + timedelta(days=366 * years)
+    return rule.nominal_dates(until=bound)[:limit]
+
+
+def amortization_projection(
+    rule: Rule,
+    *,
+    base: int = 0,
+    limit: int = _MAX_AMORTIZATION_PAYMENTS,
+    entries: Sequence[Directive] = (),
+    balances: Mapping[str, tuple[Decimal, date]] | None = None,
+) -> list[tuple[date, Split]]:
+    """Project a rule's remaining amortization to payoff.
+
+    Args:
+        rule: The rule, which must carry an ``amortization`` configuration.
+        base: The number of payments already made before the series' frontier, so
+            a static split starts at the right position. Balance-from-ledger
+            ignores it.
+        limit: The maximum number of payments to project.
+        entries: The ledger entries, for balance-from-ledger when ``balances``
+            is not given.
+        balances: A precomputed liability-balance index, so several amortized
+            rules do not each rescan the ledger.
+
+    Returns:
+        The ``(date, split)`` pairs, ascending, possibly empty.
+    """
+    amort = rule.amortization
+    if amort is None:
+        return []
+    escrow = amort.escrow or Decimal(0)
+    dates = _project_dates(rule, limit)
+    if amort.method == "static":
+        if amort.term is None:
+            return []
+        lines: list[tuple[date, Split]] = []
+        for index, day in enumerate(dates):
+            split = static_split(rule, index + 1 + base, escrow)
+            if split is None:
+                break
+            lines.append((day, split))
+        return lines
+    principal = amort.principal_account
+    if principal is None:
+        return []
+    if balances is not None:
+        observed = balances.get(principal)
+    else:
+        observed = ledger_balance(entries, principal)
+    if observed is None:
+        return []
+    balance, balance_date = observed
+    splits = walk_balance(rule, balance, balance_date, dates, escrow)
+    return sorted(splits.items())
+
+
 # --- Parsing -------------------------------------------------------------------
 
 
@@ -1765,7 +1846,7 @@ def _tagged_by_schedule(
 # --- Entry point ---------------------------------------------------------------
 
 
-def _operating_currency(options: Mapping[str, object]) -> str:
+def operating_currency(options: Mapping[str, object]) -> str:
     """Read the single operating currency from the ledger options.
 
     Args:
@@ -1773,6 +1854,12 @@ def _operating_currency(options: Mapping[str, object]) -> str:
 
     Returns:
         The operating currency, or ``""`` when it is missing or ambiguous.
+
+    Examples:
+        >>> operating_currency({"operating_currency": "USD"})
+        'USD'
+        >>> operating_currency({})
+        ''
     """
     value = options.get("operating_currency")
     if isinstance(value, str):
@@ -1882,7 +1969,7 @@ def compute(
         schedules = [entry for entry in entries if is_schedule(entry)]
     else:
         schedules = list(schedules)
-    currency = _operating_currency(options)
+    currency = operating_currency(options)
 
     rules: dict[str, Rule] = {}
     order: list[Rule] = []
