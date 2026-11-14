@@ -1,0 +1,24 @@
+option "operating_currency" "USD"
+
+2020-01-01 open Assets:Bank
+2020-01-01 open Expenses:Tax
+2020-01-01 open Equity:Opening-Balances
+
+2025-12-31 * "Opening"
+  Assets:Bank                 5000.00 USD
+  Equity:Opening-Balances    -5000.00 USD
+
+; The schedule transaction. Its date is the next occurrence (February); every
+; earlier occurrence is a resolved historical transaction.
+2026-02-15 * "Acme" "Paycheck"
+  id: "paycheck"
+  rrule: "FREQ=MONTHLY;BYMONTHDAY=15"
+  match-payee: "Acme"
+  Assets:Bank                -3000.00 USD
+  Expenses:Tax                3000.00 USD
+
+; January's occurrence, resolved by its schedule metadata.
+2026-01-16 * "Acme" "January pay"
+  schedule: "paycheck"
+  Assets:Bank                -3000.00 USD
+  Expenses:Tax                3000.00 USD

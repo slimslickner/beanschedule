@@ -1,0 +1,11 @@
+; Pending transactions are staged one-time payments. Every transaction in this
+; file is pending; the plugin tags it `#pending` and flags it `!` when the
+; ledger loads, so it is obvious in Fava. `beanschedule reconcile` matches one
+; by account, amount and date (within four days), applies its splits, and
+; removes it from this file.
+
+2026-02-20 * "Amazon" "Wireless headphones ordered"
+  Assets:Bank:Checking        -89.99 USD
+  Expenses:Electronics:Audio   85.00 USD
+    narration: "Bose QuietComfort 45"
+  Expenses:Shopping:Shipping    4.99 USD
