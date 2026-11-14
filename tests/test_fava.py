@@ -80,6 +80,20 @@ def test_default_tab_is_upcoming() -> None:
     assert "Detail" in html
 
 
+def test_report_loads_its_js_as_a_fava_module() -> None:
+    # Fava runs the extension's JS module on navigation; an inline <script>
+    # would not execute for a client-side navigation, so the report has none.
+    assert Schedules.has_js_module is True
+    module = Path(fava_ext.__file__).parent / "Schedules.js"
+    assert module.is_file()
+
+
+def test_template_has_no_inline_script() -> None:
+    html = _render(_extension("{'write': True}"), {"view": "schedule", "new": "1"})
+    assert "<script>" not in html
+    assert "</script>" not in html
+
+
 def test_overview_renders_schedules() -> None:
     html = _render(_extension(), {"view": "overview"})
     assert "loan-mortgage" in html

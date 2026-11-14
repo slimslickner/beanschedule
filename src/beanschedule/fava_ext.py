@@ -73,6 +73,11 @@ class Schedules(FavaExtensionBase):
 
     report_title = "Schedules"
 
+    #: Load the report's interactivity from Schedules.js, which Fava runs on
+    #: every navigation to the report (an inline ``<script>`` in the template
+    #: would not execute for a client-side navigation).
+    has_js_module = True
+
     def __init__(self, ledger: FavaLedger, config: str | None = None) -> None:
         """Initialise the extension.
 

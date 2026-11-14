@@ -13,7 +13,7 @@ plugin and the Fava report.
 ### Added
 
 - A tabbed Fava report that opens on **Upcoming** (one ledger of all outstanding occurrences, each linking to the schedule), with **All Schedules** (the list plus a reconcile action) and **Detail** (a per-schedule drill-down that projects an amortized loan's remaining payments and, with `write` configured, edits the schedule in place).
-- Add and update schedules entirely through the Fava UI. **New schedule** buttons on Upcoming and All Schedules open the Detail create form, where a normal/amortization choice keeps amortization fields out of the way, a recurrence builder (frequency, interval, weekday and month-day pickers, optional end date) composes the RRULE, and posting legs autocomplete from the ledger's open accounts. Editing prefills the same form from the rule, with the raw source kept as an advanced fallback; Enter never submits a form.
+- Add and update schedules entirely through the Fava UI. **New schedule** buttons on Upcoming and All Schedules open the Detail create form, where a normal/amortization choice keeps amortization fields out of the way, a recurrence builder (frequency, interval, weekday and month-day pickers, optional end date) composes the RRULE, and posting legs autocomplete from the ledger's open accounts. Editing prefills the same form from the rule, with the raw source kept as an advanced fallback; Enter never submits a form. The interactivity is a Fava extension JS module (`Schedules.js`), so it works on in-app navigation, not just a full page load.
 - `beanschedule upcoming` (one ledger of outstanding occurrences) and
   `beanschedule amortize` (each loan's amortization to payoff), with `--json` on
   the read-only reporting commands.
