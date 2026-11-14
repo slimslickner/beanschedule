@@ -1,0 +1,22 @@
+option "operating_currency" "USD"
+
+2020-01-01 open Assets:Bank:Checking
+2020-01-01 open Liabilities:Loans:Mortgage
+2020-01-01 open Expenses:House:Interest
+2020-01-01 open Expenses:House:Escrow
+2020-01-01 open Expenses:Taxes:Federal
+2020-01-01 open Expenses:Savings
+2020-01-01 open Equity:Opening-Balances
+
+2023-12-31 * "Loan drawdown"
+  Liabilities:Loans:Mortgage  -400000.00 USD
+  Equity:Opening-Balances      400000.00 USD
+
+; A reconciled paycheck: its `schedule` metadata links it to the paycheck rule,
+; so the schedule's history (posted occurrences) is non-empty.
+2026-01-15 * "Acme" "Paycheck" #payroll
+  schedule: "paycheck"
+  Assets:Bank:Checking       -3000.00 USD
+  Expenses:Taxes:Federal       600.00 USD
+  Expenses:Savings            2400.00 USD
+

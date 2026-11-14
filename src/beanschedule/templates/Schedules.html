@@ -9,6 +9,7 @@
 {% set current = extension.schedule(detail_id) if schedule_mode and not creating else none %}
 {% set fields = extension.rrule_fields(detail_id) if schedule_mode and not creating else none %}
 {% set amortization = extension.amortization(detail_id) if schedule_mode and not creating else none %}
+{% set history_mode = schedule_mode and request.args.get('history') %}
 {% macro status_badge(line) -%}
   {%- if line.due -%}<span class="schedule-badge schedule-due">due</span>
   {%- elif line.status == 'overdue' -%}<span class="schedule-badge schedule-overdue-badge">overdue</span>
@@ -17,7 +18,7 @@
   {%- else -%}<span class="schedule-badge schedule-upcoming">upcoming</span>{%- endif -%}
 {%- endmacro %}
 {% macro schedule_type_field(amortized=false) %}
-  <label>Schedule type
+  <label class="schedule-field"><span>Schedule type</span>
     <select name="schedule_type" class="schedule-type">
       <option value="normal"{{ '' if amortized else ' selected' }}>Normal schedule</option>
       <option value="amortization"{{ ' selected' if amortized else '' }}>Amortization schedule</option>
@@ -92,19 +93,22 @@
   {% set rate = '%.6f' % amort.rate if amort and amort.rate is not none else '' %}
   {% set term = amort.term if amort and amort.term is not none else '' %}
   {% set escrow = '%.2f' % amort.escrow if amort and amort.escrow is not none else '' %}
-  <fieldset class="schedule-amort"{% if not amortized %} style="display: none"{% endif %}>
+  <fieldset class="schedule-amort schedule-group"{% if not amortized %} style="display: none"{% endif %}>
     <legend>Amortization</legend>
-    <label>Method
-      <select name="method"{% if not amortized %} disabled{% endif %}>
-        <option value="">—</option>
-        {% for value in ['static', 'balance-from-ledger'] %}
-          <option value="{{ value }}"{{ ' selected' if value == method else '' }}>{{ value }}</option>
-        {% endfor %}
-      </select>
-    </label>
-    <label>Rate <input name="rate" size="8" value="{{ rate }}"{% if not amortized %} disabled{% endif %}></label>
-    <label>Term (months) <input name="term" size="5" value="{{ term }}"{% if not amortized %} disabled{% endif %}></label>
-    <label>Escrow <input name="escrow" size="8" value="{{ escrow }}"{% if not amortized %} disabled{% endif %}></label>
+    <p class="schedule-help">For a loan: the engine recomputes each payment's principal, interest and escrow from these inputs and the postings marked with a leg.</p>
+    <div class="schedule-fields">
+      <label class="schedule-field"><span>Method</span>
+        <select name="method"{% if not amortized %} disabled{% endif %}>
+          <option value="">—</option>
+          {% for value in ['static', 'balance-from-ledger'] %}
+            <option value="{{ value }}"{{ ' selected' if value == method else '' }}>{{ value }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label class="schedule-field"><span>Rate</span><input name="rate" size="8" value="{{ rate }}"{% if not amortized %} disabled{% endif %}></label>
+      <label class="schedule-field"><span>Term (months)</span><input name="term" size="5" value="{{ term }}"{% if not amortized %} disabled{% endif %}></label>
+      <label class="schedule-field"><span>Escrow</span><input name="escrow" size="8" value="{{ escrow }}"{% if not amortized %} disabled{% endif %}></label>
+    </div>
   </fieldset>
 {% endmacro %}
 <div class="schedule-report">
@@ -262,29 +266,71 @@
     .schedule-report .schedule-edit {
       display: flex;
       flex-direction: column;
-      gap: 0.6rem;
-      align-items: flex-start;
+      gap: 0.75rem;
+      align-items: stretch;
       margin-top: 1rem;
-    }
-    .schedule-report .schedule-edit label {
-      display: flex;
-      gap: 0.3rem;
-      align-items: center;
+      max-width: 56rem;
     }
     .schedule-report .schedule-edit input,
     .schedule-report .schedule-edit select {
       font: inherit;
     }
+    .schedule-report .schedule-group {
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+      border: 1px solid var(--schedule-rule);
+      border-radius: 4px;
+      padding: 0.6rem 0.75rem;
+      margin: 0;
+      min-width: 0;
+    }
+    .schedule-report .schedule-group > legend {
+      font-weight: 600;
+      padding: 0 0.3rem;
+    }
+    .schedule-report .schedule-fields {
+      display: grid;
+      grid-template-columns: max-content minmax(0, 1fr);
+      gap: 0.4rem 0.75rem;
+      align-items: center;
+    }
+    .schedule-report .schedule-field {
+      display: contents;
+    }
+    .schedule-report .schedule-field > span {
+      white-space: nowrap;
+    }
+    .schedule-report .schedule-field > input,
+    .schedule-report .schedule-field > select {
+      justify-self: start;
+    }
+    .schedule-report .schedule-help {
+      margin: 0;
+      color: rgba(128, 128, 128, 1);
+      font-size: 0.9em;
+    }
+    .schedule-report .schedule-divider {
+      border: none;
+      border-top: 1px solid var(--schedule-border);
+      margin: 1rem 0;
+    }
+    .schedule-report .schedule-subnav {
+      display: flex;
+      gap: 0.5rem;
+      margin: 0.5rem 0 0.75rem;
+    }
     .schedule-report .schedule-rrule,
-    .schedule-report .schedule-postings,
-    .schedule-report .schedule-amort {
+    .schedule-report .schedule-postings {
       display: flex;
       flex-wrap: wrap;
       gap: 0.5rem 1rem;
       align-items: center;
-      border: 1px solid var(--schedule-rule);
-      border-radius: 4px;
-      padding: 0.5rem;
+    }
+    .schedule-report .schedule-rrule label {
+      display: flex;
+      gap: 0.3rem;
+      align-items: center;
     }
     .schedule-report .schedule-byday,
     .schedule-report .schedule-bymonthday,
@@ -302,6 +348,7 @@
     .schedule-report .schedule-posting-row {
       display: flex;
       gap: 0.3rem;
+      width: 100%;
     }
     .schedule-report .schedule-advanced summary {
       cursor: pointer;
@@ -425,6 +472,7 @@
             <th class="num">Overdue</th>
             <th class="num">Due</th>
             <th class="num">Amount</th>
+            <th class="num">History</th>
           </tr>
         </thead>
         <tbody>
@@ -438,6 +486,7 @@
               <td class="num">{% if schedule.overdue %}<span class="schedule-badge schedule-overdue-badge">{{ schedule.overdue | length }}</span>{% endif %}</td>
               <td class="num">{% if schedule.due %}<span class="schedule-badge schedule-due">{{ schedule.due | length }}</span>{% endif %}</td>
               <td class="num">{{ extension.money(schedule.rule.match_amount) }}</td>
+              <td class="num"><a href="?view=schedule&amp;id={{ schedule.id | urlencode }}&amp;history=1">{{ schedule.posted | length }}</a></td>
             </tr>
           {% endfor %}
         </tbody>
@@ -445,6 +494,7 @@
     </div>
   {% elif schedule_mode %}
     <div class="schedule-detail">
+      <h3>Select a schedule</h3>
       <form method="get" class="schedule-form">
         <input type="hidden" name="view" value="schedule">
         <label>Schedule
@@ -457,24 +507,50 @@
         <button type="submit">Show</button>
         {% if extension.writable %}<a class="schedule-button" href="?view=schedule&amp;new=1">New schedule</a>{% endif %}
       </form>
+      <hr class="schedule-divider">
 
       {% if creating %}
         <h3>New schedule</h3>
         {% if extension.writable %}
           <form method="post" action="{{ base ~ 'commit' }}" class="schedule-edit schedule-structured">
             <input type="hidden" name="action" value="create">
-            {{ schedule_type_field() }}
-            <label>Id <input name="id"></label>
-            <label>Start <input type="date" name="start"></label>
-            <label>Match account <input name="account" list="schedule-accounts"></label>
-            {{ rrule_builder() }}
-            <label>End <input type="date" name="end"></label>
-            {{ posting_rows(blanks=2) }}
-            <label>Payee <input name="payee"></label>
-            <label>Match payee <input name="match_payee"></label>
-            <label>Narration <input name="narration"></label>
-            <label>Amount <input name="amount" size="10"></label>
-            <label>Tolerance <input name="tolerance" size="6"></label>
+            <fieldset class="schedule-group">
+              <legend>Identity</legend>
+              <div class="schedule-fields">
+                {{ schedule_type_field() }}
+                <label class="schedule-field"><span>Id</span><input name="id" placeholder="A unique id"></label>
+                <label class="schedule-field"><span>Start</span><input type="date" name="start"></label>
+                <label class="schedule-field"><span>End</span><input type="date" name="end"></label>
+              </div>
+              <p class="schedule-help">The start date anchors the series and is its first occurrence; the id names the schedule in the ledger.</p>
+            </fieldset>
+            <fieldset class="schedule-group">
+              <legend>Matching</legend>
+              <div class="schedule-fields">
+                <label class="schedule-field"><span>Match account</span><input name="account" list="schedule-accounts"></label>
+                <label class="schedule-field"><span>Match payee</span><input name="match_payee"></label>
+                <label class="schedule-field"><span>Amount</span><input name="amount" size="10"></label>
+                <label class="schedule-field"><span>Tolerance</span><input name="tolerance" size="6"></label>
+              </div>
+              <p class="schedule-help">An imported transaction matches when it posts to the account — and the payee, when given — and its matched posting is the amount, within the tolerance.</p>
+            </fieldset>
+            <fieldset class="schedule-group">
+              <legend>Recurrence</legend>
+              {{ rrule_builder() }}
+            </fieldset>
+            <fieldset class="schedule-group">
+              <legend>Postings</legend>
+              {{ posting_rows(blanks=2) }}
+              <p class="schedule-help">The other side of each occurrence; leave one amount blank for Beancount to balance.</p>
+            </fieldset>
+            <fieldset class="schedule-group">
+              <legend>Description</legend>
+              <div class="schedule-fields">
+                <label class="schedule-field"><span>Payee</span><input name="payee"></label>
+                <label class="schedule-field"><span>Narration</span><input name="narration"></label>
+              </div>
+              <p class="schedule-help">Written onto each transaction the schedule creates when reconciled.</p>
+            </fieldset>
             {{ amortization_fields() }}
             <button type="submit">Create schedule</button>
           </form>
@@ -490,6 +566,44 @@
             {% for code, message in diagnostics %}<li class="{{ 'error' if code.startswith('E') else 'warning' }}"><code>{{ code }}</code> {{ message }}</li>{% endfor %}
           </ul>
         {% endif %}
+
+        <div class="schedule-subnav">
+          <a class="schedule-button{{ ' schedule-tab-active' if not history_mode else '' }}" href="?view=schedule&amp;id={{ current.id | urlencode }}">Details</a>
+          <a class="schedule-button{{ ' schedule-tab-active' if history_mode else '' }}" href="?view=schedule&amp;id={{ current.id | urlencode }}&amp;history=1">History</a>
+        </div>
+
+        {% if history_mode %}
+          <h3>History</h3>
+          {% set posted = current.posted %}
+          {% if not posted %}
+            <p class="schedule-empty">Nothing has posted for this schedule yet.</p>
+          {% else %}
+            <div class="schedule-scroll">
+              <table class="table">
+                <thead>
+                  <tr>
+                    <th>Nominal</th>
+                    <th>Posted</th>
+                    <th>Status</th>
+                    <th class="num">Amount</th>
+                    <th>Payee / narration</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {% for line in posted %}
+                    <tr>
+                      <td><a href="#context-{{ line.entry_hash }}">{{ line.nominal }}</a></td>
+                      <td>{{ line.effective }}</td>
+                      <td>{{ status_badge(line) }}</td>
+                      <td class="num">{{ extension.money(line.amount) }}</td>
+                      <td>{{ line.payee or line.narration or '' }}</td>
+                    </tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+            </div>
+          {% endif %}
+        {% else %}
 
         <table class="table schedule-detail-rule">
           <tbody>
@@ -600,18 +714,43 @@
           <form method="post" action="{{ base ~ 'commit' }}" class="schedule-edit schedule-structured">
             <input type="hidden" name="action" value="update">
             <input type="hidden" name="original_id" value="{{ current.id }}">
-            {{ schedule_type_field(current.rule.amortization is not none) }}
-            <label>Id <input name="id" value="{{ current.id }}"></label>
-            <label>Start <input type="date" name="start" value="{{ current.rule.start }}"></label>
-            <label>Match account <input name="account" list="schedule-accounts" value="{{ current.rule.match_account }}"></label>
-            {{ rrule_builder(fields) }}
-            <label>End <input type="date" name="end" value="{{ current.rule.end or '' }}"></label>
-            {{ posting_rows(current.rule.postings, amort=current.rule.amortization) }}
-            <label>Payee <input name="payee" value="{{ current.rule.payee or '' }}"></label>
-            <label>Match payee <input name="match_payee" value="{{ current.rule.match_payee or '' }}"></label>
-            <label>Narration <input name="narration" value="{{ current.rule.narration or '' }}"></label>
-            <label>Amount <input name="amount" size="10" value="{{ '%.2f' % current.rule.match_amount if current.rule.match_amount is not none else '' }}"></label>
-            <label>Tolerance <input name="tolerance" size="6" value="{{ '%.2f' % current.rule.amount_tolerance if current.rule.amount_tolerance is not none else '' }}"></label>
+            <fieldset class="schedule-group">
+              <legend>Identity</legend>
+              <div class="schedule-fields">
+                {{ schedule_type_field(current.rule.amortization is not none) }}
+                <label class="schedule-field"><span>Id</span><input name="id" value="{{ current.id }}"></label>
+                <label class="schedule-field"><span>Start</span><input type="date" name="start" value="{{ current.rule.start }}"></label>
+                <label class="schedule-field"><span>End</span><input type="date" name="end" value="{{ current.rule.end or '' }}"></label>
+              </div>
+              <p class="schedule-help">The start date anchors the series and is its first occurrence; the id names the schedule in the ledger.</p>
+            </fieldset>
+            <fieldset class="schedule-group">
+              <legend>Matching</legend>
+              <div class="schedule-fields">
+                <label class="schedule-field"><span>Match account</span><input name="account" list="schedule-accounts" value="{{ current.rule.match_account }}"></label>
+                <label class="schedule-field"><span>Match payee</span><input name="match_payee" value="{{ current.rule.match_payee or '' }}"></label>
+                <label class="schedule-field"><span>Amount</span><input name="amount" size="10" value="{{ '%.2f' % current.rule.match_amount if current.rule.match_amount is not none else '' }}"></label>
+                <label class="schedule-field"><span>Tolerance</span><input name="tolerance" size="6" value="{{ '%.2f' % current.rule.amount_tolerance if current.rule.amount_tolerance is not none else '' }}"></label>
+              </div>
+              <p class="schedule-help">An imported transaction matches when it posts to the account — and the payee, when given — and its matched posting is the amount, within the tolerance.</p>
+            </fieldset>
+            <fieldset class="schedule-group">
+              <legend>Recurrence</legend>
+              {{ rrule_builder(fields) }}
+            </fieldset>
+            <fieldset class="schedule-group">
+              <legend>Postings</legend>
+              {{ posting_rows(current.rule.postings, amort=current.rule.amortization) }}
+              <p class="schedule-help">The other side of each occurrence; leave one amount blank for Beancount to balance.</p>
+            </fieldset>
+            <fieldset class="schedule-group">
+              <legend>Description</legend>
+              <div class="schedule-fields">
+                <label class="schedule-field"><span>Payee</span><input name="payee" value="{{ current.rule.payee or '' }}"></label>
+                <label class="schedule-field"><span>Narration</span><input name="narration" value="{{ current.rule.narration or '' }}"></label>
+              </div>
+              <p class="schedule-help">Written onto each transaction the schedule creates when reconciled.</p>
+            </fieldset>
             {{ amortization_fields(current.rule.amortization) }}
             <button type="submit">Save schedule</button>
           </form>
@@ -627,6 +766,7 @@
           </details>
         {% else %}
           <p class="schedule-readonly">This report is read-only. Configure a <code>write</code> file to edit schedules.</p>
+        {% endif %}
         {% endif %}
       {% endif %}
     </div>

@@ -26,6 +26,18 @@ def test_view_statuses(load_view) -> None:
     assert schedule.rule_hash
 
 
+def test_posted_history(load_view) -> None:
+    view = load_view("basic.bean", today=date(2026, 2, 1))
+    schedule = view.schedule("paycheck")
+    assert schedule is not None
+    assert {line.nominal for line in schedule.posted} == {date(2026, 1, 16)}
+    assert all(line.status == STATUS_POSTED for line in schedule.posted)
+    # Every posted line is also resolved, but not every resolved line is posted.
+    assert {line.nominal for line in schedule.posted} <= {
+        line.nominal for line in schedule.resolved
+    }
+
+
 def test_view_overdue(load_view) -> None:
     view = load_view("stale.bean", today=date(2026, 6, 15))
     schedule = view.schedule("rent")

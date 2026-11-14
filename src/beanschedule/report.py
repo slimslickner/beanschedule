@@ -259,6 +259,15 @@ class ScheduleView:
         return tuple(line for line in self.lines if line.resolved)
 
     @property
+    def posted(self) -> tuple[OccurrenceLine, ...]:
+        """The posted occurrence lines, oldest first — the schedule's history.
+
+        A skipped or moved occurrence leaves no trace in the ledger (the action
+        advances the schedule's frontier), so history is what actually posted.
+        """
+        return tuple(line for line in self.lines if line.status == STATUS_POSTED)
+
+    @property
     def upcoming(self) -> tuple[OccurrenceLine, ...]:
         """The unresolved future occurrence lines, soonest first."""
         return tuple(line for line in self.lines if line.status == STATUS_UPCOMING)

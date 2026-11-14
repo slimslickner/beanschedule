@@ -25,8 +25,8 @@ _LEDGERS = Path(__file__).parent / "ledgers"
 _TEMPLATES = Path(fava_ext.__file__).parent / "templates"
 
 
-def _extension(config: str | None = None) -> Schedules:
-    path = _LEDGERS / "extension" / "main.bean"
+def _extension(config: str | None = None, name: str = "extension") -> Schedules:
+    path = _LEDGERS / name / "main.bean"
     entries, _errors, options = loader.load_file(str(path))
     ledger = cast(
         "FavaLedger",
@@ -245,6 +245,55 @@ def test_detail_create_renders_the_structured_form() -> None:
     # A normal schedule hides and disables the amortization fields.
     assert 'name="method" disabled' in html
     assert "schedule-amort" in html
+
+
+def test_edit_form_groups_and_aligns_fields() -> None:
+    html = _render(
+        _extension("{'write': True}"), {"view": "schedule", "id": "paycheck"}
+    )
+    for legend in ("Identity", "Matching", "Recurrence", "Postings", "Description"):
+        assert f"<legend>{legend}</legend>" in html
+    assert 'class="schedule-fields"' in html
+    assert 'class="schedule-field"' in html
+    assert 'class="schedule-help"' in html
+
+
+def test_detail_has_a_separator_above_the_body() -> None:
+    html = _render(
+        _extension("{'write': True}"), {"view": "schedule", "id": "paycheck"}
+    )
+    assert "Select a schedule" in html
+    assert '<hr class="schedule-divider">' in html
+    # The picker is above the divider, the detail body below it.
+    assert html.index('<hr class="schedule-divider">') < html.index(
+        "schedule-detail-rule"
+    )
+
+
+def test_all_schedules_links_to_history() -> None:
+    html = _render(_extension("{'write': True}"), {"view": "overview"})
+    assert "&amp;history=1" in html
+
+
+def test_history_shows_posted_occurrences() -> None:
+    html = _render(
+        _extension("{'write': True}", name="extension-history"),
+        {"view": "schedule", "id": "paycheck", "history": "1"},
+    )
+    assert "History" in html
+    assert 'class="schedule-subnav"' in html
+    assert "schedule-badge schedule-posted" in html
+    # The nominal date links to Fava's transaction context popup.
+    assert "#context-" in html
+    assert "Nothing has posted" not in html
+
+
+def test_history_empty_state() -> None:
+    html = _render(
+        _extension("{'write': True}"),
+        {"view": "schedule", "id": "loan-mortgage", "history": "1"},
+    )
+    assert "Nothing has posted" in html
 
 
 def test_amortized_form_preselects_legs() -> None:
