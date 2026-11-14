@@ -45,6 +45,7 @@ from beanschedule.pending import load_pending_transactions
 from beanschedule.plugin import load_schedules
 from beanschedule.report import (
     AmortizationView,
+    ScheduleRow,
     ScheduleView,
     ScheduleViewResult,
     UpcomingLine,
@@ -315,6 +316,18 @@ class Schedules(FavaExtensionBase):
             The :class:`~beanschedule.report.UpcomingLine` rows, date-ordered.
         """
         return self.view().ledger(pending_only=pending_only)
+
+    def rows(self, scope: str) -> tuple[ScheduleRow, ...]:
+        """Return the Schedules table rows for a scope.
+
+        Args:
+            scope: ``"all"`` for one row per schedule, otherwise one row per
+                outstanding occurrence.
+
+        Returns:
+            The :class:`~beanschedule.report.ScheduleRow` rows.
+        """
+        return self.view().rows(scope=scope)
 
     def schedule_source(self, schedule_id: str | None) -> str:
         """Render a schedule's directive, to seed the edit form.

@@ -265,6 +265,24 @@ def test_all_scope_lists_schedules_linking_to_detail() -> None:
     assert "&amp;history=1" not in html
 
 
+def test_schedule_links_are_not_double_escaped() -> None:
+    # A regression: building the href with "&amp;" in a Jinja string and then
+    # printing it produced "&amp;amp;", which dropped the id and sent every
+    # link to the first schedule.
+    for scope in ("upcoming", "all"):
+        html = _render(_extension(), {"view": "schedules", "scope": scope})
+        assert "&amp;amp;" not in html
+        assert 'href="?view=schedule&amp;id=paycheck"' in html
+        assert 'href="?view=schedule&amp;id=loan-mortgage"' in html
+
+
+def test_payee_narration_label_is_shared() -> None:
+    for scope in ("upcoming", "all"):
+        html = _render(_extension(), {"view": "schedules", "scope": scope})
+        assert "CrossCountry Mortgage (Mortgage Payment)" in html
+        assert "Acme (Paycheck)" in html
+
+
 def test_detail_create_renders_the_structured_form() -> None:
     html = _render(_extension("{'write': True}"), {"view": "schedule", "new": "1"})
     assert 'id="schedule-accounts"' in html

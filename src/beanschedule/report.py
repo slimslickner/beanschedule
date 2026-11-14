@@ -40,6 +40,7 @@ if TYPE_CHECKING:
     from beancount.core.data import Directive, Transaction
 
 __all__ = [
+    "STATUS_DUE",
     "STATUS_MOVED",
     "STATUS_OVERDUE",
     "STATUS_POSTED",
@@ -48,11 +49,13 @@ __all__ = [
     "AmortizationLine",
     "AmortizationView",
     "OccurrenceLine",
+    "ScheduleRow",
     "ScheduleView",
     "ScheduleViewResult",
     "UpcomingLine",
     "build_view",
     "format_money",
+    "format_payee",
     "operating_currency",
     "today_month",
 ]
@@ -67,6 +70,8 @@ STATUS_MOVED = "moved"
 STATUS_OVERDUE = "overdue"
 #: The status of a future nominal occurrence with no resolution.
 STATUS_UPCOMING = "upcoming"
+#: The display status of an unresolved occurrence inside its match window.
+STATUS_DUE = "due"
 
 #: How many months of future occurrences a view shows by default.
 DEFAULT_FORECAST_MONTHS = 3
@@ -114,6 +119,18 @@ class OccurrenceLine:
         """Whether the occurrence still needs attention (overdue or upcoming)."""
         return not self.resolved
 
+    @property
+    def display_status(self) -> str:
+        """The canonical status word a report shows for the occurrence.
+
+        A due occurrence reports :data:`STATUS_DUE` rather than its
+        :data:`STATUS_UPCOMING` classification, so the badge says "due".
+
+        Returns:
+            The status word.
+        """
+        return STATUS_DUE if self.due else self.status
+
 
 @dataclass(frozen=True, slots=True)
 class UpcomingLine:
@@ -128,6 +145,39 @@ class UpcomingLine:
     schedule_id: str
     rule: Rule
     line: OccurrenceLine
+
+
+@dataclass(frozen=True, slots=True)
+class ScheduleRow:
+    """One row of the Schedules table, shared by both scopes.
+
+    Both the Upcoming scope (one row per outstanding occurrence) and the All
+    scope (one row per schedule) render from this shape, so the two views agree
+    on the columns, the payee/narration label and the schedule link.
+
+    Attributes:
+        schedule_id: The schedule the row belongs to.
+        due: The row's date — the occurrence's nominal date, or the schedule's
+            next occurrence — or ``None`` when a schedule has no next date.
+        status: The canonical status word, or ``None`` for a blank status.
+        payee: The payee, if any.
+        narration: The narration, if any.
+        amount: The amount expected on the posting account, if any.
+        account: The schedule's matched (posting) account.
+    """
+
+    schedule_id: str
+    due: date | None
+    status: str | None
+    payee: str | None
+    narration: str | None
+    amount: Decimal | None
+    account: str
+
+    @property
+    def label(self) -> str:
+        """The payee with the narration in parentheses, or whichever exists."""
+        return format_payee(self.payee, self.narration)
 
 
 @dataclass(frozen=True, slots=True)
@@ -305,6 +355,24 @@ class ScheduleViewResult:
         """
         return next((view for view in self.schedules if view.id == schedule_id), None)
 
+    def rows(self, *, scope: str = "upcoming") -> tuple[ScheduleRow, ...]:
+        """Build the Schedules table rows for a scope.
+
+        Both scopes share this shape, so the template renders them the same way:
+        ``"all"`` yields one row per schedule, anything else one row per
+        outstanding occurrence (overdue, due and upcoming).
+
+        Args:
+            scope: ``"all"`` for one row per schedule; otherwise one row per
+                outstanding occurrence.
+
+        Returns:
+            The rows.
+        """
+        if scope == "all":
+            return tuple(_schedule_row(view) for view in self.schedules)
+        return tuple(_occurrence_row(row) for row in self.ledger(pending_only=True))
+
     def ledger(self, *, pending_only: bool = False) -> tuple[UpcomingLine, ...]:
         """Flatten every schedule's occurrences into one date-ordered ledger.
 
@@ -383,6 +451,82 @@ def format_money(value: Decimal | None, currency: str = "") -> str:
         return "-"
     text = f"{value:.2f}"
     return f"{text} {currency}" if currency else text
+
+
+def format_payee(payee: str | None, narration: str | None) -> str:
+    """Format a row's payee and narration into one label.
+
+    Args:
+        payee: The payee, if any.
+        narration: The narration, if any.
+
+    Returns:
+        ``payee (narration)`` when both exist, whichever exists alone, or ``""``.
+
+    Examples:
+        >>> format_payee("Acme", "Paycheck")
+        'Acme (Paycheck)'
+        >>> format_payee("Acme", None)
+        'Acme'
+        >>> format_payee(None, "Paycheck")
+        'Paycheck'
+        >>> format_payee(None, None)
+        ''
+    """
+    if payee and narration:
+        return f"{payee} ({narration})"
+    return payee or narration or ""
+
+
+def _occurrence_row(upcoming: UpcomingLine) -> ScheduleRow:
+    """Build a Schedules row from one outstanding occurrence.
+
+    Args:
+        upcoming: The upcoming ledger line.
+
+    Returns:
+        The :class:`ScheduleRow`.
+    """
+    line = upcoming.line
+    rule = upcoming.rule
+    return ScheduleRow(
+        schedule_id=upcoming.schedule_id,
+        due=line.nominal,
+        status=line.display_status,
+        payee=line.payee or rule.payee,
+        narration=line.narration or rule.narration,
+        amount=line.amount,
+        account=rule.match_account,
+    )
+
+
+def _schedule_row(view: ScheduleView) -> ScheduleRow:
+    """Build a Schedules row from one schedule.
+
+    Args:
+        view: The schedule view.
+
+    Returns:
+        The :class:`ScheduleRow`, with a status derived from the schedule.
+    """
+    rule = view.rule
+    if view.overdue:
+        status = STATUS_OVERDUE
+    elif view.due:
+        status = STATUS_DUE
+    elif view.next is not None:
+        status = STATUS_UPCOMING
+    else:
+        status = None
+    return ScheduleRow(
+        schedule_id=view.id,
+        due=view.next,
+        status=status,
+        payee=rule.payee,
+        narration=rule.narration,
+        amount=rule.match_amount,
+        account=rule.match_account,
+    )
 
 
 def _history_line(transaction: Transaction, rule: Rule) -> OccurrenceLine:

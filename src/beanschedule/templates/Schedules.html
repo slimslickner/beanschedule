@@ -11,12 +11,13 @@
 {% set fields = extension.rrule_fields(detail_id) if schedule_mode and not creating else none %}
 {% set amortization = extension.amortization(detail_id) if schedule_mode and not creating else none %}
 {% set history_mode = schedule_mode and request.args.get('history') %}
-{% macro status_badge(line) -%}
-  {%- if line.due -%}<span class="schedule-badge schedule-due">due</span>
-  {%- elif line.status == 'overdue' -%}<span class="schedule-badge schedule-overdue-badge">overdue</span>
-  {%- elif line.status == 'posted' -%}<span class="schedule-badge schedule-posted">posted</span>
-  {%- elif line.status in ('skipped', 'moved') -%}<span class="schedule-badge schedule-resolved">{{ line.status }}</span>
-  {%- else -%}<span class="schedule-badge schedule-upcoming">upcoming</span>{%- endif -%}
+{% macro status_badge(status) -%}
+  {%- if status == 'due' -%}<span class="schedule-badge schedule-due">due</span>
+  {%- elif status == 'overdue' -%}<span class="schedule-badge schedule-overdue-badge">overdue</span>
+  {%- elif status == 'posted' -%}<span class="schedule-badge schedule-posted">posted</span>
+  {%- elif status in ('skipped', 'moved') -%}<span class="schedule-badge schedule-resolved">{{ status }}</span>
+  {%- elif status == 'upcoming' -%}<span class="schedule-badge schedule-upcoming">upcoming</span>
+  {%- endif -%}
 {%- endmacro %}
 {% macro schedule_type_field(amortized=false) %}
   <label class="schedule-field"><span>Schedule type</span>
@@ -484,68 +485,37 @@
         {% endif %}
       </div>
 
-      {% if all_scope %}
-        {% if view.schedules %}
-          <div class="schedule-scroll">
-            <table class="table">
-              <thead>
-                <tr>
-                  <th>Next due</th>
-                  <th>Status</th>
-                  <th>Schedule</th>
-                  <th>Payee / narration</th>
-                  <th class="num">Amount</th>
-                  <th>Posting account</th>
-                </tr>
-              </thead>
-              <tbody>
-                {% for schedule in view.schedules %}
-                  <tr>
-                    <td>{{ schedule.next or '—' }}</td>
-                    <td>{% if schedule.overdue %}<span class="schedule-badge schedule-overdue-badge">overdue</span>{% elif schedule.due %}<span class="schedule-badge schedule-due">due</span>{% elif schedule.next %}<span class="schedule-badge schedule-upcoming">upcoming</span>{% endif %}</td>
-                    <td><a href="?view=schedule&amp;id={{ schedule.id | urlencode }}">{{ schedule.id }}</a></td>
-                    <td>{{ schedule.rule.payee or schedule.rule.narration or '' }}</td>
-                    <td class="num">{{ extension.money(schedule.rule.match_amount) }}</td>
-                    <td>{{ schedule.rule.match_account }}</td>
-                  </tr>
-                {% endfor %}
-              </tbody>
-            </table>
-          </div>
-        {% endif %}
+      {% set rows = extension.rows(scope) %}
+      {% if not rows %}
+        <p class="schedule-empty">{{ 'No schedules are declared.' if all_scope else 'Nothing outstanding — every occurrence is resolved.' }}</p>
       {% else %}
-        {% set rows = extension.upcoming() %}
-        {% if not rows %}
-          <p class="schedule-empty">Nothing outstanding — every occurrence is resolved.</p>
-        {% else %}
-          <div class="schedule-scroll">
-            <table class="table">
-              <thead>
+        <div class="schedule-scroll">
+          <table class="table">
+            <thead>
+              <tr>
+                <th>Next due</th>
+                <th>Status</th>
+                <th>Schedule</th>
+                <th>Payee / narration</th>
+                <th class="num">Amount</th>
+                <th>Posting account</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for row in rows %}
+                {% set href = '?view=schedule&id=' ~ (row.schedule_id | urlencode) %}
                 <tr>
-                  <th>Next due</th>
-                  <th>Status</th>
-                  <th>Schedule</th>
-                  <th>Payee / narration</th>
-                  <th class="num">Amount</th>
-                  <th>Posting account</th>
+                  <td><a class="schedule-rowlink" href="{{ href }}">{{ row.due or '—' }}</a></td>
+                  <td>{{ status_badge(row.status) }}</td>
+                  <td><a href="{{ href }}">{{ row.schedule_id }}</a></td>
+                  <td>{{ row.label }}</td>
+                  <td class="num">{{ extension.money(row.amount) }}</td>
+                  <td>{{ row.account }}</td>
                 </tr>
-              </thead>
-              <tbody>
-                {% for row in rows %}
-                  {% set href = '?view=schedule&amp;id=' ~ (row.schedule_id | urlencode) %}
-                  <tr>
-                    <td><a class="schedule-rowlink" href="{{ href }}">{{ row.line.nominal }}</a></td>
-                    <td>{{ status_badge(row.line) }}</td>
-                    <td><a href="{{ href }}">{{ row.schedule_id }}</a></td>
-                    <td>{{ row.line.payee or row.line.narration or row.rule.narration or '' }}</td>
-                    <td class="num">{{ extension.money(row.line.amount) }}</td>
-                    <td>{{ row.rule.match_account }}</td>
-                  </tr>
-                {% endfor %}
-              </tbody>
-            </table>
-          </div>
-        {% endif %}
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
       {% endif %}
     </div>
   {% elif schedule_mode %}
@@ -650,7 +620,7 @@
                     <tr>
                       <td><a href="#context-{{ line.entry_hash }}">{{ line.nominal }}</a></td>
                       <td>{{ line.effective }}</td>
-                      <td>{{ status_badge(line) }}</td>
+                      <td>{{ status_badge(line.display_status) }}</td>
                       <td class="num">{{ extension.money(line.amount) }}</td>
                       <td>{{ line.payee or line.narration or '' }}</td>
                     </tr>

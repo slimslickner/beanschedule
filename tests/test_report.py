@@ -6,10 +6,12 @@ from datetime import date
 from decimal import Decimal
 
 from beanschedule.report import (
+    STATUS_DUE,
     STATUS_OVERDUE,
     STATUS_POSTED,
     STATUS_UPCOMING,
     format_money,
+    format_payee,
     operating_currency,
 )
 
@@ -24,6 +26,29 @@ def test_view_statuses(load_view) -> None:
     assert statuses[date(2026, 1, 16)] == STATUS_POSTED
     assert statuses[date(2026, 2, 15)] == STATUS_UPCOMING
     assert schedule.rule_hash
+
+
+def test_rows_scopes(load_view) -> None:
+    view = load_view("basic.bean", today=date(2026, 2, 1))
+    all_rows = view.rows(scope="all")
+    upcoming_rows = view.rows(scope="upcoming")
+    assert [row.schedule_id for row in all_rows] == ["paycheck"]
+    assert all_rows[0].status == STATUS_UPCOMING
+    assert all_rows[0].account == "Assets:Bank"
+    assert all(row.schedule_id == "paycheck" for row in upcoming_rows)
+    assert all(
+        row.status in {STATUS_OVERDUE, STATUS_DUE, STATUS_UPCOMING}
+        for row in upcoming_rows
+    )
+    due_dates = [row.due for row in upcoming_rows]
+    assert due_dates == sorted(due_dates)
+
+
+def test_format_payee() -> None:
+    assert format_payee("Acme", "Paycheck") == "Acme (Paycheck)"
+    assert format_payee("Acme", None) == "Acme"
+    assert format_payee(None, "Paycheck") == "Paycheck"
+    assert format_payee(None, None) == ""
 
 
 def test_posted_history(load_view) -> None:
