@@ -298,6 +298,28 @@ def test_detail_create_renders_the_structured_form() -> None:
     assert "schedule-amort" in html
 
 
+def test_edit_form_normalizes_input_widths() -> None:
+    html = _render(
+        _extension("{'write': True}"), {"view": "schedule", "id": "paycheck"}
+    )
+    for name in (
+        "id",
+        "account",
+        "match_payee",
+        "payee",
+        "narration",
+        "posting_account",
+    ):
+        assert f'class="schedule-text" name="{name}"' in html
+    for name in ("amount", "tolerance", "posting_amount", "rate", "term", "escrow"):
+        assert f'class="schedule-number" name="{name}"' in html
+    for name in ("interval", "bymonthday"):
+        assert f'class="schedule-number" type="number" name="{name}"' in html
+    for name in ("start", "end", "new_date"):
+        assert f'class="schedule-date" type="date" name="{name}"' in html
+    assert 'size="' not in html
+
+
 def test_edit_form_groups_and_aligns_fields() -> None:
     html = _render(
         _extension("{'write': True}"), {"view": "schedule", "id": "paycheck"}

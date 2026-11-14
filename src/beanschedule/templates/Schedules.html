@@ -41,14 +41,14 @@
         {% endfor %}
       </select>
     </label>
-    <label>Every <input type="number" name="interval" min="1" value="{{ interval }}" size="3"></label>
+    <label>Every <input class="schedule-number" type="number" name="interval" min="1" value="{{ interval }}"></label>
     <span class="schedule-byday" data-when="WEEKLY">
       {% for day in ['MO', 'TU', 'WE', 'TH', 'FR', 'SA', 'SU'] %}
         <label class="schedule-checkbox"><input type="checkbox" name="byday" value="{{ day }}"{{ ' checked' if day in byday else '' }}> {{ day }}</label>
       {% endfor %}
     </span>
     <label class="schedule-bymonthday" data-when="MONTHLY">On day
-      <input type="number" name="bymonthday" min="1" max="31" value="{{ bymonthday }}" size="3">
+      <input class="schedule-number" type="number" name="bymonthday" min="1" max="31" value="{{ bymonthday }}">
     </label>
     <label class="schedule-bymonth" data-when="YEARLY">In month
       <select name="bymonth">
@@ -74,8 +74,8 @@
         {% elif amort.escrow_account and row.account == amort.escrow_account %}{% set leg.value = 'escrow' %}{% endif %}
       {% endif %}
       <div class="schedule-posting-row">
-        <input name="posting_account" list="schedule-accounts" placeholder="Account" value="{{ row.account if row else '' }}" aria-label="Posting account">
-        <input name="posting_amount" size="9" inputmode="decimal" placeholder="amount" value="{{ '%.2f' % row.amount if row and row.amount is not none else '' }}" aria-label="Posting amount">
+        <input class="schedule-text" name="posting_account" list="schedule-accounts" placeholder="Account" value="{{ row.account if row else '' }}" aria-label="Posting account">
+        <input class="schedule-number" name="posting_amount" inputmode="decimal" placeholder="amount" value="{{ '%.2f' % row.amount if row and row.amount is not none else '' }}" aria-label="Posting amount">
         <span class="schedule-leg-field"{% if not amortized %} style="display: none"{% endif %}>
           <select name="posting_leg" aria-label="Amortization leg"{% if not amortized %} disabled{% endif %}>
             <option value="">—</option>
@@ -107,9 +107,9 @@
           {% endfor %}
         </select>
       </label>
-      <label class="schedule-field"><span>Rate</span><input name="rate" size="8" value="{{ rate }}"{% if not amortized %} disabled{% endif %}></label>
-      <label class="schedule-field"><span>Term (months)</span><input name="term" size="5" value="{{ term }}"{% if not amortized %} disabled{% endif %}></label>
-      <label class="schedule-field"><span>Escrow</span><input name="escrow" size="8" value="{{ escrow }}"{% if not amortized %} disabled{% endif %}></label>
+      <label class="schedule-field"><span>Rate</span><input class="schedule-number" name="rate" value="{{ rate }}"{% if not amortized %} disabled{% endif %}></label>
+      <label class="schedule-field"><span>Term (months)</span><input class="schedule-number" name="term" value="{{ term }}"{% if not amortized %} disabled{% endif %}></label>
+      <label class="schedule-field"><span>Escrow</span><input class="schedule-number" name="escrow" value="{{ escrow }}"{% if not amortized %} disabled{% endif %}></label>
     </div>
   </fieldset>
 {% endmacro %}
@@ -359,6 +359,16 @@
     .schedule-report .schedule-field > select {
       justify-self: start;
     }
+    .schedule-report .schedule-text {
+      width: 22rem;
+      max-width: 100%;
+    }
+    .schedule-report .schedule-number {
+      width: 8rem;
+    }
+    .schedule-report .schedule-date {
+      width: 12rem;
+    }
     .schedule-report .schedule-help {
       margin: 0;
       color: rgba(128, 128, 128, 1);
@@ -544,19 +554,19 @@
               <legend>Identity</legend>
               <div class="schedule-fields">
                 {{ schedule_type_field() }}
-                <label class="schedule-field"><span>Id</span><input name="id" placeholder="A unique id"></label>
-                <label class="schedule-field"><span>Start</span><input type="date" name="start"></label>
-                <label class="schedule-field"><span>End</span><input type="date" name="end"></label>
+                <label class="schedule-field"><span>Id</span><input class="schedule-text" name="id" placeholder="A unique id"></label>
+                <label class="schedule-field"><span>Start</span><input class="schedule-date" type="date" name="start"></label>
+                <label class="schedule-field"><span>End</span><input class="schedule-date" type="date" name="end"></label>
               </div>
               <p class="schedule-help">The start date anchors the series and is its first occurrence; the id names the schedule in the ledger.</p>
             </fieldset>
             <fieldset class="schedule-group">
               <legend>Matching</legend>
               <div class="schedule-fields">
-                <label class="schedule-field"><span>Match account</span><input name="account" list="schedule-accounts"></label>
-                <label class="schedule-field"><span>Match payee</span><input name="match_payee"></label>
-                <label class="schedule-field"><span>Amount</span><input name="amount" size="10"></label>
-                <label class="schedule-field"><span>Tolerance</span><input name="tolerance" size="6"></label>
+                <label class="schedule-field"><span>Match account</span><input class="schedule-text" name="account" list="schedule-accounts"></label>
+                <label class="schedule-field"><span>Match payee</span><input class="schedule-text" name="match_payee"></label>
+                <label class="schedule-field"><span>Amount</span><input class="schedule-number" name="amount"></label>
+                <label class="schedule-field"><span>Tolerance</span><input class="schedule-number" name="tolerance"></label>
               </div>
               <p class="schedule-help">An imported transaction matches when it posts to the account — and the payee, when given — and its matched posting is the amount, within the tolerance.</p>
             </fieldset>
@@ -572,8 +582,8 @@
             <fieldset class="schedule-group">
               <legend>Description</legend>
               <div class="schedule-fields">
-                <label class="schedule-field"><span>Payee</span><input name="payee"></label>
-                <label class="schedule-field"><span>Narration</span><input name="narration"></label>
+                <label class="schedule-field"><span>Payee</span><input class="schedule-text" name="payee"></label>
+                <label class="schedule-field"><span>Narration</span><input class="schedule-text" name="narration"></label>
               </div>
               <p class="schedule-help">Written onto each transaction the schedule creates when reconciled.</p>
             </fieldset>
@@ -726,7 +736,7 @@
             <form method="post" action="{{ base ~ 'commit' }}">
               <input type="hidden" name="action" value="move">
               <input type="hidden" name="id" value="{{ current.id }}">
-              <label>Move next to <input type="date" name="new_date"></label>
+              <label>Move next to <input class="schedule-date" type="date" name="new_date"></label>
               <button type="submit">Move</button>
             </form>
             <form method="post" action="{{ base ~ 'commit' }}">
@@ -744,19 +754,19 @@
               <legend>Identity</legend>
               <div class="schedule-fields">
                 {{ schedule_type_field(current.rule.amortization is not none) }}
-                <label class="schedule-field"><span>Id</span><input name="id" value="{{ current.id }}"></label>
-                <label class="schedule-field"><span>Start</span><input type="date" name="start" value="{{ current.rule.start }}"></label>
-                <label class="schedule-field"><span>End</span><input type="date" name="end" value="{{ current.rule.end or '' }}"></label>
+                <label class="schedule-field"><span>Id</span><input class="schedule-text" name="id" value="{{ current.id }}"></label>
+                <label class="schedule-field"><span>Start</span><input class="schedule-date" type="date" name="start" value="{{ current.rule.start }}"></label>
+                <label class="schedule-field"><span>End</span><input class="schedule-date" type="date" name="end" value="{{ current.rule.end or '' }}"></label>
               </div>
               <p class="schedule-help">The start date anchors the series and is its first occurrence; the id names the schedule in the ledger.</p>
             </fieldset>
             <fieldset class="schedule-group">
               <legend>Matching</legend>
               <div class="schedule-fields">
-                <label class="schedule-field"><span>Match account</span><input name="account" list="schedule-accounts" value="{{ current.rule.match_account }}"></label>
-                <label class="schedule-field"><span>Match payee</span><input name="match_payee" value="{{ current.rule.match_payee or '' }}"></label>
-                <label class="schedule-field"><span>Amount</span><input name="amount" size="10" value="{{ '%.2f' % current.rule.match_amount if current.rule.match_amount is not none else '' }}"></label>
-                <label class="schedule-field"><span>Tolerance</span><input name="tolerance" size="6" value="{{ '%.2f' % current.rule.amount_tolerance if current.rule.amount_tolerance is not none else '' }}"></label>
+                <label class="schedule-field"><span>Match account</span><input class="schedule-text" name="account" list="schedule-accounts" value="{{ current.rule.match_account }}"></label>
+                <label class="schedule-field"><span>Match payee</span><input class="schedule-text" name="match_payee" value="{{ current.rule.match_payee or '' }}"></label>
+                <label class="schedule-field"><span>Amount</span><input class="schedule-number" name="amount" value="{{ '%.2f' % current.rule.match_amount if current.rule.match_amount is not none else '' }}"></label>
+                <label class="schedule-field"><span>Tolerance</span><input class="schedule-number" name="tolerance" value="{{ '%.2f' % current.rule.amount_tolerance if current.rule.amount_tolerance is not none else '' }}"></label>
               </div>
               <p class="schedule-help">An imported transaction matches when it posts to the account — and the payee, when given — and its matched posting is the amount, within the tolerance.</p>
             </fieldset>
@@ -772,8 +782,8 @@
             <fieldset class="schedule-group">
               <legend>Description</legend>
               <div class="schedule-fields">
-                <label class="schedule-field"><span>Payee</span><input name="payee" value="{{ current.rule.payee or '' }}"></label>
-                <label class="schedule-field"><span>Narration</span><input name="narration" value="{{ current.rule.narration or '' }}"></label>
+                <label class="schedule-field"><span>Payee</span><input class="schedule-text" name="payee" value="{{ current.rule.payee or '' }}"></label>
+                <label class="schedule-field"><span>Narration</span><input class="schedule-text" name="narration" value="{{ current.rule.narration or '' }}"></label>
               </div>
               <p class="schedule-help">Written onto each transaction the schedule creates when reconciled.</p>
             </fieldset>
