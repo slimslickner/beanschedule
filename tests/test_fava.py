@@ -70,14 +70,17 @@ def test_schedule_loads_despite_amount_less_legs() -> None:
     assert "paycheck" in ids
 
 
-def test_default_tab_is_upcoming() -> None:
+def test_default_tab_is_schedules() -> None:
     html = _render(_extension(), {})
     assert (
-        '<a class="schedule-tab schedule-tab-active" href="?view=upcoming">Upcoming</a>'
+        '<a class="schedule-tab schedule-tab-active" href="?view=schedules">Schedules</a>'
         in html
     )
-    assert "All Schedules" in html
-    assert "Detail" in html
+    assert '<a class="schedule-tab" href="?view=schedule">Detail</a>' in html
+    # The merged tab defaults to the Upcoming scope.
+    assert 'class="schedule-scope-option schedule-scope-active"' in html
+    assert ">Upcoming</a>" in html
+    assert ">All</a>" in html
 
 
 def test_report_loads_its_js_as_a_fava_module() -> None:
@@ -94,16 +97,15 @@ def test_template_has_no_inline_script() -> None:
     assert "</script>" not in html
 
 
-def test_overview_renders_schedules() -> None:
-    html = _render(_extension(), {"view": "overview"})
+def test_all_scope_renders_schedules() -> None:
+    html = _render(_extension(), {"view": "schedules", "scope": "all"})
     assert "loan-mortgage" in html
     assert "paycheck" in html
     assert "?view=schedule" in html
 
 
-def test_upcoming_tab_marks_statuses() -> None:
-    html = _render(_extension(), {"view": "upcoming"})
-    assert "Upcoming" in html
+def test_upcoming_scope_marks_statuses() -> None:
+    html = _render(_extension(), {"view": "schedules"})
     assert "loan-mortgage" in html
     assert "overdue" in html.lower() or "upcoming" in html.lower()
 
@@ -224,12 +226,43 @@ def _tmp_ledger(tmp_path: Path) -> SimpleNamespace:
     )
 
 
-def test_all_schedules_offers_a_new_schedule_button() -> None:
-    html = _render(_extension("{'write': True}"), {"view": "overview"})
-    assert "?view=schedule&amp;new=1" in html
-    assert "New schedule" in html
-    # The create form itself lives on the Detail tab.
-    assert 'name="freq"' not in html
+def test_schedules_scopes_offer_reconcile_and_new() -> None:
+    for scope in ("upcoming", "all"):
+        html = _render(
+            _extension("{'write': True}"), {"view": "schedules", "scope": scope}
+        )
+        assert "Reconcile" in html
+        assert "New schedule" in html
+        assert "?view=schedule&amp;new=1" in html
+        # The create form itself lives on the Detail tab.
+        assert 'name="freq"' not in html
+
+
+def test_schedules_table_columns() -> None:
+    headers = [
+        "<th>Next due</th>",
+        "<th>Status</th>",
+        "<th>Schedule</th>",
+        "<th>Payee / narration</th>",
+        '<th class="num">Amount</th>',
+        "<th>Posting account</th>",
+    ]
+    for scope in ("upcoming", "all"):
+        html = _render(_extension(), {"view": "schedules", "scope": scope})
+        for header in headers:
+            assert header in html, (scope, header)
+        order = [html.index(header) for header in headers]
+        assert order == sorted(order), scope
+        assert ">Recurrence</th>" not in html
+        assert ">History</th>" not in html
+
+
+def test_all_scope_lists_schedules_linking_to_detail() -> None:
+    html = _render(_extension(), {"view": "schedules", "scope": "all"})
+    assert 'href="?view=schedule&amp;id=paycheck"' in html
+    assert 'href="?view=schedule&amp;id=loan-mortgage"' in html
+    # A schedule's row links to Detail, not to a history column.
+    assert "&amp;history=1" not in html
 
 
 def test_detail_create_renders_the_structured_form() -> None:
@@ -270,11 +303,6 @@ def test_detail_has_a_separator_above_the_body() -> None:
     )
 
 
-def test_all_schedules_links_to_history() -> None:
-    html = _render(_extension("{'write': True}"), {"view": "overview"})
-    assert "&amp;history=1" in html
-
-
 def test_history_shows_posted_occurrences() -> None:
     html = _render(
         _extension("{'write': True}", name="extension-history"),
@@ -307,7 +335,7 @@ def test_amortized_form_preselects_legs() -> None:
 
 
 def test_upcoming_rows_link_to_the_drilldown() -> None:
-    html = _render(_extension(), {"view": "upcoming"})
+    html = _render(_extension(), {"view": "schedules", "scope": "upcoming"})
     assert 'class="schedule-rowlink"' in html
     assert "?view=schedule" in html
     assert "schedule-badge schedule-upcoming" in html

@@ -1,8 +1,9 @@
 {% set view = extension.view() %}
 {% set base = request.path if request.path.endswith('/') else request.path ~ '/' %}
-{% set mode = request.args.get('view') or 'upcoming' %}
-{% set upcoming_mode = mode == 'upcoming' %}
-{% set overview_mode = mode == 'overview' %}
+{% set mode = request.args.get('view') or 'schedules' %}
+{% set schedules_mode = mode == 'schedules' %}
+{% set scope = request.args.get('scope') or 'upcoming' %}
+{% set all_scope = schedules_mode and scope == 'all' %}
 {% set schedule_mode = mode == 'schedule' %}
 {% set creating = schedule_mode and request.args.get('new') %}
 {% set detail_id = request.args.get('id') if schedule_mode and not creating else none %}
@@ -111,7 +112,7 @@
     </div>
   </fieldset>
 {% endmacro %}
-<div class="schedule-report">
+<div class="schedule-report{{ ' schedule-fill' if schedules_mode else '' }}">
   <style>
     .schedule-report {
       --schedule-border: rgba(128, 128, 128, 0.5);
@@ -142,9 +143,61 @@
       display: inline-block;
       background: var(--table-header-background, rgba(128, 128, 128, 0.15));
     }
-    .schedule-report .schedule-tab-active {
+    .schedule-report .schedule-tab-active,
+    .schedule-report .schedule-scope-active {
       background: var(--table-header-background, rgba(128, 128, 128, 0.15));
       font-weight: 600;
+    }
+    .schedule-report.schedule-fill {
+      display: flex;
+      flex-direction: column;
+      height: 100%;
+      min-height: 0;
+    }
+    .schedule-report.schedule-fill > :not(.schedule-view) {
+      flex: 0 0 auto;
+    }
+    .schedule-report .schedule-view {
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+    }
+    .schedule-report.schedule-fill .schedule-view {
+      flex: 1 1 auto;
+    }
+    .schedule-report .schedule-toolbar {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 0.5rem 1rem;
+      margin-bottom: 0.5rem;
+      flex: 0 0 auto;
+    }
+    .schedule-report .schedule-toolbar-actions {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      margin-left: auto;
+    }
+    .schedule-report .schedule-scope {
+      display: inline-flex;
+      border: 1px solid var(--schedule-border);
+      border-radius: 0.25rem;
+      overflow: hidden;
+    }
+    .schedule-report .schedule-scope-option {
+      padding: 0.2rem 0.9rem;
+      text-decoration: none;
+      color: inherit;
+      white-space: nowrap;
+    }
+    .schedule-report .schedule-scope-option + .schedule-scope-option {
+      border-left: 1px solid var(--schedule-border);
+    }
+    .schedule-report.schedule-fill .schedule-scroll {
+      flex: 1 1 auto;
+      min-height: 0;
+      max-height: none;
     }
     .schedule-report table {
       border-collapse: collapse;
@@ -393,8 +446,7 @@
 
   <div class="schedule-nav">
     <span class="schedule-tabs">
-      <a class="schedule-tab{{ ' schedule-tab-active' if upcoming_mode else '' }}" href="?view=upcoming">Upcoming</a>
-      <a class="schedule-tab{{ ' schedule-tab-active' if overview_mode else '' }}" href="?view=overview">All Schedules</a>
+      <a class="schedule-tab{{ ' schedule-tab-active' if schedules_mode else '' }}" href="?view=schedules">Schedules</a>
       <a class="schedule-tab{{ ' schedule-tab-active' if schedule_mode else '' }}" href="?view=schedule">Detail</a>
     </span>
   </div>
@@ -414,83 +466,87 @@
     <p>No schedules are declared. Add a schedule transaction to the schedules file.</p>
   {% endif %}
 
-  {% if upcoming_mode %}
-    {% set rows = extension.upcoming() %}
-    <div class="schedule-upcoming">
-      {% if extension.writable %}
-        <p class="schedule-form"><a class="schedule-button" href="?view=schedule&amp;new=1">New schedule</a></p>
-      {% endif %}
-      {% if not rows %}
-        <p class="schedule-empty">Nothing outstanding — every occurrence is resolved.</p>
-      {% else %}
-        <div class="schedule-scroll">
-          <table class="table">
-            <thead>
-              <tr>
-                <th>Date</th>
-                <th>Status</th>
-                <th>Schedule</th>
-                <th>Payee / narration</th>
-                <th class="num">Amount</th>
-              </tr>
-            </thead>
-            <tbody>
-              {% for row in rows %}
-                {% set href = '?view=schedule&amp;id=' ~ (row.schedule_id | urlencode) %}
+  {% if schedules_mode %}
+    <div class="schedule-view">
+      <div class="schedule-toolbar">
+        <div class="schedule-scope">
+          <a class="schedule-scope-option{{ ' schedule-scope-active' if not all_scope else '' }}" href="?view=schedules&amp;scope=upcoming">Upcoming</a>
+          <a class="schedule-scope-option{{ ' schedule-scope-active' if all_scope else '' }}" href="?view=schedules&amp;scope=all">All</a>
+        </div>
+        {% if extension.writable %}
+          <span class="schedule-toolbar-actions">
+            <form method="post" action="{{ base ~ 'commit' }}">
+              <input type="hidden" name="action" value="reconcile">
+              <button type="submit">Reconcile ({{ extension.reconcile_count() }} match(es))</button>
+            </form>
+            <a class="schedule-button" href="?view=schedule&amp;new=1">New schedule</a>
+          </span>
+        {% endif %}
+      </div>
+
+      {% if all_scope %}
+        {% if view.schedules %}
+          <div class="schedule-scroll">
+            <table class="table">
+              <thead>
                 <tr>
-                  <td><a class="schedule-rowlink" href="{{ href }}">{{ row.line.nominal }}</a></td>
-                  <td>{{ status_badge(row.line) }}</td>
-                  <td><a href="{{ href }}">{{ row.schedule_id }}</a></td>
-                  <td>{{ row.line.payee or row.line.narration or row.rule.narration or '' }}</td>
-                  <td class="num">{{ extension.money(row.line.amount) }}</td>
+                  <th>Next due</th>
+                  <th>Status</th>
+                  <th>Schedule</th>
+                  <th>Payee / narration</th>
+                  <th class="num">Amount</th>
+                  <th>Posting account</th>
                 </tr>
-              {% endfor %}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody>
+                {% for schedule in view.schedules %}
+                  <tr>
+                    <td>{{ schedule.next or '—' }}</td>
+                    <td>{% if schedule.overdue %}<span class="schedule-badge schedule-overdue-badge">overdue</span>{% elif schedule.due %}<span class="schedule-badge schedule-due">due</span>{% elif schedule.next %}<span class="schedule-badge schedule-upcoming">upcoming</span>{% endif %}</td>
+                    <td><a href="?view=schedule&amp;id={{ schedule.id | urlencode }}">{{ schedule.id }}</a></td>
+                    <td>{{ schedule.rule.payee or schedule.rule.narration or '' }}</td>
+                    <td class="num">{{ extension.money(schedule.rule.match_amount) }}</td>
+                    <td>{{ schedule.rule.match_account }}</td>
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        {% endif %}
+      {% else %}
+        {% set rows = extension.upcoming() %}
+        {% if not rows %}
+          <p class="schedule-empty">Nothing outstanding — every occurrence is resolved.</p>
+        {% else %}
+          <div class="schedule-scroll">
+            <table class="table">
+              <thead>
+                <tr>
+                  <th>Next due</th>
+                  <th>Status</th>
+                  <th>Schedule</th>
+                  <th>Payee / narration</th>
+                  <th class="num">Amount</th>
+                  <th>Posting account</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for row in rows %}
+                  {% set href = '?view=schedule&amp;id=' ~ (row.schedule_id | urlencode) %}
+                  <tr>
+                    <td><a class="schedule-rowlink" href="{{ href }}">{{ row.line.nominal }}</a></td>
+                    <td>{{ status_badge(row.line) }}</td>
+                    <td><a href="{{ href }}">{{ row.schedule_id }}</a></td>
+                    <td>{{ row.line.payee or row.line.narration or row.rule.narration or '' }}</td>
+                    <td class="num">{{ extension.money(row.line.amount) }}</td>
+                    <td>{{ row.rule.match_account }}</td>
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        {% endif %}
       {% endif %}
-    </div>
-  {% elif overview_mode %}
-    <div class="schedule-overview">
-      {% if extension.writable %}
-        <div class="schedule-form">
-          <form method="post" action="{{ base ~ 'commit' }}">
-            <input type="hidden" name="action" value="reconcile">
-            <button type="submit">Reconcile ({{ extension.reconcile_count() }} match(es))</button>
-          </form>
-          <a class="schedule-button" href="?view=schedule&amp;new=1">New schedule</a>
-        </div>
-      {% endif %}
-      <table class="table">
-        <thead>
-          <tr>
-            <th>Schedule</th>
-            <th>Account</th>
-            <th>Payee</th>
-            <th>Recurrence</th>
-            <th>Next</th>
-            <th class="num">Overdue</th>
-            <th class="num">Due</th>
-            <th class="num">Amount</th>
-            <th class="num">History</th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for schedule in view.schedules %}
-            <tr>
-              <td><a href="?view=schedule&amp;id={{ schedule.id | urlencode }}">{{ schedule.id }}</a></td>
-              <td>{{ schedule.rule.match_account }}</td>
-              <td>{{ schedule.rule.payee or '' }}</td>
-              <td>{{ schedule.rule.rrule }}</td>
-              <td>{{ schedule.next or '—' }}</td>
-              <td class="num">{% if schedule.overdue %}<span class="schedule-badge schedule-overdue-badge">{{ schedule.overdue | length }}</span>{% endif %}</td>
-              <td class="num">{% if schedule.due %}<span class="schedule-badge schedule-due">{{ schedule.due | length }}</span>{% endif %}</td>
-              <td class="num">{{ extension.money(schedule.rule.match_amount) }}</td>
-              <td class="num"><a href="?view=schedule&amp;id={{ schedule.id | urlencode }}&amp;history=1">{{ schedule.posted | length }}</a></td>
-            </tr>
-          {% endfor %}
-        </tbody>
-      </table>
     </div>
   {% elif schedule_mode %}
     <div class="schedule-detail">
