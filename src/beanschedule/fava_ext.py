@@ -38,7 +38,7 @@ from fava.core import file as fava_file
 from fava.ext import ExtensionConfigError, FavaExtensionBase, extension_endpoint
 from flask import jsonify, make_response, redirect, request
 
-from beanschedule import actions, reconcile, writer
+from beanschedule import actions, reconcile, recurrence, writer
 from beanschedule.config import parse_config
 from beanschedule.core import ScheduleResult, compute
 from beanschedule.pending import load_pending_transactions
@@ -234,6 +234,37 @@ class Schedules(FavaExtensionBase):
         currency = self.view().currency
         return "-" if value is None else f"{value:.2f} {currency}".strip()
 
+    def accounts(self) -> tuple[str, ...]:
+        """Return every open account, for the form's autocomplete.
+
+        Returns:
+            The account names, sorted. Empty when the ledger exposes none, so the
+            report still renders under a minimal ledger object.
+        """
+        accounts = getattr(self.ledger, "accounts", None)
+        if not accounts:
+            return ()
+        return tuple(sorted(str(name) for name in accounts))
+
+    def rrule_fields(self, schedule_id: str | None) -> recurrence.RuleFields | None:
+        """Decompose a schedule's recurrence rule for the edit form.
+
+        Args:
+            schedule_id: The schedule to decompose, or ``None`` for the first.
+
+        Returns:
+            The parsed :class:`~beanschedule.recurrence.RuleFields`, or ``None``
+            when the schedule cannot be found.
+        """
+        result = self._result()
+        sid = schedule_id
+        if sid is None:
+            sid = result.rules[0].id if result.rules else None
+        if sid is None:
+            return None
+        rule = result.rule(sid)
+        return None if rule is None else recurrence.rrule_fields(rule.rrule)
+
     def schedule(self, schedule_id: str | None) -> ScheduleView | None:
         """Return one schedule's view, for the drill-down.
 
@@ -350,11 +381,13 @@ class Schedules(FavaExtensionBase):
         plan = self._plan()
         return len(plan.matches) + len(plan.pending)
 
-    def perform(self, params: Mapping[str, str]) -> list[Directive]:
+    def perform(self, params: Mapping[str, object]) -> list[Directive]:
         """Apply a submitted action form.
 
         Args:
-            params: The submitted fields: an ``action`` and its arguments.
+            params: The submitted fields: an ``action`` and its arguments. A
+                repeated field (a posting row) may arrive as a list, as Fava's
+                request form does.
 
         Returns:
             The transactions that were written.
@@ -366,11 +399,13 @@ class Schedules(FavaExtensionBase):
         if self.write_target is None:
             message = "writing is not configured for this report"
             raise RuntimeError(message)
-        action = params.get("action", "")
+        action = str(params.get("action", ""))
         if action == "create":
-            entry = _create_entry(params, self.view().currency or "USD")
+            entry = _schedule_entry(params, self.view().currency or "USD")
             self._write(self.write_target, entry)
             return [entry]
+        if action == "update":
+            return self._update(params)
         if action == "reconcile":
             return self._reconcile()
         if action == "save":
@@ -380,7 +415,47 @@ class Schedules(FavaExtensionBase):
         message = f"unknown action: {action}"
         raise ValueError(message)
 
-    def _save(self, params: Mapping[str, str]) -> list[Directive]:
+    def _update(self, params: Mapping[str, object]) -> list[Directive]:
+        """Rebuild a schedule from the structured form and splice it in place.
+
+        The entry is rebuilt from the form's fields the same way a new one is,
+        then written over the schedule's own line, so the ledger keeps a single
+        source of truth and a schedule is never duplicated. A schedule without a
+        source location is appended instead.
+
+        Args:
+            params: The submitted fields, with ``id`` (or ``original_id``) naming
+                the schedule being replaced.
+
+        Returns:
+            The transaction that was written.
+
+        Raises:
+            RuntimeError: If writing is not configured.
+        """
+        if self.write_target is None:
+            message = "writing is not configured for this report"
+            raise RuntimeError(message)
+        schedule_id = _form_value(params, "original_id") or _form_value(params, "id")
+        entry = _schedule_entry(
+            params, self.view().currency or "USD", schedule_id=schedule_id
+        )
+        rule = self._result().rule(schedule_id) if schedule_id else None
+        if rule is None or rule.entry is None:
+            self._write(self.write_target, entry)
+            return [entry]
+        lineno = _lineno(rule.entry)
+        filename = (rule.entry.meta or {}).get("filename")
+        if lineno is None or filename is None:
+            self._write(self.write_target, entry)
+            return [entry]
+        base = Path(self.ledger.beancount_file_path).parent
+        target = writer.resolve_target(Path(str(filename)), base)
+        _rewrite_source(self.ledger, target, [(lineno, entry)])
+        self.after_load_file()
+        return [entry]
+
+    def _save(self, params: Mapping[str, object]) -> list[Directive]:
         """Replace a schedule with an edited Beancount source, or append it.
 
         The submitted ``source`` is parsed as a single schedule transaction and
@@ -404,7 +479,7 @@ class Schedules(FavaExtensionBase):
         if self.write_target is None:
             message = "writing is not configured for this report"
             raise RuntimeError(message)
-        source = params.get("source", "")
+        source = _form_value(params, "source")
         entries, errors, _options = parser.parse_string(source)
         if errors:
             message = "; ".join(
@@ -421,7 +496,7 @@ class Schedules(FavaExtensionBase):
         if not (entry.meta or {}).get("id"):
             message = "the schedule needs an `id` metadata key"
             raise ValueError(message)
-        schedule_id = params.get("id")
+        schedule_id = _form_value(params, "id")
         rule = self._result().rule(schedule_id) if schedule_id else None
         if rule is None or rule.entry is None:
             self._write(self.write_target, entry)
@@ -530,7 +605,9 @@ class Schedules(FavaExtensionBase):
             if key in consumed:
                 edits[Path(str(filename))].append((int(lineno), None))
 
-    def _edit_schedule(self, action: str, params: Mapping[str, str]) -> list[Directive]:
+    def _edit_schedule(
+        self, action: str, params: Mapping[str, object]
+    ) -> list[Directive]:
         """Skip, move, edit or delete a schedule's transaction.
 
         Args:
@@ -543,9 +620,10 @@ class Schedules(FavaExtensionBase):
         Raises:
             ValueError: If the schedule is unknown or has no source location.
         """
-        rule = self._result().rule(params["id"])
+        schedule_id = _form_value(params, "id")
+        rule = self._result().rule(schedule_id)
         if rule is None or rule.entry is None:
-            message = f"unknown schedule: {params['id']}"
+            message = f"unknown schedule: {schedule_id}"
             raise ValueError(message)
         lineno = _lineno(rule.entry)
         filename = (rule.entry.meta or {}).get("filename")
@@ -562,12 +640,10 @@ class Schedules(FavaExtensionBase):
             from dataclasses import replace  # noqa: PLC0415 - a single local use
 
             updated = actions.from_rule(
-                replace(rule, match_amount=Decimal(params["amount"])),
+                replace(rule, match_amount=Decimal(_form_value(params, "amount"))),
                 self.view().currency or "USD",
             )
         elif action == "skip":
-            from beanschedule import recurrence  # noqa: PLC0415
-
             new_date = recurrence.next_after(
                 rule.rrule, rule.start, rule.start, end=rule.end
             )
@@ -577,7 +653,9 @@ class Schedules(FavaExtensionBase):
                 return []
             updated = actions.advance(rule, new_date)
         else:
-            updated = actions.advance(rule, date.fromisoformat(params["new_date"]))
+            updated = actions.advance(
+                rule, date.fromisoformat(_form_value(params, "new_date"))
+            )
         _rewrite_source(self.ledger, target, [(lineno, updated)])
         self.after_load_file()
         return [updated]
@@ -609,7 +687,7 @@ class Schedules(FavaExtensionBase):
         Returns:
             JSON, or a redirect back to the report.
         """
-        params = request.form.to_dict()
+        params: Mapping[str, object] = request.form
         as_json = params.get("format") == "json"
         try:
             self.perform(params)
@@ -677,36 +755,172 @@ def _first_amount(entry: Transaction) -> Decimal | None:
     return None
 
 
-def _create_entry(params: Mapping[str, str], currency: str) -> Directive:
-    """Build a schedule transaction from a create form.
+def _schedule_entry(
+    params: Mapping[str, object],
+    currency: str,
+    *,
+    schedule_id: str | None = None,
+) -> Directive:
+    """Build a schedule transaction from a structured form.
+
+    The recurrence rule is composed from the form's builder fields, and the
+    other-side postings from the repeated ``posting_account``/``posting_amount``
+    rows, so no field of the entry has to be typed as raw ledger text.
 
     Args:
-        params: The submitted fields. ``postings`` is one ``ACCOUNT [AMOUNT]``
-            pair per line; ``amount`` is the matched amount.
+        params: The submitted fields.
         currency: The operating currency.
+        schedule_id: The id to write, overriding the form's ``id``.
 
     Returns:
         The transaction.
+
+    Raises:
+        ValueError: If the id, start or builder fields are missing or malformed.
     """
-    day = date.fromisoformat(params["start"])
-    amount = params.get("amount")
-    postings: list[tuple[str, Decimal | None, None]] = []
-    for line in params.get("postings", "").splitlines():
-        parts = line.split()
-        if not parts:
-            continue
-        postings.append((parts[0], Decimal(parts[1]) if len(parts) > 1 else None, None))
-    return actions.schedule_transaction(
-        params["id"],
-        day,
-        rrule=params["rrule"],
-        match_account=params["account"],
-        currency=currency,
-        payee=params.get("payee") or None,
-        narration=params.get("narration") or None,
-        match_amount=Decimal(amount) if amount else None,
-        postings=postings,
+    sid = schedule_id or _form_value(params, "id")
+    start = _form_value(params, "start")
+    if not sid:
+        message = "the schedule needs an id"
+        raise ValueError(message)
+    if not start:
+        message = "the schedule needs a start date"
+        raise ValueError(message)
+    day = date.fromisoformat(start)
+    rrule = recurrence.build_rrule(
+        _form_value(params, "freq") or "MONTHLY",
+        interval=_int_field(params, "interval", 1),
+        byday=_form_values(params, "byday"),
+        bymonthday=_optional_int_field(params, "bymonthday"),
+        bymonth=_optional_int_field(params, "bymonth"),
     )
+    postings: list[tuple[str, Decimal | None, Mapping[str, object] | None]] = []
+    accounts = _form_list(params, "posting_account")
+    amounts = _form_list(params, "posting_amount")
+    legs = _form_list(params, "posting_leg")
+    for index, account in enumerate(accounts):
+        if not account:
+            continue
+        amount = amounts[index] if index < len(amounts) else ""
+        leg = legs[index] if index < len(legs) else ""
+        metadata = {"schedule-leg": leg} if leg else None
+        postings.append((account, Decimal(amount) if amount else None, metadata))
+    amount = _form_value(params, "amount")
+    tolerance = _form_value(params, "tolerance")
+    end = _form_value(params, "end")
+    extra: dict[str, object] = {}
+    method = _form_value(params, "method")
+    if method:
+        extra["method"] = method
+        extra["rate"] = Decimal(_form_value(params, "rate") or "0")
+        term = _form_value(params, "term")
+        if term:
+            extra["term"] = Decimal(term)
+    escrow = _form_value(params, "escrow")
+    if escrow:
+        extra["escrow"] = Decimal(escrow)
+    return actions.schedule_transaction(
+        sid,
+        day,
+        rrule=rrule,
+        match_account=_form_value(params, "account"),
+        currency=currency,
+        payee=_form_value(params, "payee") or None,
+        narration=_form_value(params, "narration") or None,
+        match_payee=_form_value(params, "match_payee") or None,
+        match_amount=Decimal(amount) if amount else None,
+        amount_tolerance=Decimal(tolerance) if tolerance else None,
+        end=date.fromisoformat(end) if end else None,
+        postings=postings,
+        metadata=extra,
+    )
+
+
+def _form_value(params: Mapping[str, object], key: str) -> str:
+    """Return a single field as a stripped string.
+
+    Args:
+        params: The submitted fields; a repeated field may hold a list.
+        key: The field name.
+
+    Returns:
+        The first value, as a string, or ``""``.
+    """
+    value = params.get(key)
+    if isinstance(value, list | tuple):
+        value = value[0] if value else None
+    return "" if value is None else str(value)
+
+
+def _form_values(params: Mapping[str, object], key: str) -> list[str]:
+    """Return a repeated field's non-empty values as strings.
+
+    Fava's request form exposes repeated fields through ``getlist``; a plain
+    mapping (as tests submit) may instead carry a list. Both are accepted, and
+    blank rows are dropped so an empty posting row never becomes a posting.
+
+    Args:
+        params: The submitted fields.
+        key: The field name.
+
+    Returns:
+        The non-empty values, in order.
+    """
+    return [value for value in _form_list(params, key) if value]
+
+
+def _form_list(params: Mapping[str, object], key: str) -> list[str]:
+    """Return a repeated field's values as strings, in order, blanks included.
+
+    Positional alignment matters for the posting rows: a blank amount or leg
+    must stay beside its account, so unlike :func:`_form_values` this keeps the
+    empty entries.
+
+    Args:
+        params: The submitted fields.
+        key: The field name.
+
+    Returns:
+        The values, in order.
+    """
+    getlist = getattr(params, "getlist", None)
+    if callable(getlist):
+        return [str(value) for value in getlist(key)]
+    raw = params.get(key)
+    if raw is None:
+        return []
+    if isinstance(raw, list | tuple):
+        return [str(value) for value in raw]
+    return [str(raw)]
+
+
+def _int_field(params: Mapping[str, object], key: str, default: int) -> int:
+    """Return an integer field, falling back to a default.
+
+    Args:
+        params: The submitted fields.
+        key: The field name.
+        default: The value to use when the field is blank or unparseable.
+
+    Returns:
+        The parsed integer, or the default.
+    """
+    value = _form_value(params, key)
+    return int(value) if value else default
+
+
+def _optional_int_field(params: Mapping[str, object], key: str) -> int | None:
+    """Return an optional integer field.
+
+    Args:
+        params: The submitted fields.
+        key: The field name.
+
+    Returns:
+        The parsed integer, or ``None`` when the field is blank.
+    """
+    value = _form_value(params, key)
+    return int(value) if value else None
 
 
 def _write_setting(config: object) -> object:

@@ -125,9 +125,9 @@ paths from the plugin; only Fava-specific settings live here:
 
 ```bash
 beanschedule check     LEDGER                 # validate the schedules
-beanschedule report    LEDGER [--json]        # next, overdue, resolved, upcoming
-beanschedule list      LEDGER [--json]        # schedules with next and overdue
-beanschedule upcoming  LEDGER [--all] [--json]  # one ledger of outstanding occurrences
+beanschedule report    LEDGER [--days N] [--json]  # next, overdue, resolved, upcoming
+beanschedule list      LEDGER [--days N] [--json]  # schedules overdue or due soon
+beanschedule upcoming  LEDGER [--days N] [--all] [--json]  # one ledger of outstanding occurrences
 beanschedule amortize  LEDGER [--id ID] [--json]  # loan amortization to payoff
 beanschedule reconcile LEDGER [--write]       # match imported transactions (dry run by default)
 beanschedule detect    LEDGER                 # propose schedules for recurring payments
@@ -145,24 +145,50 @@ schedule in `schedules.bean`. It is a dry run until `--write` is passed; in Fava
 it is the **Reconcile** button. The mutating commands write **opt-in only**,
 through `writer.py`, inside the ledger directory.
 
+### Looking ahead
+
+`report`, `list` and `upcoming` take `--days N`, which narrows the view to a forward window. Overdue occurrences are always kept; only future ones beyond the window are dropped, so `--days 14` shows exactly what is overdue or expected in the next two weeks:
+
+```bash
+beanschedule upcoming LEDGER --days 14    # overdue + the next two weeks
+beanschedule list     LEDGER --days 14    # only schedules needing attention
+```
+
+Without `--days` the window is a whole-month default (three months, or the Fava report's `months` setting). `--days` is an exact-day window, and `list` filters to schedules that are overdue or next due within it.
+
+### Completion and fzf
+
+The CLI completes its own arguments through `argcomplete` — file paths for the ledger, and live schedule ids for `skip`, `move`, `edit` and `amortize --id`. Register the completions once (bash or zsh):
+
+```bash
+eval "$(register-python-argcomplete beanschedule)"
+```
+
+With [fzf-tab](https://github.com/Aloxaf/fzf-tab) in zsh, those completions are shown in fzf automatically, so `beanschedule skip LEDGER <TAB>` pops a fuzzy picker of the ledger's schedule ids.
+
+The `--json` output pipes straight into `fzf` for custom pickers, for example jumping to a schedule or skipping one interactively:
+
+```bash
+# Pick a schedule from what is due, then act on it.
+beanschedule list --days 14 --json \
+  | jq -r '.[] | "\(.id)\t\(.next)\t\(.overdue | length) overdue"' \
+  | fzf
+
+# Skip whichever schedule you pick.
+beanschedule skip LEDGER "$(beanschedule list --days 14 --json | jq -r '.[].id' | fzf)"
+```
+
 ## The Fava report
 
-The extension renders three tabs:
+The extension renders three tabs, opening on **Upcoming**:
 
-- **Overview** — every schedule as a row (account, payee, recurrence, next,
-  overdue and due counts, amount), with the Reconcile button and a create form.
-- **Upcoming** — one date-ordered ledger of every schedule's outstanding
-  occurrences, each marked **overdue**, **due** (within the schedule's match
-  window), or **upcoming**.
-- **Schedule** — a per-schedule drill-down: the rule's details, its
-  diagnostics, and, for an amortized loan, the projected amortization schedule
-  (remaining payments and principal, interest, escrow and payoff date). With
-  `write` configured, the drill-down edits the schedule's own Beancount source
-  in place, alongside quick skip / move / delete actions.
+- **Upcoming** — one date-ordered ledger of every schedule's outstanding occurrences, each marked **overdue**, **due** (within the schedule's match window), or **upcoming**. Every row links to that schedule's Detail.
+- **All Schedules** — every schedule as a row (account, payee, recurrence, next, overdue and due counts, amount), with the Reconcile button.
+- **Detail** — a per-schedule drill-down: the rule's details and postings, its diagnostics, and, for an amortized loan, the projected amortization schedule (remaining payments and principal, interest, escrow and payoff date). With `write` configured, the drill-down edits the schedule in place, alongside quick skip / move / delete actions.
 
-Schedules are read from `schedules.bean` **without** Beancount's interpolation
-and validation, so an amortized schedule's amount-less leg postings are kept
-rather than dropped; the engine reports its own diagnostics for anything wrong.
+With `write` configured, schedules are added and updated entirely through the UI. Both **Upcoming** and **All Schedules** have a **New schedule** button that opens the create form on **Detail**. There you pick a **normal** or **amortization** schedule, so the amortization fields only appear when you choose one; a recurrence builder (frequency, interval, weekday and month-day pickers, and an optional end date) composes the RRULE, and each posting leg is an account field that autocompletes from the ledger's open accounts. Editing a schedule opens the same form prefilled from the rule — the amortization fields showing only for an already-amortized schedule — with the raw Beancount source still available under **Edit raw source** for anything the form does not cover. Pressing Enter never submits the form; use the button.
+
+Schedules are read from `schedules.bean` **without** Beancount's interpolation and validation, so an amortized schedule's amount-less leg postings are kept rather than dropped; the engine reports its own diagnostics for anything wrong.
 
 ## The topology
 

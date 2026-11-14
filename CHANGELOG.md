@@ -12,14 +12,18 @@ plugin and the Fava report.
 
 ### Added
 
-- A tabbed Fava report: an **Overview** of every schedule, an **Upcoming**
-  ledger of all outstanding occurrences (overdue, due and upcoming), and a
-  per-schedule **drill-down** that projects an amortized loan's remaining
-  payments (principal, interest, escrow and payoff) and, with `write` configured,
-  edits the schedule's own Beancount source in place.
+- A tabbed Fava report that opens on **Upcoming** (one ledger of all outstanding occurrences, each linking to the schedule), with **All Schedules** (the list plus a reconcile action) and **Detail** (a per-schedule drill-down that projects an amortized loan's remaining payments and, with `write` configured, edits the schedule in place).
+- Add and update schedules entirely through the Fava UI. **New schedule** buttons on Upcoming and All Schedules open the Detail create form, where a normal/amortization choice keeps amortization fields out of the way, a recurrence builder (frequency, interval, weekday and month-day pickers, optional end date) composes the RRULE, and posting legs autocomplete from the ledger's open accounts. Editing prefills the same form from the rule, with the raw source kept as an advanced fallback; Enter never submits a form.
 - `beanschedule upcoming` (one ledger of outstanding occurrences) and
   `beanschedule amortize` (each loan's amortization to payoff), with `--json` on
   the read-only reporting commands.
+- `--days N` on `report`, `list` and `upcoming` for an exact-day forward window
+  (overdue occurrences are always kept), so `--days 14` shows what is overdue or
+  expected in the next two weeks; `list` filters to schedules that need
+  attention.
+- Shell completion via `argcomplete` — Beancount file paths, and live schedule
+  ids for `skip`, `move`, `edit` and `amortize --id`. With fzf-tab, the
+  completions surface in fzf.
 - An amortization projection in the shared view model, and a `due` flag on an
   occurrence (the reference date is within the schedule's match window).
 - Diagnostics: `E015` (amortized but no matched amount), `W002` (no `interest`

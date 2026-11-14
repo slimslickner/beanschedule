@@ -18,6 +18,7 @@ from beanschedule.fava_ext import Schedules
 if TYPE_CHECKING:
     from collections.abc import Mapping
 
+    from beancount.core.data import Transaction
     from fava.core import FavaLedger
 
 _LEDGERS = Path(__file__).parent / "ledgers"
@@ -33,6 +34,17 @@ def _extension(config: str | None = None) -> Schedules:
             all_entries=entries,
             options=options,
             beancount_file_path=str(path),
+            accounts=dict.fromkeys(
+                (
+                    "Assets:Bank:Checking",
+                    "Liabilities:Loans:Mortgage",
+                    "Expenses:House:Interest",
+                    "Expenses:House:Escrow",
+                    "Expenses:Taxes:Federal",
+                    "Expenses:Savings",
+                    "Equity:Opening-Balances",
+                )
+            ),
         ),
     )
     extension = Schedules(ledger, config)
@@ -58,8 +70,18 @@ def test_schedule_loads_despite_amount_less_legs() -> None:
     assert "paycheck" in ids
 
 
-def test_overview_renders_schedules() -> None:
+def test_default_tab_is_upcoming() -> None:
     html = _render(_extension(), {})
+    assert (
+        '<a class="schedule-tab schedule-tab-active" href="?view=upcoming">Upcoming</a>'
+        in html
+    )
+    assert "All Schedules" in html
+    assert "Detail" in html
+
+
+def test_overview_renders_schedules() -> None:
+    html = _render(_extension(), {"view": "overview"})
     assert "loan-mortgage" in html
     assert "paycheck" in html
     assert "?view=schedule" in html
@@ -169,3 +191,159 @@ def test_save_rewrites_the_non_source_schedules_file(tmp_path: Path) -> None:
     assert "BYMONTHDAY=16" in written
     assert "BYMONTHDAY=15" not in written
     assert tmp_path / "schedules.bean" in notified
+
+
+def _tmp_ledger(tmp_path: Path) -> SimpleNamespace:
+    source_dir = _LEDGERS / "extension"
+    for name in ("main.bean", "schedules.bean"):
+        shutil.copy(source_dir / name, tmp_path / name)
+    path = tmp_path / "main.bean"
+    entries, _errors, options = loader.load_file(str(path))
+    return SimpleNamespace(
+        all_entries=entries,
+        options=options,
+        beancount_file_path=str(path),
+        accounts={},
+        file=SimpleNamespace(_lock=threading.Lock()),
+        watcher=SimpleNamespace(notify=lambda _path: None),
+        load_file=lambda: None,
+    )
+
+
+def test_all_schedules_offers_a_new_schedule_button() -> None:
+    html = _render(_extension("{'write': True}"), {"view": "overview"})
+    assert "?view=schedule&amp;new=1" in html
+    assert "New schedule" in html
+    # The create form itself lives on the Detail tab.
+    assert 'name="freq"' not in html
+
+
+def test_detail_create_renders_the_structured_form() -> None:
+    html = _render(_extension("{'write': True}"), {"view": "schedule", "new": "1"})
+    assert 'id="schedule-accounts"' in html
+    assert 'value="Assets:Bank:Checking"' in html
+    assert 'name="schedule_type"' in html
+    assert "Normal schedule" in html
+    assert "Amortization schedule" in html
+    assert 'name="freq"' in html
+    assert 'name="posting_account"' in html
+    assert 'name="bymonthday"' in html
+    # A normal schedule hides and disables the amortization fields.
+    assert 'name="method" disabled' in html
+    assert "schedule-amort" in html
+
+
+def test_amortized_form_preselects_legs() -> None:
+    html = _render(
+        _extension("{'write': True}"), {"view": "schedule", "id": "loan-mortgage"}
+    )
+    assert '<option value="principal" selected>' in html
+    assert '<option value="interest" selected>' in html
+    assert '<option value="escrow" selected>' in html
+    assert 'name="method" disabled' not in html
+
+
+def test_upcoming_rows_link_to_the_drilldown() -> None:
+    html = _render(_extension(), {"view": "upcoming"})
+    assert 'class="schedule-rowlink"' in html
+    assert "?view=schedule" in html
+    assert "schedule-badge schedule-upcoming" in html
+
+
+def test_structured_create_builds_the_rrule_and_postings() -> None:
+    entry = fava_ext._schedule_entry(
+        {
+            "id": "rent",
+            "start": "2026-02-01",
+            "account": "Assets:Bank:Checking",
+            "freq": "MONTHLY",
+            "interval": "1",
+            "bymonthday": "1",
+            "posting_account": ["Expenses:Rent", "Assets:Bank:Checking"],
+            "posting_amount": ["1500.00", ""],
+            "payee": "Landlord",
+        },
+        "USD",
+    )
+    assert entry.meta["rrule"] == "FREQ=MONTHLY;BYMONTHDAY=1"
+    assert entry.meta["match-account"] == "Assets:Bank:Checking"
+    transaction = cast("Transaction", entry)
+    accounts = [posting.account for posting in transaction.postings]
+    assert accounts == [
+        "Assets:Bank:Checking",
+        "Expenses:Rent",
+        "Assets:Bank:Checking",
+    ]
+
+
+def test_structured_create_builds_a_weekly_rrule() -> None:
+    entry = fava_ext._schedule_entry(
+        {
+            "id": "gym",
+            "start": "2026-02-02",
+            "account": "Assets:Bank:Checking",
+            "freq": "WEEKLY",
+            "interval": "2",
+            "byday": ["MO", "FR"],
+        },
+        "USD",
+    )
+    assert entry.meta["rrule"] == "FREQ=WEEKLY;INTERVAL=2;BYDAY=MO,FR"
+
+
+def test_structured_update_rewrites_the_schedule_in_place(tmp_path: Path) -> None:
+    ledger = _tmp_ledger(tmp_path)
+    extension = Schedules(cast("FavaLedger", ledger), "{'write': True}")
+    extension.after_load_file()
+    extension.perform(
+        {
+            "action": "update",
+            "original_id": "paycheck",
+            "id": "paycheck",
+            "start": "2026-01-15",
+            "account": "Assets:Bank:Checking",
+            "freq": "MONTHLY",
+            "bymonthday": "16",
+            "posting_account": ["Expenses:Taxes:Federal", "Expenses:Savings"],
+            "posting_amount": ["600.00", "2400.00"],
+            "payee": "Acme",
+            "narration": "Paycheck",
+            "amount": "-3000.00",
+        }
+    )
+    written = (tmp_path / "schedules.bean").read_text()
+    assert "BYMONTHDAY=16" in written
+    assert "BYMONTHDAY=15" not in written
+
+
+def test_structured_update_keeps_amortization_legs(tmp_path: Path) -> None:
+    ledger = _tmp_ledger(tmp_path)
+    extension = Schedules(cast("FavaLedger", ledger), "{'write': True}")
+    extension.after_load_file()
+    extension.perform(
+        {
+            "action": "update",
+            "original_id": "loan-mortgage",
+            "id": "loan-mortgage",
+            "start": "2024-01-01",
+            "account": "Assets:Bank:Checking",
+            "freq": "MONTHLY",
+            "bymonthday": "4",
+            "method": "balance-from-ledger",
+            "rate": "0.04875",
+            "escrow": "368.52",
+            "posting_account": [
+                "Assets:Bank:Checking",
+                "Expenses:House:Escrow",
+                "Expenses:House:Interest",
+                "Liabilities:Loans:Mortgage",
+            ],
+            "posting_amount": ["-2505.20", "368.52", "", ""],
+            "posting_leg": ["", "escrow", "interest", "principal"],
+        }
+    )
+    written = (tmp_path / "schedules.bean").read_text()
+    assert 'method: "balance-from-ledger"' in written
+    assert 'schedule-leg: "principal"' in written
+    assert 'schedule-leg: "interest"' in written
+    assert 'schedule-leg: "escrow"' in written

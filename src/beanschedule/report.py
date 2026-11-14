@@ -480,6 +480,7 @@ def build_view(
     *,
     today: date | None = None,
     forecast_months: int = DEFAULT_FORECAST_MONTHS,
+    forecast_days: int | None = None,
 ) -> ScheduleViewResult:
     """Build the shared report view from a computed result.
 
@@ -489,6 +490,9 @@ def build_view(
         options: The Beancount options map, for the operating currency.
         today: The reference date for status and overdue, if any.
         forecast_months: How many months of future occurrences to include.
+        forecast_days: How many days of future occurrences to include. When
+            given it takes precedence over ``forecast_months``, giving an
+            exact-day window rather than a whole-month one.
 
     Returns:
         The :class:`ScheduleViewResult`.
@@ -505,7 +509,11 @@ def build_view(
             balances=balances,
             base=len(report.history),
         )
-        horizon = _horizon(today, forecast_months)
+        horizon = (
+            _horizon_days(today, forecast_days)
+            if forecast_days is not None
+            else _horizon(today, forecast_months)
+        )
         lines: list[OccurrenceLine] = [
             _history_line(transaction, rule) for transaction in report.history
         ]
@@ -648,3 +656,19 @@ def _horizon(today: date | None, months: int) -> date | None:
     index = today.year * 12 + (today.month - 1) + months
     first_next = date(index // 12, index % 12 + 1, 1)
     return first_next - timedelta(days=1)
+
+
+def _horizon_days(today: date | None, days: int) -> date | None:
+    """Return the last date a view includes upcoming occurrences through.
+
+    Unlike :func:`_horizon`, the window is an exact number of days rather than a
+    whole number of months, so a two-week outlook ends on the day it names.
+
+    Args:
+        today: The reference date, if any.
+        days: How many days forward.
+
+    Returns:
+        The horizon date, or ``None`` when there is no reference date.
+    """
+    return None if today is None else today + timedelta(days=days)

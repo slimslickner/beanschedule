@@ -1,10 +1,14 @@
 {% set view = extension.view() %}
 {% set base = request.path if request.path.endswith('/') else request.path ~ '/' %}
-{% set mode = request.args.get('view') or 'overview' %}
+{% set mode = request.args.get('view') or 'upcoming' %}
 {% set upcoming_mode = mode == 'upcoming' %}
+{% set overview_mode = mode == 'overview' %}
 {% set schedule_mode = mode == 'schedule' %}
-{% set current = extension.schedule(request.args.get('id')) if schedule_mode else none %}
-{% set amortization = extension.amortization(request.args.get('id')) if schedule_mode else none %}
+{% set creating = schedule_mode and request.args.get('new') %}
+{% set detail_id = request.args.get('id') if schedule_mode and not creating else none %}
+{% set current = extension.schedule(detail_id) if schedule_mode and not creating else none %}
+{% set fields = extension.rrule_fields(detail_id) if schedule_mode and not creating else none %}
+{% set amortization = extension.amortization(detail_id) if schedule_mode and not creating else none %}
 {% macro status_badge(line) -%}
   {%- if line.due -%}<span class="schedule-badge schedule-due">due</span>
   {%- elif line.status == 'overdue' -%}<span class="schedule-badge schedule-overdue-badge">overdue</span>
@@ -12,6 +16,97 @@
   {%- elif line.status in ('skipped', 'moved') -%}<span class="schedule-badge schedule-resolved">{{ line.status }}</span>
   {%- else -%}<span class="schedule-badge schedule-upcoming">upcoming</span>{%- endif -%}
 {%- endmacro %}
+{% macro schedule_type_field(amortized=false) %}
+  <label>Schedule type
+    <select name="schedule_type" class="schedule-type">
+      <option value="normal"{{ '' if amortized else ' selected' }}>Normal schedule</option>
+      <option value="amortization"{{ ' selected' if amortized else '' }}>Amortization schedule</option>
+    </select>
+  </label>
+{% endmacro %}
+{% macro rrule_builder(fields=none) %}
+  {% set freq = fields.freq if fields else 'MONTHLY' %}
+  {% set interval = fields.interval if fields else 1 %}
+  {% set byday = fields.byday if fields else () %}
+  {% set bymonthday = (fields.bymonthday if fields and fields.bymonthday else '') %}
+  {% set bymonth = (fields.bymonth if fields and fields.bymonth else '') %}
+  <div class="schedule-rrule">
+    <label>Repeats
+      <select name="freq" class="schedule-freq">
+        {% for value in ['DAILY', 'WEEKLY', 'MONTHLY', 'YEARLY'] %}
+          <option value="{{ value }}"{{ ' selected' if value == freq else '' }}>{{ value | capitalize }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>Every <input type="number" name="interval" min="1" value="{{ interval }}" size="3"></label>
+    <span class="schedule-byday" data-when="WEEKLY">
+      {% for day in ['MO', 'TU', 'WE', 'TH', 'FR', 'SA', 'SU'] %}
+        <label class="schedule-checkbox"><input type="checkbox" name="byday" value="{{ day }}"{{ ' checked' if day in byday else '' }}> {{ day }}</label>
+      {% endfor %}
+    </span>
+    <label class="schedule-bymonthday" data-when="MONTHLY">On day
+      <input type="number" name="bymonthday" min="1" max="31" value="{{ bymonthday }}" size="3">
+    </label>
+    <label class="schedule-bymonth" data-when="YEARLY">In month
+      <select name="bymonth">
+        <option value="">—</option>
+        {% for month in range(1, 13) %}
+          <option value="{{ month }}"{{ ' selected' if bymonth == month else '' }}>{{ month }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <p class="schedule-preview">rrule: <code class="schedule-rrule-preview"></code></p>
+  </div>
+{% endmacro %}
+{% macro posting_rows(postings=none, blanks=1, amort=none) %}
+  {% set rows = postings if postings else [] %}
+  {% set amortized = amort is not none %}
+  <div class="schedule-postings">
+    {% for index in range(rows | length + blanks) %}
+      {% set row = rows[index] if index < rows | length else none %}
+      {% set leg = namespace(value='') %}
+      {% if row and amort %}
+        {% if amort.principal_account and row.account == amort.principal_account %}{% set leg.value = 'principal' %}
+        {% elif amort.interest_account and row.account == amort.interest_account %}{% set leg.value = 'interest' %}
+        {% elif amort.escrow_account and row.account == amort.escrow_account %}{% set leg.value = 'escrow' %}{% endif %}
+      {% endif %}
+      <div class="schedule-posting-row">
+        <input name="posting_account" list="schedule-accounts" placeholder="Account" value="{{ row.account if row else '' }}" aria-label="Posting account">
+        <input name="posting_amount" size="9" inputmode="decimal" placeholder="amount" value="{{ '%.2f' % row.amount if row and row.amount is not none else '' }}" aria-label="Posting amount">
+        <span class="schedule-leg-field"{% if not amortized %} style="display: none"{% endif %}>
+          <select name="posting_leg" aria-label="Amortization leg"{% if not amortized %} disabled{% endif %}>
+            <option value="">—</option>
+            {% for name in ['principal', 'interest', 'escrow'] %}
+              <option value="{{ name }}"{{ ' selected' if name == leg.value else '' }}>{{ name }}</option>
+            {% endfor %}
+          </select>
+        </span>
+      </div>
+    {% endfor %}
+    <button type="button" class="schedule-add-posting">+ posting</button>
+  </div>
+{% endmacro %}
+{% macro amortization_fields(amort=none) %}
+  {% set amortized = amort is not none %}
+  {% set method = amort.method if amort else '' %}
+  {% set rate = '%.6f' % amort.rate if amort and amort.rate is not none else '' %}
+  {% set term = amort.term if amort and amort.term is not none else '' %}
+  {% set escrow = '%.2f' % amort.escrow if amort and amort.escrow is not none else '' %}
+  <fieldset class="schedule-amort"{% if not amortized %} style="display: none"{% endif %}>
+    <legend>Amortization</legend>
+    <label>Method
+      <select name="method"{% if not amortized %} disabled{% endif %}>
+        <option value="">—</option>
+        {% for value in ['static', 'balance-from-ledger'] %}
+          <option value="{{ value }}"{{ ' selected' if value == method else '' }}>{{ value }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>Rate <input name="rate" size="8" value="{{ rate }}"{% if not amortized %} disabled{% endif %}></label>
+    <label>Term (months) <input name="term" size="5" value="{{ term }}"{% if not amortized %} disabled{% endif %}></label>
+    <label>Escrow <input name="escrow" size="8" value="{{ escrow }}"{% if not amortized %} disabled{% endif %}></label>
+  </fieldset>
+{% endmacro %}
 <div class="schedule-report">
   <style>
     .schedule-report {
@@ -31,12 +126,17 @@
       gap: 0.5rem;
       margin-left: auto;
     }
-    .schedule-report .schedule-tab {
+    .schedule-report .schedule-tab,
+    .schedule-report .schedule-button {
       padding: 0.2rem 0.75rem;
       border: 1px solid var(--schedule-border);
       border-radius: 0.25rem;
       text-decoration: none;
       white-space: nowrap;
+    }
+    .schedule-report .schedule-button {
+      display: inline-block;
+      background: var(--table-header-background, rgba(128, 128, 128, 0.15));
     }
     .schedule-report .schedule-tab-active {
       background: var(--table-header-background, rgba(128, 128, 128, 0.15));
@@ -53,6 +153,7 @@
       text-align: left;
       font-variant-numeric: tabular-nums;
       white-space: nowrap;
+      position: relative;
     }
     .schedule-report th.num,
     .schedule-report td.num {
@@ -60,6 +161,11 @@
     }
     .schedule-report td a {
       color: inherit;
+    }
+    .schedule-report a.schedule-rowlink::after {
+      content: "";
+      position: absolute;
+      inset: 0;
     }
     .schedule-report tbody tr:hover {
       background: var(--table-header-background, rgba(128, 128, 128, 0.08));
@@ -99,8 +205,10 @@
     .schedule-report .schedule-posted {
       color: var(--diff-positive, #35973d);
     }
-    .schedule-report .schedule-resolved,
     .schedule-report .schedule-upcoming {
+      color: light-dark(#1f5fa8, #7fb2f0);
+    }
+    .schedule-report .schedule-resolved {
       color: rgba(128, 128, 128, 1);
     }
     .schedule-report .schedule-scroll {
@@ -154,8 +262,49 @@
     .schedule-report .schedule-edit {
       display: flex;
       flex-direction: column;
-      gap: 0.4rem;
+      gap: 0.6rem;
       align-items: flex-start;
+      margin-top: 1rem;
+    }
+    .schedule-report .schedule-edit label {
+      display: flex;
+      gap: 0.3rem;
+      align-items: center;
+    }
+    .schedule-report .schedule-edit input,
+    .schedule-report .schedule-edit select {
+      font: inherit;
+    }
+    .schedule-report .schedule-rrule,
+    .schedule-report .schedule-postings,
+    .schedule-report .schedule-amort {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem 1rem;
+      align-items: center;
+      border: 1px solid var(--schedule-rule);
+      border-radius: 4px;
+      padding: 0.5rem;
+    }
+    .schedule-report .schedule-byday,
+    .schedule-report .schedule-bymonthday,
+    .schedule-report .schedule-bymonth {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.3rem 0.6rem;
+      align-items: center;
+    }
+    .schedule-report .schedule-preview {
+      flex-basis: 100%;
+      margin: 0;
+      color: rgba(128, 128, 128, 1);
+    }
+    .schedule-report .schedule-posting-row {
+      display: flex;
+      gap: 0.3rem;
+    }
+    .schedule-report .schedule-advanced summary {
+      cursor: pointer;
       margin-top: 1rem;
     }
     .schedule-report .schedule-edit textarea {
@@ -189,13 +338,17 @@
     }
   </style>
 
+  <datalist id="schedule-accounts">
+    {% for account in extension.accounts() %}<option value="{{ account }}"></option>{% endfor %}
+  </datalist>
+
   <h2>Schedules {% if view.currency %}<small>in {{ view.currency }}</small>{% endif %}</h2>
 
   <div class="schedule-nav">
     <span class="schedule-tabs">
-      <a class="schedule-tab{{ ' schedule-tab-active' if mode == 'overview' else '' }}" href="?">Overview</a>
       <a class="schedule-tab{{ ' schedule-tab-active' if upcoming_mode else '' }}" href="?view=upcoming">Upcoming</a>
-      <a class="schedule-tab{{ ' schedule-tab-active' if schedule_mode else '' }}" href="?view=schedule">Schedule</a>
+      <a class="schedule-tab{{ ' schedule-tab-active' if overview_mode else '' }}" href="?view=overview">All Schedules</a>
+      <a class="schedule-tab{{ ' schedule-tab-active' if schedule_mode else '' }}" href="?view=schedule">Detail</a>
     </span>
   </div>
 
@@ -214,13 +367,52 @@
     <p>No schedules are declared. Add a schedule transaction to the schedules file.</p>
   {% endif %}
 
-  {% if mode == 'overview' %}
+  {% if upcoming_mode %}
+    {% set rows = extension.upcoming() %}
+    <div class="schedule-upcoming">
+      {% if extension.writable %}
+        <p class="schedule-form"><a class="schedule-button" href="?view=schedule&amp;new=1">New schedule</a></p>
+      {% endif %}
+      {% if not rows %}
+        <p class="schedule-empty">Nothing outstanding — every occurrence is resolved.</p>
+      {% else %}
+        <div class="schedule-scroll">
+          <table class="table">
+            <thead>
+              <tr>
+                <th>Date</th>
+                <th>Status</th>
+                <th>Schedule</th>
+                <th>Payee / narration</th>
+                <th class="num">Amount</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for row in rows %}
+                {% set href = '?view=schedule&amp;id=' ~ (row.schedule_id | urlencode) %}
+                <tr>
+                  <td><a class="schedule-rowlink" href="{{ href }}">{{ row.line.nominal }}</a></td>
+                  <td>{{ status_badge(row.line) }}</td>
+                  <td><a href="{{ href }}">{{ row.schedule_id }}</a></td>
+                  <td>{{ row.line.payee or row.line.narration or row.rule.narration or '' }}</td>
+                  <td class="num">{{ extension.money(row.line.amount) }}</td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      {% endif %}
+    </div>
+  {% elif overview_mode %}
     <div class="schedule-overview">
       {% if extension.writable %}
-        <form method="post" action="{{ base ~ 'commit' }}" class="schedule-form">
-          <input type="hidden" name="action" value="reconcile">
-          <button type="submit">Reconcile ({{ extension.reconcile_count() }} match(es))</button>
-        </form>
+        <div class="schedule-form">
+          <form method="post" action="{{ base ~ 'commit' }}">
+            <input type="hidden" name="action" value="reconcile">
+            <button type="submit">Reconcile ({{ extension.reconcile_count() }} match(es))</button>
+          </form>
+          <a class="schedule-button" href="?view=schedule&amp;new=1">New schedule</a>
+        </div>
       {% endif %}
       <table class="table">
         <thead>
@@ -250,57 +442,6 @@
           {% endfor %}
         </tbody>
       </table>
-
-      {% if extension.writable %}
-        <section class="schedule-create">
-          <h3>Create a schedule</h3>
-          <form method="post" action="{{ base ~ 'commit' }}" class="schedule-edit">
-            <input type="hidden" name="action" value="create">
-            <label>Id <input name="id"></label>
-            <label>RRULE <input name="rrule" value="FREQ=MONTHLY;BYMONTHDAY=1"></label>
-            <label>Start <input type="date" name="start"></label>
-            <label>Match account <input name="account"></label>
-            <label>Postings <textarea name="postings" rows="2" placeholder="Expenses:Taxes:Federal 600.00&#10;Expenses:Savings 2400.00"></textarea></label>
-            <label>Payee <input name="payee"></label>
-            <label>Amount <input name="amount" size="10"></label>
-            <button type="submit">Create</button>
-          </form>
-        </section>
-      {% else %}
-        <p class="schedule-readonly">This report is read-only. Configure a <code>write</code> file to edit schedules.</p>
-      {% endif %}
-    </div>
-  {% elif upcoming_mode %}
-    {% set rows = extension.upcoming() %}
-    <div class="schedule-upcoming">
-      {% if not rows %}
-        <p class="schedule-empty">Nothing outstanding — every occurrence is resolved.</p>
-      {% else %}
-        <div class="schedule-scroll">
-          <table class="table">
-            <thead>
-              <tr>
-                <th>Date</th>
-                <th>Status</th>
-                <th>Schedule</th>
-                <th>Payee / narration</th>
-                <th class="num">Amount</th>
-              </tr>
-            </thead>
-            <tbody>
-              {% for row in rows %}
-                <tr>
-                  <td>{{ row.line.nominal }}</td>
-                  <td>{{ status_badge(row.line) }}</td>
-                  <td><a href="?view=schedule&amp;id={{ row.schedule_id | urlencode }}">{{ row.schedule_id }}</a></td>
-                  <td>{{ row.line.payee or row.line.narration or row.rule.narration or '' }}</td>
-                  <td class="num">{{ extension.money(row.line.amount) }}</td>
-                </tr>
-              {% endfor %}
-            </tbody>
-          </table>
-        </div>
-      {% endif %}
     </div>
   {% elif schedule_mode %}
     <div class="schedule-detail">
@@ -314,9 +455,33 @@
           </select>
         </label>
         <button type="submit">Show</button>
+        {% if extension.writable %}<a class="schedule-button" href="?view=schedule&amp;new=1">New schedule</a>{% endif %}
       </form>
 
-      {% if current is none %}
+      {% if creating %}
+        <h3>New schedule</h3>
+        {% if extension.writable %}
+          <form method="post" action="{{ base ~ 'commit' }}" class="schedule-edit schedule-structured">
+            <input type="hidden" name="action" value="create">
+            {{ schedule_type_field() }}
+            <label>Id <input name="id"></label>
+            <label>Start <input type="date" name="start"></label>
+            <label>Match account <input name="account" list="schedule-accounts"></label>
+            {{ rrule_builder() }}
+            <label>End <input type="date" name="end"></label>
+            {{ posting_rows(blanks=2) }}
+            <label>Payee <input name="payee"></label>
+            <label>Match payee <input name="match_payee"></label>
+            <label>Narration <input name="narration"></label>
+            <label>Amount <input name="amount" size="10"></label>
+            <label>Tolerance <input name="tolerance" size="6"></label>
+            {{ amortization_fields() }}
+            <button type="submit">Create schedule</button>
+          </form>
+        {% else %}
+          <p class="schedule-readonly">This report is read-only. Configure a <code>write</code> file to edit schedules.</p>
+        {% endif %}
+      {% elif current is none %}
         <p class="schedule-empty">No such schedule.</p>
       {% else %}
         {% set diagnostics = extension.schedule_diagnostics(current.id) %}
@@ -337,6 +502,31 @@
             {% if current.rule.tags %}<tr><th>Tags</th><td>{% for tag in current.rule.tags %}#{{ tag }} {% endfor %}</td></tr>{% endif %}
           </tbody>
         </table>
+
+        {% if current.rule.postings %}
+          <h3>Postings</h3>
+          <table class="table schedule-detail-postings">
+            <thead>
+              <tr><th>Account</th><th class="num">Amount</th><th>Leg</th></tr>
+            </thead>
+            <tbody>
+              {% for posting in current.rule.postings %}
+                {% set leg = namespace(value='—') %}
+                {% set amort = current.rule.amortization %}
+                {% if amort %}
+                  {% if amort.principal_account and posting.account == amort.principal_account %}{% set leg.value = 'principal' %}
+                  {% elif amort.interest_account and posting.account == amort.interest_account %}{% set leg.value = 'interest' %}
+                  {% elif amort.escrow_account and posting.account == amort.escrow_account %}{% set leg.value = 'escrow' %}{% endif %}
+                {% endif %}
+                <tr>
+                  <td>{{ posting.account }}</td>
+                  <td class="num">{{ extension.money(posting.amount) }}</td>
+                  <td>{{ leg.value }}</td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        {% endif %}
 
         {% if amortization %}
           <h3>Amortization</h3>
@@ -407,16 +597,98 @@
           </div>
 
           <h3>Edit</h3>
-          <form method="post" action="{{ base ~ 'commit' }}" class="schedule-edit">
-            <input type="hidden" name="action" value="save">
-            <input type="hidden" name="id" value="{{ current.id }}">
-            <textarea name="source" spellcheck="false" aria-label="Schedule source">{{ extension.schedule_source(current.id) }}</textarea>
+          <form method="post" action="{{ base ~ 'commit' }}" class="schedule-edit schedule-structured">
+            <input type="hidden" name="action" value="update">
+            <input type="hidden" name="original_id" value="{{ current.id }}">
+            {{ schedule_type_field(current.rule.amortization is not none) }}
+            <label>Id <input name="id" value="{{ current.id }}"></label>
+            <label>Start <input type="date" name="start" value="{{ current.rule.start }}"></label>
+            <label>Match account <input name="account" list="schedule-accounts" value="{{ current.rule.match_account }}"></label>
+            {{ rrule_builder(fields) }}
+            <label>End <input type="date" name="end" value="{{ current.rule.end or '' }}"></label>
+            {{ posting_rows(current.rule.postings, amort=current.rule.amortization) }}
+            <label>Payee <input name="payee" value="{{ current.rule.payee or '' }}"></label>
+            <label>Match payee <input name="match_payee" value="{{ current.rule.match_payee or '' }}"></label>
+            <label>Narration <input name="narration" value="{{ current.rule.narration or '' }}"></label>
+            <label>Amount <input name="amount" size="10" value="{{ '%.2f' % current.rule.match_amount if current.rule.match_amount is not none else '' }}"></label>
+            <label>Tolerance <input name="tolerance" size="6" value="{{ '%.2f' % current.rule.amount_tolerance if current.rule.amount_tolerance is not none else '' }}"></label>
+            {{ amortization_fields(current.rule.amortization) }}
             <button type="submit">Save schedule</button>
           </form>
+
+          <details class="schedule-advanced">
+            <summary>Edit raw source</summary>
+            <form method="post" action="{{ base ~ 'commit' }}" class="schedule-edit">
+              <input type="hidden" name="action" value="save">
+              <input type="hidden" name="id" value="{{ current.id }}">
+              <textarea name="source" spellcheck="false" aria-label="Schedule source">{{ extension.schedule_source(current.id) }}</textarea>
+              <button type="submit">Save raw source</button>
+            </form>
+          </details>
         {% else %}
           <p class="schedule-readonly">This report is read-only. Configure a <code>write</code> file to edit schedules.</p>
         {% endif %}
       {% endif %}
     </div>
   {% endif %}
+
+  <script>
+    (function () {
+      function compose(form) {
+        var freq = form.querySelector('[name=freq]');
+        if (!freq) return;
+        var parts = ['FREQ=' + freq.value];
+        var interval = form.querySelector('[name=interval]');
+        if (interval && interval.value && interval.value !== '1') parts.push('INTERVAL=' + interval.value);
+        var days = Array.prototype.slice.call(form.querySelectorAll('[name=byday]:checked')).map(function (el) { return el.value; });
+        if (freq.value === 'WEEKLY' && days.length) parts.push('BYDAY=' + days.join(','));
+        var day = form.querySelector('[name=bymonthday]');
+        if (freq.value === 'MONTHLY' && day && day.value) parts.push('BYMONTHDAY=' + day.value);
+        var month = form.querySelector('[name=bymonth]');
+        if (freq.value === 'YEARLY' && month && month.value) parts.push('BYMONTH=' + month.value);
+        var out = form.querySelector('.schedule-rrule-preview');
+        if (out) out.textContent = parts.join(';');
+      }
+      function syncFreq(form) {
+        var freq = form.querySelector('[name=freq]');
+        if (!freq) return;
+        form.querySelectorAll('[data-when]').forEach(function (el) {
+          el.style.display = el.getAttribute('data-when') === freq.value ? '' : 'none';
+        });
+        compose(form);
+      }
+      function syncType(form) {
+        var type = form.querySelector('[name=schedule_type]');
+        if (!type) return;
+        var amortized = type.value === 'amortization';
+        form.querySelectorAll('.schedule-amort, .schedule-leg-field').forEach(function (el) {
+          el.style.display = amortized ? '' : 'none';
+        });
+        form.querySelectorAll('.schedule-amort input, .schedule-amort select, .schedule-leg-field select').forEach(function (el) {
+          el.disabled = !amortized;
+        });
+      }
+      document.querySelectorAll('.schedule-structured').forEach(function (form) {
+        syncFreq(form);
+        syncType(form);
+        form.addEventListener('input', function () { syncFreq(form); });
+        form.addEventListener('change', function () { syncFreq(form); syncType(form); });
+        form.addEventListener('keydown', function (event) {
+          if (event.key === 'Enter' && event.target.tagName !== 'TEXTAREA' && event.target.type !== 'submit') {
+            event.preventDefault();
+          }
+        });
+        var add = form.querySelector('.schedule-add-posting');
+        if (add) {
+          add.addEventListener('click', function () {
+            var row = form.querySelector('.schedule-posting-row').cloneNode(true);
+            row.querySelectorAll('input').forEach(function (input) { input.value = ''; });
+            row.querySelectorAll('select').forEach(function (select) { select.selectedIndex = 0; });
+            add.parentNode.insertBefore(row, add);
+            syncFreq(form);
+          });
+        }
+      });
+    })();
+  </script>
 </div>

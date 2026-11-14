@@ -38,6 +38,7 @@ Show each schedule's occurrences.
 | `ledger` | yes | The ledger file |
 | `--schedules` | no | The schedules file |
 | `--today` | no | The reference date (YYYY-MM-DD) |
+| `--days` | no | Include only upcoming occurrences within this many days |
 | `--json` | no | Emit machine-readable JSON |
 
 ## `beanschedule list`
@@ -49,6 +50,7 @@ List schedules with next and overdue.
 | `ledger` | yes | The ledger file |
 | `--schedules` | no | The schedules file |
 | `--today` | no | The reference date (YYYY-MM-DD) |
+| `--days` | no | Show only schedules overdue or due within this many days |
 | `--json` | no | Emit machine-readable JSON |
 
 ## `beanschedule upcoming`
@@ -61,6 +63,7 @@ Show one ledger of every outstanding occurrence.
 | `--schedules` | no | The schedules file |
 | `--today` | no | The reference date (YYYY-MM-DD) |
 | `--all` | no | Include resolved occurrences too |
+| `--days` | no | Include only occurrences within this many days (overdue always) |
 | `--json` | no | Emit machine-readable JSON |
 
 ## `beanschedule amortize`

@@ -10,23 +10,165 @@ A rule is stored without a ``DTSTART`` part; the anchor is supplied separately.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta
 
 from dateutil.rrule import rrule, rrulestr
 
 __all__ = [
+    "RuleFields",
     "at_or_before",
     "between",
+    "build_rrule",
     "next_after",
     "occurrences",
     "on_sequence",
     "parse",
+    "rrule_fields",
     "sequence_index",
     "validate",
 ]
 
 #: The latest date a query will expand toward when no bound is given.
 _FOREVER = date.max
+
+#: The weekday tokens RFC 5545 uses in ``BYDAY``, in calendar order.
+WEEKDAYS = ("MO", "TU", "WE", "TH", "FR", "SA", "SU")
+
+
+@dataclass(frozen=True, slots=True)
+class RuleFields:
+    """The structured parts of a recurrence rule, for a UI form.
+
+    A rule is built from these parts by :func:`build_rrule` and decomposed back
+    into them by :func:`rrule_fields`, so a form can round-trip what the ledger
+    holds without the user ever typing rule text.
+
+    Attributes:
+        freq: The ``FREQ`` part, e.g. ``"MONTHLY"``.
+        interval: The ``INTERVAL`` part, defaulting to ``1``.
+        byday: The weekday tokens of ``BYDAY``, e.g. ``("MO", "FR")``.
+        bymonthday: The day-of-month of ``BYMONTHDAY``, if any.
+        bymonth: The month of ``BYMONTH``, if any.
+    """
+
+    freq: str
+    interval: int = 1
+    byday: tuple[str, ...] = ()
+    bymonthday: int | None = None
+    bymonth: int | None = None
+
+
+def build_rrule(
+    freq: str,
+    *,
+    interval: int = 1,
+    byday: tuple[str, ...] | list[str] = (),
+    bymonthday: int | None = None,
+    bymonth: int | None = None,
+) -> str:
+    """Compose an RFC 5545 recurrence rule from its parts.
+
+    Only the parts a schedule UI offers are emitted, and the result is validated
+    against the same parser the engine uses, so a form cannot submit a rule the
+    engine would later reject.
+
+    Args:
+        freq: The frequency, e.g. ``"MONTHLY"``.
+        interval: How many intervals between occurrences; ``1`` is every one.
+        byday: Weekday tokens for ``BYDAY``, e.g. ``("MO", "FR")``.
+        bymonthday: A day of the month for ``BYMONTHDAY``, if any.
+        bymonth: A month for ``BYMONTH``, if any.
+
+    Returns:
+        The recurrence rule, without a ``DTSTART``.
+
+    Raises:
+        ValueError: If the composed rule is not a valid recurrence.
+
+    Examples:
+        >>> build_rrule("MONTHLY", bymonthday=15)
+        'FREQ=MONTHLY;BYMONTHDAY=15'
+        >>> build_rrule("WEEKLY", interval=2, byday=["MO", "FR"])
+        'FREQ=WEEKLY;INTERVAL=2;BYDAY=MO,FR'
+    """
+    parts = [f"FREQ={freq.strip().upper()}"]
+    if interval and interval != 1:
+        parts.append(f"INTERVAL={int(interval)}")
+    days = tuple(day.strip().upper() for day in byday if day and day.strip())
+    if days:
+        parts.append("BYDAY=" + ",".join(days))
+    if bymonthday:
+        parts.append(f"BYMONTHDAY={int(bymonthday)}")
+    if bymonth:
+        parts.append(f"BYMONTH={int(bymonth)}")
+    text = ";".join(parts)
+    validate(text)
+    return text
+
+
+def rrule_fields(text: str) -> RuleFields:
+    """Decompose a recurrence rule into its structured parts.
+
+    Parsing is best-effort and never raises: an unknown or malformed part is
+    simply omitted, so a form can prefill from any rule the ledger holds.
+
+    Args:
+        text: The recurrence rule, without a ``DTSTART``.
+
+    Returns:
+        The :class:`RuleFields`, defaulting the frequency to ``""``.
+
+    Examples:
+        >>> rrule_fields("FREQ=MONTHLY;BYMONTHDAY=15")
+        RuleFields(freq='MONTHLY', interval=1, byday=(), bymonthday=15, bymonth=None)
+        >>> rrule_fields("FREQ=WEEKLY;INTERVAL=2;BYDAY=MO,FR")
+        RuleFields(freq='WEEKLY', interval=2, byday=('MO', 'FR'), bymonthday=None, bymonth=None)
+    """
+    parts: dict[str, str] = {}
+    for chunk in text.split(";"):
+        key, sep, value = chunk.partition("=")
+        if sep:
+            parts[key.strip().upper()] = value.strip()
+    byday = tuple(
+        day
+        for day in (
+            token.strip().upper() for token in parts.get("BYDAY", "").split(",")
+        )
+        if day
+    )
+    return RuleFields(
+        freq=parts.get("FREQ", "").upper(),
+        interval=_as_int(parts.get("INTERVAL")) or 1,
+        byday=byday,
+        bymonthday=_as_int(parts.get("BYMONTHDAY")),
+        bymonth=_as_int(parts.get("BYMONTH")),
+    )
+
+
+def _as_int(value: str | None) -> int | None:
+    """Parse an optional integer part, ignoring anything unparseable.
+
+    Args:
+        value: The raw part, or ``None``.
+
+    Returns:
+        The integer, or ``None``.
+
+    Examples:
+        >>> _as_int("15")
+        15
+        >>> _as_int(None) is None
+        True
+        >>> _as_int("x") is None
+        True
+    """
+    if value is None:
+        return None
+    try:
+        return int(value)
+    except ValueError:
+        return None
 
 
 def parse(rrule_text: str, start: date) -> rrule:

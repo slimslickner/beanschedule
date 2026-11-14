@@ -17,7 +17,7 @@ import difflib
 import json
 import sys
 from collections import defaultdict
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -58,6 +58,12 @@ _GENERATED_FILES = ("cli.md", "schema.md", "errors.md")
 
 _DEFAULT_SCHEDULES_FILE = "schedules.bean"
 _DEFAULT_PENDING_FILE = "pending.bean"
+
+#: Completes Beancount source paths for the ``ledger`` and file options.
+_BEAN_FILES = argcomplete.FilesCompleter(".bean")
+
+#: Completes directory paths for ``migrate``.
+_DIRECTORIES = argcomplete.DirectoriesCompleter()
 
 #: The occurrence table's leading text columns are left-aligned; the amount is
 #: right-aligned.
@@ -181,11 +187,11 @@ def _report_json(view: ScheduleViewResult) -> list[dict[str, object]]:
     ]
 
 
-def _list_json(view: ScheduleViewResult) -> list[dict[str, object]]:
+def _list_json(schedules: Sequence[ScheduleView]) -> list[dict[str, object]]:
     """Render the schedule list as JSON-serialisable data.
 
     Args:
-        view: The report view.
+        schedules: The schedule views to render.
 
     Returns:
         One mapping per schedule.
@@ -199,7 +205,7 @@ def _list_json(view: ScheduleViewResult) -> list[dict[str, object]]:
             "due": [line.nominal.isoformat() for line in schedule.due],
             "amount": _money(schedule.rule.match_amount),
         }
-        for schedule in view.schedules
+        for schedule in schedules
     ]
 
 
@@ -399,7 +405,9 @@ def cmd_report(args: argparse.Namespace) -> int:
     entries, options = _load(ledger)
     schedules = _load_schedules(_schedules_path(args, ledger))
     result = compute(entries, options, schedules=schedules, today=_today(args))
-    view = build_view(result, entries, options, today=_today(args))
+    view = build_view(
+        result, entries, options, today=_today(args), forecast_days=args.days
+    )
     if args.json:
         print(json.dumps(_report_json(view), indent=2))
         return 0
@@ -438,10 +446,12 @@ def cmd_list(args: argparse.Namespace) -> int:
     ledger = Path(args.ledger)
     entries, options = _load(ledger)
     schedules = _load_schedules(_schedules_path(args, ledger))
-    result = compute(entries, options, schedules=schedules, today=_today(args))
-    view = build_view(result, entries, options, today=_today(args))
+    today = _today(args)
+    result = compute(entries, options, schedules=schedules, today=today)
+    view = build_view(result, entries, options, today=today, forecast_days=args.days)
+    visible = _within_window(view.schedules, today, args.days)
     if args.json:
-        print(json.dumps(_list_json(view), indent=2))
+        print(json.dumps(_list_json(visible), indent=2))
         return 0
     rows = [
         (
@@ -451,10 +461,37 @@ def cmd_list(args: argparse.Namespace) -> int:
             str(len(schedule.due)),
             schedule.rule.match_account,
         )
-        for schedule in view.schedules
+        for schedule in visible
     ]
     print(_format_table(_LIST_HEADERS, rows, _LIST_TEXT_COLUMNS))
     return 0
+
+
+def _within_window(
+    schedules: Sequence[ScheduleView], today: date, days: int | None
+) -> tuple[ScheduleView, ...]:
+    """Filter schedules to those with something due within the window.
+
+    A schedule is kept when it is overdue or its next occurrence falls on or
+    before the horizon, so ``--days`` turns the list into a focused view of
+    what needs attention.
+
+    Args:
+        schedules: The schedule views.
+        today: The reference date.
+        days: The forward window in days, or ``None`` for every schedule.
+
+    Returns:
+        The schedules that are overdue or next due within ``days``.
+    """
+    if days is None:
+        return tuple(schedules)
+    horizon = today + timedelta(days=days)
+    return tuple(
+        schedule
+        for schedule in schedules
+        if schedule.overdue or (schedule.next is not None and schedule.next <= horizon)
+    )
 
 
 def cmd_upcoming(args: argparse.Namespace) -> int:
@@ -470,7 +507,9 @@ def cmd_upcoming(args: argparse.Namespace) -> int:
     entries, options = _load(ledger)
     schedules = _load_schedules(_schedules_path(args, ledger))
     result = compute(entries, options, schedules=schedules, today=_today(args))
-    view = build_view(result, entries, options, today=_today(args))
+    view = build_view(
+        result, entries, options, today=_today(args), forecast_days=args.days
+    )
     rows = view.ledger(pending_only=not args.all)
     if args.json:
         print(json.dumps(_upcoming_json(rows), indent=2))
@@ -1078,9 +1117,19 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915 - one wiring blo
     _add_ledger(sub, "check", "Validate the schedules across a ledger", cmd_check)
     report = _add_ledger(sub, "report", "Show each schedule's occurrences", cmd_report)
     report.add_argument(
+        "--days",
+        type=_days,
+        help="Include only upcoming occurrences within this many days",
+    )
+    report.add_argument(
         "--json", action="store_true", help="Emit machine-readable JSON"
     )
     listing = _add_ledger(sub, "list", "List schedules with next and overdue", cmd_list)
+    listing.add_argument(
+        "--days",
+        type=_days,
+        help="Show only schedules overdue or due within this many days",
+    )
     listing.add_argument(
         "--json", action="store_true", help="Emit machine-readable JSON"
     )
@@ -1094,6 +1143,11 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915 - one wiring blo
         "--all", action="store_true", help="Include resolved occurrences too"
     )
     upcoming.add_argument(
+        "--days",
+        type=_days,
+        help="Include only occurrences within this many days (overdue always)",
+    )
+    upcoming.add_argument(
         "--json", action="store_true", help="Emit machine-readable JSON"
     )
     amortize = _add_ledger(
@@ -1102,7 +1156,10 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915 - one wiring blo
         "Show each loan's remaining amortization schedule",
         cmd_amortize,
     )
-    amortize.add_argument("--id", help="Show only this schedule id")
+    _with_completer(
+        amortize.add_argument("--id", help="Show only this schedule id"),
+        _complete_schedule,
+    )
     amortize.add_argument(
         "--json", action="store_true", help="Emit machine-readable JSON"
     )
@@ -1120,7 +1177,9 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915 - one wiring blo
         "Match imported transactions to schedules",
         cmd_reconcile,
     )
-    engine.add_argument("--pending", help="The pending file")
+    _with_completer(
+        engine.add_argument("--pending", help="The pending file"), _BEAN_FILES
+    )
     engine.add_argument(
         "--write",
         nargs="?",
@@ -1129,10 +1188,14 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915 - one wiring blo
     )
 
     skip = _add_write(sub, "skip", "Skip a schedule's next occurrence", cmd_skip)
-    skip.add_argument("schedule", help="The schedule id")
+    _with_completer(
+        skip.add_argument("schedule", help="The schedule id"), _complete_schedule
+    )
 
     move = _add_write(sub, "move", "Move a schedule's frontier date", cmd_move)
-    move.add_argument("schedule", help="The schedule id")
+    _with_completer(
+        move.add_argument("schedule", help="The schedule id"), _complete_schedule
+    )
     move.add_argument("new_date", help="The date to move it to")
 
     create = _add_write(sub, "create", "Create a new schedule", cmd_create)
@@ -1154,7 +1217,9 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915 - one wiring blo
     create.add_argument("--narration", help="The narration to write")
 
     edit = _add_write(sub, "edit", "Edit a schedule's matched amount", cmd_edit)
-    edit.add_argument("schedule", help="The schedule id")
+    _with_completer(
+        edit.add_argument("schedule", help="The schedule id"), _complete_schedule
+    )
     edit.add_argument("--amount", help="Set a new matched amount")
 
     migrate_cmd = sub.add_parser(
@@ -1165,9 +1230,17 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915 - one wiring blo
             "transactions, idempotently."
         ),
     )
-    migrate_cmd.add_argument("directory", help="The schedules directory")
-    migrate_cmd.add_argument("--ledger", help="The ledger, for the schedules file")
-    migrate_cmd.add_argument("--schedules", help="The schedules file")
+    _with_completer(
+        migrate_cmd.add_argument("directory", help="The schedules directory"),
+        _DIRECTORIES,
+    )
+    _with_completer(
+        migrate_cmd.add_argument("--ledger", help="The ledger, for the schedules file"),
+        _BEAN_FILES,
+    )
+    _with_completer(
+        migrate_cmd.add_argument("--schedules", help="The schedules file"), _BEAN_FILES
+    )
     migrate_cmd.set_defaults(func=cmd_migrate)
 
     migrate_ledger_cmd = sub.add_parser(
@@ -1179,7 +1252,9 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915 - one wiring blo
             "ledger files in place. A dry run until --write is passed."
         ),
     )
-    migrate_ledger_cmd.add_argument("ledger", help="The ledger file")
+    _with_completer(
+        migrate_ledger_cmd.add_argument("ledger", help="The ledger file"), _BEAN_FILES
+    )
     migrate_ledger_cmd.add_argument(
         "--write", action="store_true", help="Apply the edits, in place"
     )
@@ -1200,6 +1275,77 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915 - one wiring blo
     return parser
 
 
+def _days(value: str) -> int:
+    """Parse a forward window in days for ``--days``.
+
+    Args:
+        value: The raw argument.
+
+    Returns:
+        The number of days.
+
+    Raises:
+        argparse.ArgumentTypeError: When the value is not a non-negative integer.
+    """
+    try:
+        days = int(value)
+    except ValueError as error:
+        message = f"not an integer: {value}"
+        raise argparse.ArgumentTypeError(message) from error
+    if days < 0:
+        message = f"must not be negative: {value}"
+        raise argparse.ArgumentTypeError(message)
+    return days
+
+
+def _complete_schedule(
+    *,
+    prefix: str,
+    action: object,  # noqa: ARG001 - argcomplete's protocol
+    parser: object,  # noqa: ARG001 - argcomplete's protocol
+    parsed_args: argparse.Namespace,
+) -> list[str]:
+    """Complete a schedule id from the schedules file.
+
+    Reads the schedules named by the already-parsed ``ledger`` and
+    ``--schedules`` arguments, so ``beanschedule skip LEDGER <TAB>`` offers the
+    ledger's schedule ids (and, under fzf-tab, shows them in fzf). Any failure to
+    load yields no completions rather than breaking the command line.
+
+    Args:
+        prefix: The word being completed.
+        action: The argument being completed (unused; argcomplete's protocol).
+        parser: The active parser (unused; argcomplete's protocol).
+        parsed_args: The arguments parsed so far.
+
+    Returns:
+        The matching schedule ids, sorted.
+    """
+    ledger = getattr(parsed_args, "ledger", None)
+    if not ledger:
+        return []
+    path = _schedules_path(parsed_args, Path(ledger))
+    try:
+        entries = _load_schedules(path)
+        ids = {rule.id for rule in compute(entries, {}).rules}
+    except Exception:  # noqa: BLE001 - completion must never raise
+        return []
+    return sorted(rule_id for rule_id in ids if rule_id.startswith(prefix))
+
+
+def _with_completer(action: argparse.Action, completer: object) -> None:
+    """Attach an argcomplete completer to an already-added parser action.
+
+    ``argparse`` has no ``completer`` parameter, so argcomplete's convention is to
+    set the attribute on the action once it is built.
+
+    Args:
+        action: The parser action.
+        completer: The completer argcomplete should call for the action.
+    """
+    setattr(action, "completer", completer)  # noqa: B010 - argcomplete's convention
+
+
 def _add_ledger(
     sub: argparse._SubParsersAction,
     name: str,
@@ -1218,8 +1364,10 @@ def _add_ledger(
         The command's parser.
     """
     parser = sub.add_parser(name, help=help_text, description=help_text)
-    parser.add_argument("ledger", help="The ledger file")
-    parser.add_argument("--schedules", help="The schedules file")
+    _with_completer(parser.add_argument("ledger", help="The ledger file"), _BEAN_FILES)
+    _with_completer(
+        parser.add_argument("--schedules", help="The schedules file"), _BEAN_FILES
+    )
     parser.add_argument("--today", help="The reference date (YYYY-MM-DD)")
     parser.set_defaults(func=func)
     return parser
@@ -1243,14 +1391,19 @@ def _add_write(
         The command's parser.
     """
     parser = sub.add_parser(name, help=help_text, description=help_text)
-    parser.add_argument("ledger", help="The ledger file")
-    parser.add_argument("--schedules", help="The schedules file")
+    _with_completer(parser.add_argument("ledger", help="The ledger file"), _BEAN_FILES)
+    _with_completer(
+        parser.add_argument("--schedules", help="The schedules file"), _BEAN_FILES
+    )
     parser.add_argument("--today", help="The reference date (YYYY-MM-DD)")
-    parser.add_argument(
-        "--write",
-        nargs="?",
-        const=_DEFAULT_SCHEDULES_FILE,
-        help="Write to this file",
+    _with_completer(
+        parser.add_argument(
+            "--write",
+            nargs="?",
+            const=_DEFAULT_SCHEDULES_FILE,
+            help="Write to this file",
+        ),
+        _BEAN_FILES,
     )
     parser.set_defaults(func=func)
     return parser
